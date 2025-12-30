@@ -20,7 +20,13 @@ It is assumed you have administrative permissions to an Azure subscription as we
 
 ### Deploy Azure Infrastructure
 
-Coming soon
+Details about infrastructure deployment can be found within the [infra](/infra/) folder.
+
+### Register an App ID in Entra ID
+
+This repo supports user-level authentication to the agent API, which supports enterprise security as well as documenting user feedback. The application can be created using: [create-chat-app.ps1](scripts/create-chat-app.ps1). Be sure to sign-into your Entra ID tenant using `az login` first.
+
+## Run locally
 
 ### Install dependencies
 
@@ -42,9 +48,7 @@ Install dependencies using your preferred package manager:
 
    > **Note:** This automatically sets up the Python environment as well. If you have manual issues, you can run: `npm run install:agent`
 
-### Register an App ID in Entra ID
 
-This repo supports user-level authentication to the agent API, which supports enterprise security as well as documenting user feedback. The application can be created using: [create-chat-app.ps1](scripts/create-chat-app.ps1). Be sure to sign-into your Entra ID tenant using `az login` first.
 
 ### Set environment variables
 

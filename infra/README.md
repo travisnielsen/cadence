@@ -19,7 +19,20 @@ The IaC is based on Terraform and uses [Azure Verified Modules](https://azure.gi
 > [!IMPORTANT]
 > Currently, this repo assumes you have permissiones to create resources in an Azure subscription and can configure RBAC roles.
 
-## Configuration
+## AI Search Configuration
+
+The Terraform deployment automatically configures AI Search with vector indexes for NL2SQL scenarios:
+
+| Component | Name | Description |
+|-----------|------|-------------|
+| **Data Sources** | `agentic-queries`, `agentic-tables` | Connect to blob storage containers for query examples and table schemas |
+| **Indexes** | `queries`, `tables` | Vector-enabled indexes with 3072-dimension embeddings using HNSW algorithm |
+| **Skillsets** | `query-embed-skill`, `table-embed-skill` | Generate embeddings via `text-embedding-3-large` model |
+| **Indexers** | `indexer-queries`, `indexer-tables` | Process JSON documents and populate vector indexes |
+
+The Search service uses managed identity authentication to access storage and AI Foundry for embedding generation. Sample data is uploaded from the `search-config/` folder during deployment.
+
+## Deployment
 
 In the sub-folder you are working from, create a new `terraform.tfvars` file and populate the following variables:
 
@@ -30,8 +43,6 @@ region_aifoundry    = "<azure_region_name>"
 ```
 
 The region you input will depend on model and other resource availabilty. Deployments have been successfully tested in `westus3` and `eastus2`. At the time of this writing, `gpt-5.2-chat` is available for use in `eastus2`.
-
-## Deployment
 
 Open a terminal session and authenticate to your Azure environment via `az login`. Once completed, you can run the following commands to deploy the infrastructure
 
@@ -45,3 +56,6 @@ terraform plan
 # Deploy resources
 terraform apply -parallelism=1
 ```
+
+> [!IMPORTANT]
+> Currently, the `-parallelism=1` option is necessary due to API concurrency issues with model deployment coponent in the Azure Verified Module for Foundry. This unfortunately increases the time to deploy resources to Azure. We are looking into alternative approaches for working around this issue.

@@ -1,6 +1,20 @@
-##################################################
-# Observability Module
-##################################################
+#################################################################################
+# Deployer IP Address
+#################################################################################
+
+# Get the public IP of the machine running Terraform
+data "http" "deployer_ip" {
+  url = "https://api.ipify.org"
+}
+
+locals {
+  deployer_ip = chomp(data.http.deployer_ip.response_body)
+}
+
+
+#################################################################################
+# Observability Services
+#################################################################################
 
 # Log Analytics Workspace (shared)
 module "log_analytics" {
@@ -23,9 +37,9 @@ module "application_insights" {
 }
 
 
-##################################################
+#################################################################################
 # Container Registry
-##################################################
+#################################################################################
 
 module "container_registry" {
   source  = "Azure/avm-res-containerregistry-registry/azurerm"
@@ -47,12 +61,10 @@ module "container_registry" {
 }
 
 
-##################################################
-# AI Foundry BYOR Resources (created separately due to AVM bug)
-# See: https://github.com/Azure/terraform-azurerm-avm-ptn-aiml-ai-foundry/issues
-##################################################
-
+#################################################################################
 # Key Vault for AI Foundry
+#################################################################################
+
 module "ai_keyvault" {
   source  = "Azure/avm-res-keyvault-vault/azurerm"
   name                              = "${local.identifier}-kv"
@@ -71,7 +83,11 @@ module "ai_keyvault" {
   }
 }
 
-# Storage Account for AI Foundry
+
+#################################################################################
+# Storage Account for Microsoft Foundry blob uploads and NL2SQL data
+#################################################################################
+
 module "ai_storage" {
   source  = "Azure/avm-res-storage-storageaccount/azurerm"
   name                          = replace("${local.identifier}foundry", "-", "")
@@ -82,9 +98,67 @@ module "ai_storage" {
   public_network_access_enabled = true
   shared_access_key_enabled     = false
   tags                          = local.tags
+
+  # Allow deployer IP and Azure services through the firewall
+  network_rules = {
+    default_action = "Deny"
+    bypass         = ["AzureServices"]
+    ip_rules       = [local.deployer_ip]
+  }
+
+  containers = {
+    nl2sql = {
+      name                  = "nl2sql"
+      container_access_type = "private"
+    }
+  }
+
+  # Role assignment for current user to upload blobs
+  role_assignments = {
+    storage_blob_contributor = {
+      role_definition_id_or_name = "Storage Blob Data Contributor"
+      principal_id               = data.azurerm_client_config.current.object_id
+    }
+  }
 }
 
-# Cosmos DB for AI Foundry
+# Wait for storage RBAC to propagate before uploading blobs
+resource "time_sleep" "wait_for_storage_rbac" {
+  depends_on      = [module.ai_storage]
+  create_duration = "60s"
+}
+
+# Upload query files from /data/queries
+resource "azurerm_storage_blob" "nl2sql_queries" {
+  for_each               = fileset("${path.module}/../../data/queries", "*.json")
+  name                   = "queries/${each.value}"
+  storage_account_name   = module.ai_storage.name
+  storage_container_name = "nl2sql"
+  type                   = "Block"
+  source                 = "${path.module}/../../data/queries/${each.value}"
+  content_type           = "application/json"
+
+  depends_on = [time_sleep.wait_for_storage_rbac]
+}
+
+# Upload table schema files from /data/tables
+resource "azurerm_storage_blob" "nl2sql_tables" {
+  for_each               = fileset("${path.module}/../../data/tables", "*.json")
+  name                   = "tables/${each.value}"
+  storage_account_name   = module.ai_storage.name
+  storage_container_name = "nl2sql"
+  type                   = "Block"
+  source                 = "${path.module}/../../data/tables/${each.value}"
+  content_type           = "application/json"
+
+  depends_on = [time_sleep.wait_for_storage_rbac]
+}
+
+
+#################################################################################
+# Cosmos DB Account for Microsoft Foundry agent service thread storage
+#################################################################################
+
 module "ai_cosmosdb" {
   source  = "Azure/avm-res-documentdb-databaseaccount/azurerm"
   name                          = "${local.identifier}-foundry"
@@ -134,7 +208,10 @@ resource "azurerm_cosmosdb_sql_role_assignment" "foundry_project" {
 }
 
 
-# AI Search for AI Foundry
+#################################################################################
+# AI Search - linked to Microsoft Foundry
+#################################################################################
+
 module "ai_search" {
   source  = "Azure/avm-res-search-searchservice/azurerm"
   name                          = "${local.identifier}"
@@ -143,7 +220,22 @@ module "ai_search" {
   sku                           = "standard"
   public_network_access_enabled = true
   local_authentication_enabled  = true
+  # Enable both API key and AAD authentication
+  authentication_failure_mode   = "http401WithBearerChallenge"
   tags                          = local.tags
+
+  # Enable managed identity for RBAC access to storage and AI services
+  managed_identities = {
+    system_assigned = true
+  }
+
+  # Role assignment for current user to manage search service
+  role_assignments = {
+    search_service_contributor = {
+      role_definition_id_or_name = "Search Service Contributor"
+      principal_id               = data.azurerm_client_config.current.object_id
+    }
+  }
 
   diagnostic_settings = {
     to_law = {
@@ -154,9 +246,9 @@ module "ai_search" {
 }
 
 
-##################################################
+#################################################################################
 # AI Foundry (Pattern Module)
-##################################################
+#################################################################################
 
 module "ai_foundry" {
   source  = "Azure/avm-ptn-aiml-ai-foundry/azurerm"
@@ -259,12 +351,12 @@ module "ai_foundry" {
 }
 
 
-##################################################
+#################################################################################
 # Application Insights Connection for AI Foundry Project
 # Note: Not yet supported in AVM module. The azapi approach below is not working
 # with the current API version. Add this connection manually via Azure Portal:
 # AI Foundry Project -> Connections -> Add connection -> Application Insights
-##################################################
+#################################################################################
 
 # resource "azapi_resource" "ai_foundry_appinsights_connection" {
 #   name      = module.application_insights.name
@@ -287,9 +379,9 @@ module "ai_foundry" {
 # }
 
 
-##################################################
+#################################################################################
 # Azure SQL Database with AdventureWorksLT Sample Data
-##################################################
+#################################################################################
 
 module "sql_server" {
   source  = "Azure/avm-res-sql-server/azurerm"
@@ -327,5 +419,247 @@ module "sql_server" {
 
   # Note: SQL Server doesn't support diagnostic settings at the server level.
   # Use SQL Auditing or database-level diagnostic settings instead.
+}
+
+
+#################################################################################
+# Search configuration
+# Note: Search indexes, skillsets, indexers must be created via the Search Data
+# Plane API (not ARM). We use null_resource with az rest/az role assignment to
+# manage everything after resources are created.
+#################################################################################
+
+# Create Search data sources, indexes, skillsets, and indexers via REST API
+# Also assigns RBAC roles for Search service managed identity
+resource "null_resource" "search_config" {
+  depends_on = [
+    module.ai_search,
+    module.ai_storage,
+    module.ai_foundry,
+    azurerm_storage_blob.nl2sql_queries,
+    azurerm_storage_blob.nl2sql_tables
+  ]
+
+  triggers = {
+    search_name      = module.ai_search.resource.name
+    storage_id       = module.ai_storage.resource_id
+    ai_foundry_id    = module.ai_foundry.ai_foundry_id
+    ai_services_name = module.ai_foundry.ai_foundry_name
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -e
+      SEARCH_NAME="${module.ai_search.resource.name}"
+      SEARCH_URL="https://$${SEARCH_NAME}.search.windows.net"
+      API_VERSION="2024-05-01-preview"
+      STORAGE_RESOURCE_ID="${module.ai_storage.resource_id}"
+      AI_FOUNDRY_ID="${module.ai_foundry.ai_foundry_id}"
+      AI_SERVICES_NAME="${module.ai_foundry.ai_foundry_name}"
+      
+      # Get Search service principal ID
+      echo "Getting Search service managed identity principal ID..."
+      SEARCH_PRINCIPAL_ID=$(az search service show --name "$${SEARCH_NAME}" --resource-group "${azurerm_resource_group.shared_rg.name}" --query identity.principalId -o tsv)
+      
+      if [ -z "$${SEARCH_PRINCIPAL_ID}" ] || [ "$${SEARCH_PRINCIPAL_ID}" = "null" ]; then
+        echo "Error: Search service does not have a managed identity"
+        exit 1
+      fi
+      echo "Search principal ID: $${SEARCH_PRINCIPAL_ID}"
+      
+      # Assign Storage Blob Data Reader role
+      echo "Assigning Storage Blob Data Reader role to Search service..."
+      az role assignment create \
+        --role "Storage Blob Data Reader" \
+        --assignee-object-id "$${SEARCH_PRINCIPAL_ID}" \
+        --assignee-principal-type ServicePrincipal \
+        --scope "$${STORAGE_RESOURCE_ID}" \
+        --only-show-errors || echo "Role may already exist"
+      
+      # Assign Cognitive Services OpenAI User role
+      echo "Assigning Cognitive Services OpenAI User role to Search service..."
+      az role assignment create \
+        --role "Cognitive Services OpenAI User" \
+        --assignee-object-id "$${SEARCH_PRINCIPAL_ID}" \
+        --assignee-principal-type ServicePrincipal \
+        --scope "$${AI_FOUNDRY_ID}" \
+        --only-show-errors || echo "Role may already exist"
+      
+      # Wait for RBAC to propagate
+      echo "Waiting 60 seconds for RBAC propagation..."
+      sleep 60
+      
+      echo "Getting access token for Search..."
+      TOKEN=$(az account get-access-token --resource https://search.azure.com --query accessToken -o tsv)
+      
+      echo "Creating data source: agentic-queries..."
+      curl -s -X PUT "$${SEARCH_URL}/datasources/agentic-queries?api-version=$${API_VERSION}" \
+        -H "Authorization: Bearer $${TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "name": "agentic-queries",
+          "type": "azureblob",
+          "credentials": {
+            "connectionString": "ResourceId='"$${STORAGE_RESOURCE_ID}"';"
+          },
+          "container": {
+            "name": "nl2sql",
+            "query": "queries"
+          }
+        }'
+      
+      echo ""
+      echo "Creating data source: agentic-tables..."
+      curl -s -X PUT "$${SEARCH_URL}/datasources/agentic-tables?api-version=$${API_VERSION}" \
+        -H "Authorization: Bearer $${TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "name": "agentic-tables",
+          "type": "azureblob",
+          "credentials": {
+            "connectionString": "ResourceId='"$${STORAGE_RESOURCE_ID}"';"
+          },
+          "container": {
+            "name": "nl2sql",
+            "query": "tables"
+          }
+        }'
+      
+      echo ""
+      echo "Creating index: queries..."
+      curl -s -X PUT "$${SEARCH_URL}/indexes/queries?api-version=$${API_VERSION}" \
+        -H "Authorization: Bearer $${TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d @${path.module}/../search-config/queries_index.json
+      
+      echo ""
+      echo "Creating index: tables..."
+      curl -s -X PUT "$${SEARCH_URL}/indexes/tables?api-version=$${API_VERSION}" \
+        -H "Authorization: Bearer $${TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d @${path.module}/../search-config/tables_index.json
+      
+      echo ""
+      echo "Creating skillset: query-embed-skill..."
+      curl -s -X PUT "$${SEARCH_URL}/skillsets/query-embed-skill?api-version=$${API_VERSION}" \
+        -H "Authorization: Bearer $${TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "name": "query-embed-skill",
+          "description": "OpenAI Embedding skill for queries",
+          "skills": [
+            {
+              "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
+              "name": "vector-embed-field-question",
+              "description": "vector embedding for the question field",
+              "context": "/document",
+              "resourceUri": "https://'"$${AI_SERVICES_NAME}"'.openai.azure.com",
+              "deploymentId": "embedding-large",
+              "dimensions": 3072,
+              "modelName": "text-embedding-3-large",
+              "inputs": [
+                {
+                  "name": "text",
+                  "source": "/document/question"
+                }
+              ],
+              "outputs": [
+                {
+                  "name": "embedding",
+                  "targetName": "content_embeddings"
+                }
+              ]
+            }
+          ]
+        }'
+      
+      echo ""
+      echo "Creating skillset: table-embed-skill..."
+      curl -s -X PUT "$${SEARCH_URL}/skillsets/table-embed-skill?api-version=$${API_VERSION}" \
+        -H "Authorization: Bearer $${TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "name": "table-embed-skill",
+          "description": "OpenAI Embedding skill for table descriptions",
+          "skills": [
+            {
+              "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
+              "name": "vector-embed-field-description",
+              "description": "vector embedding for the description field",
+              "context": "/document",
+              "resourceUri": "https://'"$${AI_SERVICES_NAME}"'.openai.azure.com",
+              "deploymentId": "embedding-large",
+              "dimensions": 3072,
+              "modelName": "text-embedding-3-large",
+              "inputs": [
+                {
+                  "name": "text",
+                  "source": "/document/description"
+                }
+              ],
+              "outputs": [
+                {
+                  "name": "embedding",
+                  "targetName": "content_embeddings"
+                }
+              ]
+            }
+          ]
+        }'
+      
+      echo ""
+      echo "Creating indexer: indexer-queries..."
+      curl -s -X PUT "$${SEARCH_URL}/indexers/indexer-queries?api-version=$${API_VERSION}" \
+        -H "Authorization: Bearer $${TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "name": "indexer-queries",
+          "dataSourceName": "agentic-queries",
+          "skillsetName": "query-embed-skill",
+          "targetIndexName": "queries",
+          "parameters": {
+            "configuration": {
+              "dataToExtract": "contentAndMetadata",
+              "parsingMode": "json"
+            }
+          },
+          "fieldMappings": [],
+          "outputFieldMappings": [
+            {
+              "sourceFieldName": "/document/content_embeddings",
+              "targetFieldName": "content_vector"
+            }
+          ]
+        }'
+      
+      echo ""
+      echo "Creating indexer: indexer-tables..."
+      curl -s -X PUT "$${SEARCH_URL}/indexers/indexer-tables?api-version=$${API_VERSION}" \
+        -H "Authorization: Bearer $${TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "name": "indexer-tables",
+          "dataSourceName": "agentic-tables",
+          "skillsetName": "table-embed-skill",
+          "targetIndexName": "tables",
+          "parameters": {
+            "configuration": {
+              "dataToExtract": "contentAndMetadata",
+              "parsingMode": "json"
+            }
+          },
+          "fieldMappings": [],
+          "outputFieldMappings": [
+            {
+              "sourceFieldName": "/document/content_embeddings",
+              "targetFieldName": "content_vector"
+            }
+          ]
+        }'
+      
+      echo ""
+      echo "Search configuration complete!"
+    EOT
+  }
 }
 

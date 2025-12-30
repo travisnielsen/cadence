@@ -60,6 +60,9 @@ Using the output from the application enrollment script, set up your agent crede
    AZURE_OPENAI_PROJECT_ENDPOINT=https://[your-resource].services.ai.azure.com/api/projects/[your-project]
    AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=gpt-4o
 
+   # Agent name (optional) used to find or create an agent (default: data-explorer-agent)
+   # AZURE_AI_AGENT_NAME=[custom-name-]
+
    # Entra ID Authentication
    AZURE_AD_CLIENT_ID=[your-app-id]
    AZURE_AD_TENANT_ID=[your-tenant-id]

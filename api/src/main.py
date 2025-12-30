@@ -13,6 +13,7 @@ from typing import AsyncGenerator
 
 import uvicorn
 from azure.identity.aio import DefaultAzureCredential
+from azure.ai.agents.aio import AgentsClient
 from agent_framework.azure import AzureAIAgentClient  # type: ignore[attr-defined] # pylint: disable=no-name-in-module
 from agent_framework import ChatAgent
 from dotenv import load_dotenv
@@ -40,23 +41,47 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 # Check if Azure AD authentication is configured
 AUTH_ENABLED = bool(azure_ad_settings.AZURE_AD_CLIENT_ID and azure_ad_settings.AZURE_AD_TENANT_ID)
 
-def _build_chat_client() -> AzureAIAgentClient:
+async def _find_agent_by_name(endpoint: str, agent_name: str) -> str | None:
+    """Find an existing agent by name and return its ID."""
+    async with AgentsClient(
+        endpoint=endpoint,
+        credential=DefaultAzureCredential(),
+    ) as client:
+        # List all agents and find one with matching name
+        agents = client.list_agents()
+        async for agent in agents:
+            if agent.name == agent_name:
+                logger.info("Found existing agent: %s (id: %s)", agent.name, agent.id)
+                return agent.id
+    return None
+
+
+async def _build_chat_client() -> AzureAIAgentClient:
     """Build the Azure AI (Foundry) agent client."""
     endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT")
     deployment = os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME", "gpt-4o-mini")
-    agent_id = os.getenv("AZURE_AI_AGENT_ID")  # Optional: reuse existing agent
+    agent_name = os.getenv("AZURE_AI_AGENT_NAME", "data-explorer-agent")
 
     if not endpoint:
         raise ValueError("AZURE_AI_PROJECT_ENDPOINT environment variable is required")
 
-    logger.info("Using endpoint: %s, deployment: %s, agent_id: %s", endpoint, deployment, agent_id or "new")
+    # Try to find existing agent by name
+    agent_id = await _find_agent_by_name(endpoint, agent_name)
+    
+    if agent_id:
+        logger.info("Reusing existing agent: %s (id: %s)", agent_name, agent_id)
+    else:
+        logger.info("No existing agent found with name '%s', will create new one", agent_name)
+
+    logger.info("Using endpoint: %s, deployment: %s, agent: %s", endpoint, deployment, agent_id or agent_name)
 
     return AzureAIAgentClient(
         credential=DefaultAzureCredential(),
         project_endpoint=endpoint,
         model_deployment_name=deployment,
-        agent_id=agent_id,  # If set, reuses existing agent; if None, creates new one
-        should_cleanup_agent=agent_id is None,  # Only cleanup if we created it
+        agent_id=agent_id,  # If found, reuses existing agent; if None, creates new one
+        agent_name=agent_name,  # Used when creating new agent
+        should_cleanup_agent=False,  # Never cleanup - we want to reuse agents by name
     )
 
 
@@ -75,7 +100,7 @@ agent: ChatAgent | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global chat_client, agent
-    chat_client = _build_chat_client()
+    chat_client = await _build_chat_client()
     agent = _create_agent(chat_client)
     logger.info("Agent initialized")
     yield

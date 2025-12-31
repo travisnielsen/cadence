@@ -10,12 +10,13 @@ from __future__ import annotations
 import logging
 import os
 
+from agent_framework import ChatAgent
 from azure.identity.aio import DefaultAzureCredential
 import agent_framework.azure as _azure_module  # type: ignore
-AzureAIAgentClient = _azure_module.AzureAIAgentClient
-from agent_framework import ChatAgent
-
 from .base import BaseAgent, find_agent_by_name, load_prompt
+from .tools import execute_sql, search_cached_queries
+
+AzureAIAgentClient = _azure_module.AzureAIAgentClient
 
 logger = logging.getLogger(__name__)
 
@@ -78,18 +79,29 @@ async def build_nl2sql_client() -> AzureAIAgentClient:
 
 def create_nl2sql_agent(chat_client: AzureAIAgentClient) -> ChatAgent:
     """
-    Create the NL2SQL chat agent.
+    Create the NL2SQL chat agent with search and SQL execution tools.
+    
+    The agent will:
+    1. First search for similar cached queries using semantic search
+    2. If a high-confidence match is found, use the cached SQL query
+    3. Otherwise, generate a new SQL query
+    4. Execute the SQL query and return results
     
     Args:
         chat_client: The Azure AI agent client
         
     Returns:
-        Configured ChatAgent instance
+        Configured ChatAgent instance with search and SQL tools
     """
     instructions = load_prompt("nl2sql")
     
+    logger.info("Creating NL2SQL agent with tools: ['search_cached_queries', 'execute_sql']")
+    
+    # Tools are decorated with @ai_function so they can be passed directly
+    # The agent_framework will automatically invoke them based on the function signature
     return ChatAgent(
         name="assistant",
         instructions=instructions,
         chat_client=chat_client,
+        tools=[search_cached_queries, execute_sql],
     )

@@ -235,6 +235,10 @@ module "ai_search" {
       role_definition_id_or_name = "Search Service Contributor"
       principal_id               = data.azurerm_client_config.current.object_id
     }
+    search_index_data_reader = {
+      role_definition_id_or_name = "Search Index Data Reader"
+      principal_id               = data.azurerm_client_config.current.object_id
+    }
   }
 
   diagnostic_settings = {

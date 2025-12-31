@@ -6,9 +6,12 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "agent-framework>=1.0.0b251223",
+    "aioodbc>=0.5.0",
     "azure-identity>=1.15.0",
+    "azure-search-documents>=11.5.0",
     "fastapi>=0.115.0",
     "fastapi-azure-auth>=5.0.0",
+    "openai>=1.0.0",
     "uvicorn[standard]>=0.30.0",
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",

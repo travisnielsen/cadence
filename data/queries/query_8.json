@@ -1,0 +1,6 @@
+{
+    "datasource": "wideworldimporters",
+    "question": "What is the average order value by customer category?",
+    "query": "SELECT cc.CustomerCategoryName, COUNT(DISTINCT o.OrderID) AS TotalOrders, AVG(OrderTotal.Total) AS AvgOrderValue FROM Sales.CustomerCategories cc JOIN Sales.Customers c ON cc.CustomerCategoryID = c.CustomerCategoryID JOIN Sales.Orders o ON c.CustomerID = o.CustomerID JOIN (SELECT ol.OrderID, SUM(ol.Quantity * ol.UnitPrice) AS Total FROM Sales.OrderLines ol GROUP BY ol.OrderID) OrderTotal ON o.OrderID = OrderTotal.OrderID GROUP BY cc.CustomerCategoryID, cc.CustomerCategoryName ORDER BY AvgOrderValue DESC",
+    "reasoning": "This query calculates average order value by customer category. It uses a subquery to get order totals from OrderLines, then aggregates by customer category to find average order value per category."
+}

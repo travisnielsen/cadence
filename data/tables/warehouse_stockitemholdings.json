@@ -1,0 +1,43 @@
+{
+    "table": "Warehouse.StockItemHoldings",
+    "datasource": "wideworldimporters",
+    "description": "Contains current inventory levels and stock holding information for each item.",
+    "columns": [
+        {
+            "name": "StockItemID",
+            "description": "Primary key and foreign key to Warehouse.StockItems."
+        },
+        {
+            "name": "QuantityOnHand",
+            "description": "Current quantity available in warehouse."
+        },
+        {
+            "name": "BinLocation",
+            "description": "Warehouse bin location for the item."
+        },
+        {
+            "name": "LastStocktakeQuantity",
+            "description": "Quantity recorded at last stocktake."
+        },
+        {
+            "name": "LastCostPrice",
+            "description": "Cost price from most recent purchase."
+        },
+        {
+            "name": "ReorderLevel",
+            "description": "Quantity threshold that triggers reorder."
+        },
+        {
+            "name": "TargetStockLevel",
+            "description": "Desired stock level to maintain."
+        },
+        {
+            "name": "LastEditedBy",
+            "description": "Foreign key to Application.People for last editor."
+        },
+        {
+            "name": "LastEditedWhen",
+            "description": "Timestamp of last edit."
+        }
+    ]
+}

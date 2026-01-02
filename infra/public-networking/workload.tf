@@ -224,6 +224,9 @@ module "ai_search" {
   authentication_failure_mode   = "http401WithBearerChallenge"
   tags                          = local.tags
 
+  # Allow deployer IP through firewall
+  allowed_ips = [local.deployer_ip]
+
   # Enable managed identity for RBAC access to storage and AI services
   managed_identities = {
     system_assigned = true
@@ -295,63 +298,117 @@ module "ai_foundry" {
     }
   }
 
-  # AI Model Deployments (OpenAI)
-  ai_model_deployments = {
-    chat52 = {
-      name = "gpt-5-chat"
-      model = {
-        format  = "OpenAI"
-        name    = "gpt-5-chat"
-        version = "2025-10-03"
-      }
-      scale = {
-        type     = "GlobalStandard"
-        capacity = 150
-      }
-    }
-    chat52 = {
-      name = "gpt-5.2-chat"
-      model = {
-        format  = "OpenAI"
-        name    = "gpt-5.2-chat"
-        version = "2025-12-11"
-      }
-      scale = {
-        type     = "GlobalStandard"
-        capacity = 150
-      }
-    }
-    embedding-small = {
-      name = "embedding-small"
-      model = {
-        format  = "OpenAI"
-        name    = "text-embedding-3-small"
-        version = "1"
-      }
-      scale = {
-        type     = "GlobalStandard"
-        capacity = 150
-      }
-    }
-    embedding-large = {
-      name = "embedding-large"
-      model = {
-        format  = "OpenAI"
-        name    = "text-embedding-3-large"
-        version = "1"
-      }
-      scale = {
-        type     = "GlobalStandard"
-        capacity = 120
-      }
-    }
-  }
+  # Model deployments are created separately below to avoid concurrency issues
+  # with Azure AI Services API (see azapi_resource.ai_model_deployment_* resources)
 
   depends_on = [
     module.ai_keyvault,
     module.ai_storage,
     module.ai_cosmosdb
   ]
+}
+
+
+#################################################################################
+# AI Model Deployments
+# Created as separate resources with explicit depends_on to avoid concurrency
+# issues with Azure AI Services API. This allows running terraform apply
+# without the -parallelism=1 flag.
+#################################################################################
+
+resource "azapi_resource" "ai_model_deployment_gpt5" {
+  name      = "gpt-5-chat"
+  parent_id = module.ai_foundry.ai_foundry_id
+  type      = "Microsoft.CognitiveServices/accounts/deployments@2025-10-01-preview"
+  body = {
+    properties = {
+      model = {
+        format  = "OpenAI"
+        name    = "gpt-5-chat"
+        version = "2025-10-03"
+      }
+      versionUpgradeOption = "OnceNewDefaultVersionAvailable"
+    }
+    sku = {
+      name     = "GlobalStandard"
+      capacity = 150
+    }
+  }
+  schema_validation_enabled = false
+
+  depends_on = [module.ai_foundry]
+}
+
+resource "azapi_resource" "ai_model_deployment_gpt52" {
+  name      = "gpt-5.2-chat"
+  parent_id = module.ai_foundry.ai_foundry_id
+  type      = "Microsoft.CognitiveServices/accounts/deployments@2025-10-01-preview"
+  body = {
+    properties = {
+      model = {
+        format  = "OpenAI"
+        name    = "gpt-5.2-chat"
+        version = "2025-12-11"
+      }
+      versionUpgradeOption = "OnceNewDefaultVersionAvailable"
+    }
+    sku = {
+      name     = "GlobalStandard"
+      capacity = 150
+    }
+  }
+  schema_validation_enabled = false
+
+  # Sequential deployment to avoid Azure API concurrency issues
+  depends_on = [azapi_resource.ai_model_deployment_gpt5]
+}
+
+resource "azapi_resource" "ai_model_deployment_embedding_small" {
+  name      = "embedding-small"
+  parent_id = module.ai_foundry.ai_foundry_id
+  type      = "Microsoft.CognitiveServices/accounts/deployments@2025-10-01-preview"
+  body = {
+    properties = {
+      model = {
+        format  = "OpenAI"
+        name    = "text-embedding-3-small"
+        version = "1"
+      }
+      versionUpgradeOption = "OnceNewDefaultVersionAvailable"
+    }
+    sku = {
+      name     = "GlobalStandard"
+      capacity = 150
+    }
+  }
+  schema_validation_enabled = false
+
+  # Sequential deployment to avoid Azure API concurrency issues
+  depends_on = [azapi_resource.ai_model_deployment_gpt52]
+}
+
+resource "azapi_resource" "ai_model_deployment_embedding_large" {
+  name      = "embedding-large"
+  parent_id = module.ai_foundry.ai_foundry_id
+  type      = "Microsoft.CognitiveServices/accounts/deployments@2025-10-01-preview"
+  body = {
+    properties = {
+      model = {
+        format  = "OpenAI"
+        name    = "text-embedding-3-large"
+        version = "1"
+      }
+      versionUpgradeOption = "OnceNewDefaultVersionAvailable"
+    }
+    sku = {
+      name     = "GlobalStandard"
+      capacity = 120
+    }
+  }
+  schema_validation_enabled = false
+
+  # Sequential deployment to avoid Azure API concurrency issues
+  depends_on = [azapi_resource.ai_model_deployment_embedding_small]
 }
 
 
@@ -384,7 +441,9 @@ module "ai_foundry" {
 
 
 #################################################################################
-# Azure SQL Database with AdventureWorksLT Sample Data
+# Azure SQL Database with Wide World Importers Sample Data
+# The database is created empty, then WideWorldImporters BACPAC is imported
+# via a post-deployment script (see null_resource.import_wideworldimporters)
 #################################################################################
 
 module "sql_server" {
@@ -403,11 +462,11 @@ module "sql_server" {
     tenant_id                   = data.azurerm_client_config.current.tenant_id
   }
 
+  # Create empty database - WideWorldImporters will be imported separately
   databases = {
-    adventureworks = {
-      name        = "AdventureWorksLT"
-      sample_name = "AdventureWorksLT"
-      sku_name    = "S0"
+    wideworldimporters = {
+      name     = "WideWorldImportersStd"
+      sku_name = "S0"
     }
   }
 
@@ -419,10 +478,41 @@ module "sql_server" {
       start_ip_address = "0.0.0.0"
       end_ip_address   = "0.0.0.0"
     }
+    allow_deployer = {
+      start_ip_address = local.deployer_ip
+      end_ip_address   = local.deployer_ip
+    }
   }
 
   # Note: SQL Server doesn't support diagnostic settings at the server level.
   # Use SQL Auditing or database-level diagnostic settings instead.
+}
+
+
+#################################################################################
+# Import Wide World Importers BACPAC
+# Downloads and imports the WideWorldImporters-Standard sample database from
+# Microsoft's official release. This runs after the empty database is created.
+# 
+# IMPORTANT: This requires sqlpackage to be installed locally.
+# Install via: dotnet tool install -g microsoft.sqlpackage
+# Or download from: https://aka.ms/sqlpackage-linux
+#
+# Note: Import can take 5-10 minutes depending on database size.
+#################################################################################
+
+resource "null_resource" "import_wideworldimporters" {
+  depends_on = [module.sql_server]
+
+  triggers = {
+    sql_server_name = module.sql_server.resource.name
+    database_name   = "WideWorldImportersStd"
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["pwsh", "-Command"]
+    command     = "& '${path.module}/../../scripts/import-wideworldimporters.ps1' -SqlServerName '${module.sql_server.resource.name}' -DatabaseName 'WideWorldImportersStd' -ResourceGroup '${azurerm_resource_group.shared_rg.name}' -Force"
+  }
 }
 
 

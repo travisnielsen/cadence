@@ -1,0 +1,6 @@
+{
+    "datasource": "wideworldimporters",
+    "question": "What are the most profitable products based on line profit?",
+    "query": "SELECT TOP 10 si.StockItemID, si.StockItemName, SUM(il.LineProfit) AS TotalProfit, SUM(il.Quantity) AS TotalQuantitySold, AVG(il.LineProfit / NULLIF(il.Quantity, 0)) AS AvgProfitPerUnit FROM Warehouse.StockItems si JOIN Sales.InvoiceLines il ON si.StockItemID = il.StockItemID GROUP BY si.StockItemID, si.StockItemName ORDER BY TotalProfit DESC",
+    "reasoning": "This query calculates total profit and average profit per unit by joining StockItems with InvoiceLines. The LineProfit column in InvoiceLines provides actual profit data. Orders by total profit descending."
+}

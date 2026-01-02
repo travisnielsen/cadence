@@ -18,12 +18,12 @@ logger = logging.getLogger(__name__)
 
 # SQL Server connection settings
 SQL_SERVER = os.getenv("AZURE_SQL_SERVER", "")  # e.g., "myserver.database.windows.net"
-SQL_DATABASE = os.getenv("AZURE_SQL_DATABASE", "AdventureWorksLT")
+SQL_DATABASE = os.getenv("AZURE_SQL_DATABASE", "WideWorldImportersStd")
 
 
 @ai_function(
     name="execute_sql",
-    description="Execute a read-only SQL SELECT query against the AdventureWorksLT database. Returns the query results as a list of rows. Only SELECT queries are allowed for safety.",
+    description="Execute a read-only SQL SELECT query against the Wide World Importers database. Returns the query results as a list of rows. Only SELECT queries are allowed for safety.",
 )
 async def execute_sql(
     query: Annotated[str, "The SQL SELECT query to execute. Must be a read-only query. Example: SELECT TOP 10 * FROM SalesLT.Customer"],

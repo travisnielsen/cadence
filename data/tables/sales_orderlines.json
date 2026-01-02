@@ -1,0 +1,55 @@
+{
+    "table": "Sales.OrderLines",
+    "datasource": "wideworldimporters",
+    "description": "Contains individual line items for each sales order, including quantity, pricing, and product details.",
+    "columns": [
+        {
+            "name": "OrderLineID",
+            "description": "Primary key. Unique identifier for each order line."
+        },
+        {
+            "name": "OrderID",
+            "description": "Foreign key to Sales.Orders for the parent order."
+        },
+        {
+            "name": "StockItemID",
+            "description": "Foreign key to Warehouse.StockItems for the product ordered."
+        },
+        {
+            "name": "Description",
+            "description": "Description of the item as it appears on the order."
+        },
+        {
+            "name": "PackageTypeID",
+            "description": "Foreign key to Warehouse.PackageTypes for the packaging used."
+        },
+        {
+            "name": "Quantity",
+            "description": "Number of units ordered."
+        },
+        {
+            "name": "UnitPrice",
+            "description": "Price per unit excluding tax."
+        },
+        {
+            "name": "TaxRate",
+            "description": "Tax rate percentage applied to this line."
+        },
+        {
+            "name": "PickedQuantity",
+            "description": "Number of units picked from warehouse."
+        },
+        {
+            "name": "PickingCompletedWhen",
+            "description": "Timestamp when picking was completed for this line."
+        },
+        {
+            "name": "LastEditedBy",
+            "description": "Foreign key to Application.People for last editor."
+        },
+        {
+            "name": "LastEditedWhen",
+            "description": "Timestamp of last edit."
+        }
+    ]
+}

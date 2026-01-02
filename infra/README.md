@@ -12,7 +12,7 @@ This repo includes Infrastructure-as-Code (IaC) that deploys a baseline set of s
 | Cosmos DB | `ai_cosmosdb` | NoSQL database for storing AI agent threads and conversation history |
 | AI Search | `ai_search` | Vector search service for RAG patterns and semantic search capabilities |
 | Microsoft Foundry | `ai_foundry` | Azure AI Foundry hub and project with model deployments (GPT-5, embeddings) |
-| Azure SQL Database | `sql_server` | SQL database with AdventureWorksLT sample data for NL2SQL scenarios |
+| Azure SQL Database | `sql_server` | SQL database with Wide World Importers sample data for NL2SQL scenarios |
 
 The IaC is based on Terraform and uses [Azure Verified Modules](https://azure.github.io/Azure-Verified-Modules/).
 
@@ -54,8 +54,5 @@ terraform init
 terraform plan
 
 # Deploy resources
-terraform apply -parallelism=1
+terraform apply
 ```
-
-> [!IMPORTANT]
-> Currently, the `-parallelism=1` option is necessary due to API concurrency issues with model deployment coponent in the Azure Verified Module for Foundry. This unfortunately increases the time to deploy resources to Azure. We are looking into alternative approaches for working around this issue.

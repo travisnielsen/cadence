@@ -121,19 +121,19 @@ const ThreadSuggestions: FC = () => {
     <div className="aui-thread-welcome-suggestions grid w-full gap-2 pb-4 @md:grid-cols-2">
       {[
         {
-          title: "Top 5 expensive products",
-          label: "currently available for sale",
-          action: "What are the top 5 most expensive products currently available for sale?",
+          title: "Top 10 best-selling products",
+          label: "by total quantity sold",
+          action: "What are the top 10 best-selling products by total quantity sold?",
         },
         {
-          title: "Explain React hooks",
-          label: "like useState and useEffect",
-          action: "Explain React hooks like useState and useEffect",
+          title: "Top customers",
+          label: "by total spending",
+          action: "Which customers have spent the most money in total?",
         },
         {
-          title: "Write a SQL query",
-          label: "to find top customers",
-          action: "Write a SQL query to find top customers",
+          title: "Products low on stock",
+          label: "need to be reordered",
+          action: "What products are running low on stock and need to be reordered?",
         },
         {
           title: "Create a meal plan",

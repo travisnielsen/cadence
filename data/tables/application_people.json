@@ -1,0 +1,83 @@
+{
+    "table": "Application.People",
+    "datasource": "wideworldimporters",
+    "description": "Contains information about all people in the system including employees, customer contacts, and supplier contacts.",
+    "columns": [
+        {
+            "name": "PersonID",
+            "description": "Primary key. Unique identifier for each person."
+        },
+        {
+            "name": "FullName",
+            "description": "Full name of the person."
+        },
+        {
+            "name": "PreferredName",
+            "description": "Name the person prefers to be called."
+        },
+        {
+            "name": "SearchName",
+            "description": "Computed column for searching."
+        },
+        {
+            "name": "IsPermittedToLogon",
+            "description": "Indicates if person can log into the system."
+        },
+        {
+            "name": "LogonName",
+            "description": "Username for system login."
+        },
+        {
+            "name": "IsExternalLogonProvider",
+            "description": "Indicates if authentication is via external provider."
+        },
+        {
+            "name": "HashedPassword",
+            "description": "Hashed password for authentication."
+        },
+        {
+            "name": "IsSystemUser",
+            "description": "Indicates if this is a system account rather than a real person."
+        },
+        {
+            "name": "IsEmployee",
+            "description": "Indicates if the person is an employee of Wide World Importers."
+        },
+        {
+            "name": "IsSalesperson",
+            "description": "Indicates if the person is a salesperson."
+        },
+        {
+            "name": "UserPreferences",
+            "description": "JSON field containing user preferences."
+        },
+        {
+            "name": "PhoneNumber",
+            "description": "Phone number for the person."
+        },
+        {
+            "name": "FaxNumber",
+            "description": "Fax number for the person."
+        },
+        {
+            "name": "EmailAddress",
+            "description": "Email address for the person."
+        },
+        {
+            "name": "Photo",
+            "description": "Photo of the person."
+        },
+        {
+            "name": "CustomFields",
+            "description": "JSON field for additional custom attributes."
+        },
+        {
+            "name": "OtherLanguages",
+            "description": "Other languages spoken by the person."
+        },
+        {
+            "name": "LastEditedBy",
+            "description": "Foreign key to Application.People for last editor."
+        }
+    ]
+}

@@ -1,0 +1,6 @@
+{
+    "datasource": "wideworldimporters",
+    "question": "How many orders were placed in the last 30 days and what is the total revenue?",
+    "query": "SELECT COUNT(DISTINCT o.OrderID) AS TotalOrders, SUM(il.ExtendedPrice) AS TotalRevenue FROM Sales.Orders o JOIN Sales.Invoices i ON o.OrderID = i.OrderID JOIN Sales.InvoiceLines il ON i.InvoiceID = il.InvoiceID WHERE o.OrderDate >= DATEADD(day, -30, GETDATE())",
+    "reasoning": "This query counts distinct orders and sums the extended price from invoice lines for orders placed in the last 30 days. It joins Orders, Invoices, and InvoiceLines to get accurate revenue figures."
+}

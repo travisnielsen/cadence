@@ -1,0 +1,31 @@
+{
+    "table": "Application.Cities",
+    "datasource": "wideworldimporters",
+    "description": "Contains city information including geographical data, used for customer and supplier addresses.",
+    "columns": [
+        {
+            "name": "CityID",
+            "description": "Primary key. Unique identifier for each city."
+        },
+        {
+            "name": "CityName",
+            "description": "Name of the city."
+        },
+        {
+            "name": "StateProvinceID",
+            "description": "Foreign key to Application.StateProvinces."
+        },
+        {
+            "name": "Location",
+            "description": "Geographic location (spatial data)."
+        },
+        {
+            "name": "LatestRecordedPopulation",
+            "description": "Most recently recorded population of the city."
+        },
+        {
+            "name": "LastEditedBy",
+            "description": "Foreign key to Application.People for last editor."
+        }
+    ]
+}

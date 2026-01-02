@@ -1,0 +1,6 @@
+{
+    "datasource": "wideworldimporters",
+    "question": "What is the breakdown of customers by category?",
+    "query": "SELECT cc.CustomerCategoryName, COUNT(c.CustomerID) AS CustomerCount FROM Sales.CustomerCategories cc LEFT JOIN Sales.Customers c ON cc.CustomerCategoryID = c.CustomerCategoryID GROUP BY cc.CustomerCategoryID, cc.CustomerCategoryName ORDER BY CustomerCount DESC",
+    "reasoning": "This query counts customers in each category by joining CustomerCategories with Customers. Uses LEFT JOIN to include categories with no customers and orders by count descending."
+}

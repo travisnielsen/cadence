@@ -1,0 +1,71 @@
+{
+    "table": "Sales.Orders",
+    "datasource": "wideworldimporters",
+    "description": "Contains sales order header information including customer, dates, and order status.",
+    "columns": [
+        {
+            "name": "OrderID",
+            "description": "Primary key. Unique identifier for each sales order."
+        },
+        {
+            "name": "CustomerID",
+            "description": "Foreign key to Sales.Customers identifying who placed the order."
+        },
+        {
+            "name": "SalespersonPersonID",
+            "description": "Foreign key to Application.People for the salesperson who handled the order."
+        },
+        {
+            "name": "PickedByPersonID",
+            "description": "Foreign key to Application.People for the warehouse staff who picked the order."
+        },
+        {
+            "name": "ContactPersonID",
+            "description": "Foreign key to Application.People for the customer contact for this order."
+        },
+        {
+            "name": "BackorderOrderID",
+            "description": "Reference to original order if this is a backorder."
+        },
+        {
+            "name": "OrderDate",
+            "description": "Date when the order was placed."
+        },
+        {
+            "name": "ExpectedDeliveryDate",
+            "description": "Expected date for order delivery."
+        },
+        {
+            "name": "CustomerPurchaseOrderNumber",
+            "description": "Customer's own purchase order reference number."
+        },
+        {
+            "name": "IsUndersupplyBackordered",
+            "description": "Indicates if undersupplied items should be backordered."
+        },
+        {
+            "name": "Comments",
+            "description": "Additional comments or notes about the order."
+        },
+        {
+            "name": "DeliveryInstructions",
+            "description": "Special instructions for delivery."
+        },
+        {
+            "name": "InternalComments",
+            "description": "Internal notes not visible to customer."
+        },
+        {
+            "name": "PickingCompletedWhen",
+            "description": "Timestamp when warehouse picking was completed."
+        },
+        {
+            "name": "LastEditedBy",
+            "description": "Foreign key to Application.People for last editor."
+        },
+        {
+            "name": "LastEditedWhen",
+            "description": "Timestamp of last edit."
+        }
+    ]
+}

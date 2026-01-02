@@ -154,6 +154,19 @@ resource "azurerm_storage_blob" "nl2sql_tables" {
   depends_on = [time_sleep.wait_for_storage_rbac]
 }
 
+# Upload query template files from /data/query_templates
+resource "azurerm_storage_blob" "nl2sql_query_templates" {
+  for_each               = fileset("${path.module}/../../data/query_templates", "*.json")
+  name                   = "query_templates/${each.value}"
+  storage_account_name   = module.ai_storage.name
+  storage_container_name = "nl2sql"
+  type                   = "Block"
+  source                 = "${path.module}/../../data/query_templates/${each.value}"
+  content_type           = "application/json"
+
+  depends_on = [time_sleep.wait_for_storage_rbac]
+}
+
 
 #################################################################################
 # Cosmos DB Account for Microsoft Foundry agent service thread storage
@@ -465,8 +478,9 @@ module "sql_server" {
   # Create empty database - WideWorldImporters will be imported separately
   databases = {
     wideworldimporters = {
-      name     = "WideWorldImportersStd"
-      sku_name = "S0"
+      name        = "WideWorldImportersStd"
+      sku_name    = "S0"
+      max_size_gb = 250
     }
   }
 
@@ -531,7 +545,8 @@ resource "null_resource" "search_config" {
     module.ai_storage,
     module.ai_foundry,
     azurerm_storage_blob.nl2sql_queries,
-    azurerm_storage_blob.nl2sql_tables
+    azurerm_storage_blob.nl2sql_tables,
+    azurerm_storage_blob.nl2sql_query_templates
   ]
 
   triggers = {
@@ -620,6 +635,23 @@ resource "null_resource" "search_config" {
         }'
       
       echo ""
+      echo "Creating data source: agentic-query-templates..."
+      curl -s -X PUT "$${SEARCH_URL}/datasources/agentic-query-templates?api-version=$${API_VERSION}" \
+        -H "Authorization: Bearer $${TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "name": "agentic-query-templates",
+          "type": "azureblob",
+          "credentials": {
+            "connectionString": "ResourceId='"$${STORAGE_RESOURCE_ID}"';"
+          },
+          "container": {
+            "name": "nl2sql",
+            "query": "query_templates"
+          }
+        }'
+      
+      echo ""
       echo "Creating index: queries..."
       curl -s -X PUT "$${SEARCH_URL}/indexes/queries?api-version=$${API_VERSION}" \
         -H "Authorization: Bearer $${TOKEN}" \
@@ -632,6 +664,13 @@ resource "null_resource" "search_config" {
         -H "Authorization: Bearer $${TOKEN}" \
         -H "Content-Type: application/json" \
         -d @${path.module}/../search-config/tables_index.json
+      
+      echo ""
+      echo "Creating index: query_templates..."
+      curl -s -X PUT "$${SEARCH_URL}/indexes/query_templates?api-version=$${API_VERSION}" \
+        -H "Authorization: Bearer $${TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d @${path.module}/../search-config/query_templates_index.json
       
       echo ""
       echo "Creating skillset: query-embed-skill..."
@@ -702,6 +741,40 @@ resource "null_resource" "search_config" {
         }'
       
       echo ""
+      echo "Creating skillset: query-template-embed-skill..."
+      curl -s -X PUT "$${SEARCH_URL}/skillsets/query-template-embed-skill?api-version=$${API_VERSION}" \
+        -H "Authorization: Bearer $${TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "name": "query-template-embed-skill",
+          "description": "OpenAI Embedding skill for query template questions",
+          "skills": [
+            {
+              "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
+              "name": "vector-embed-field-question",
+              "description": "vector embedding for the question field",
+              "context": "/document",
+              "resourceUri": "https://'"$${AI_SERVICES_NAME}"'.openai.azure.com",
+              "deploymentId": "embedding-large",
+              "dimensions": 3072,
+              "modelName": "text-embedding-3-large",
+              "inputs": [
+                {
+                  "name": "text",
+                  "source": "/document/question"
+                }
+              ],
+              "outputs": [
+                {
+                  "name": "embedding",
+                  "targetName": "content_embeddings"
+                }
+              ]
+            }
+          ]
+        }'
+      
+      echo ""
       echo "Creating indexer: indexer-queries..."
       curl -s -X PUT "$${SEARCH_URL}/indexers/indexer-queries?api-version=$${API_VERSION}" \
         -H "Authorization: Bearer $${TOKEN}" \
@@ -736,6 +809,31 @@ resource "null_resource" "search_config" {
           "dataSourceName": "agentic-tables",
           "skillsetName": "table-embed-skill",
           "targetIndexName": "tables",
+          "parameters": {
+            "configuration": {
+              "dataToExtract": "contentAndMetadata",
+              "parsingMode": "json"
+            }
+          },
+          "fieldMappings": [],
+          "outputFieldMappings": [
+            {
+              "sourceFieldName": "/document/content_embeddings",
+              "targetFieldName": "content_vector"
+            }
+          ]
+        }'
+      
+      echo ""
+      echo "Creating indexer: indexer-query-templates..."
+      curl -s -X PUT "$${SEARCH_URL}/indexers/indexer-query-templates?api-version=$${API_VERSION}" \
+        -H "Authorization: Bearer $${TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "name": "indexer-query-templates",
+          "dataSourceName": "agentic-query-templates",
+          "skillsetName": "query-template-embed-skill",
+          "targetIndexName": "query_templates",
           "parameters": {
             "configuration": {
               "dataToExtract": "contentAndMetadata",

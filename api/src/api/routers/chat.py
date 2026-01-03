@@ -11,6 +11,7 @@ The workflow processes user messages through:
 import asyncio
 import json
 import logging
+import time
 from typing import AsyncGenerator, TYPE_CHECKING
 
 from fastapi import APIRouter, Query, Request, HTTPException, Depends
@@ -22,6 +23,8 @@ from agent_framework import (
     WorkflowOutputEvent,
     WorkflowStatusEvent,
     WorkflowRunState,
+    ExecutorInvokedEvent,
+    ExecutorCompletedEvent,
 )
 
 if TYPE_CHECKING:
@@ -29,6 +32,7 @@ if TYPE_CHECKING:
 
 from src.api.models import ChatRequest
 from src.api.dependencies import get_optional_user_id
+from src.api.step_events import set_step_queue, clear_step_queue
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +43,8 @@ async def generate_workflow_streaming_response(
     workflow: "Workflow",
     message: str,
     incoming_thread_id: str | None = None,
+    user_id: str | None = None,
+    title: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """
     Stream response from the workflow using workflow events.
@@ -48,10 +54,78 @@ async def generate_workflow_streaming_response(
     2. NL2SQLAgentExecutor processes the query
     3. ChatAgentExecutor renders the final response
 
-    The output is a JSON structure with 'text' and 'thread_id' from Foundry.
+    The output is a JSON structure with 'text', 'thread_id', and optional 'tool_call' from Foundry.
     """
+    # Friendly names for executor steps (parent steps that contain tool steps)
+    # Note: "chat" appears twice in the workflow (routing and rendering), 
+    # we only want to show the rendering phase which happens after nl2sql
+    executor_step_names = {
+        "nl2sql": "Analyzing data and generating query...",
+        "chat": "Preparing response...",
+    }
+
+    # Set up step event queue for tool-level progress
+    step_queue: asyncio.Queue = asyncio.Queue()
+    set_step_queue(step_queue)
+    logger.info("Step queue created and set in context")
+    
+    # Use an async queue for real-time step event streaming
+    # This allows us to emit step events as they happen, not just when workflow events occur
+    step_output_queue: asyncio.Queue = asyncio.Queue()
+    
+    async def step_monitor():
+        """Background task that monitors step_queue and forwards to output queue."""
+        while True:
+            try:
+                # Wait for a step event with a short timeout
+                event = await asyncio.wait_for(step_queue.get(), timeout=0.1)
+                await step_output_queue.put(event)
+                logger.info("Step monitor forwarded event: %s", event)
+            except asyncio.TimeoutError:
+                # Check if we should stop (sentinel value)
+                continue
+            except asyncio.CancelledError:
+                # Drain any remaining events before exiting
+                while not step_queue.empty():
+                    try:
+                        event = step_queue.get_nowait()
+                        await step_output_queue.put(event)
+                    except asyncio.QueueEmpty:
+                        break
+                break
+
+    async def drain_step_queue():
+        """Yield any pending step events from the output queue."""
+        events = []
+        while not step_output_queue.empty():
+            try:
+                event = step_output_queue.get_nowait()
+                events.append(event)
+                logger.info("Drained step event: %s", event)
+            except asyncio.QueueEmpty:
+                break
+        return events
+
+    def format_step_event(step_event: dict) -> dict:
+        """Format a step event for SSE transmission."""
+        result = {
+            "step": step_event.get("step"),
+            "done": False,
+        }
+        # Include status and duration if present
+        if "status" in step_event:
+            result["status"] = step_event["status"]
+        if "duration_ms" in step_event:
+            result["duration_ms"] = step_event["duration_ms"]
+        return result
+
+    # Initialize tasks for cleanup scope
+    step_monitor_task: asyncio.Task | None = None
+    next_event_task: asyncio.Task | None = None
+
     try:
         logger.info("Starting workflow stream for message: %s", message[:100])
+        logger.info("Workflow stream with user_id=%s, thread_id=%s, title=%s", user_id, incoming_thread_id, title)
 
         # Create a ChatMessage to send to the workflow
         user_message = ChatMessage(role=Role.USER, text=message)
@@ -59,34 +133,135 @@ async def generate_workflow_streaming_response(
         # Track if we've received output
         output_received = False
         foundry_thread_id = incoming_thread_id  # Fall back to incoming if not returned
+        
+        # Track executor start times for duration calculation
+        executor_start_times: dict[str, float] = {}
+        
+        # Track which executors have been seen (to distinguish routing vs rendering chat phases)
+        seen_nl2sql = False
+        
+        # Start the step monitor background task
+        step_monitor_task = asyncio.create_task(step_monitor())
+        
+        # Get the async iterator for the workflow
+        workflow_iter = workflow.run_stream(user_message).__aiter__()
+        workflow_done = False
+        
+        # Create a task for the next workflow event
+        next_event_task = asyncio.ensure_future(workflow_iter.__anext__())
+        
+        while not workflow_done:
+            # Wait for either: next workflow event OR step event from queue
+            step_wait_task = asyncio.create_task(step_output_queue.get())
+            
+            done, _ = await asyncio.wait(
+                [next_event_task, step_wait_task],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+            
+            # Handle step events first (if any completed)
+            if step_wait_task in done:
+                step_event = step_wait_task.result()
+                yield f"data: {json.dumps(format_step_event(step_event))}\n\n"
+                logger.info("Emitted real-time tool step: %s", step_event)
+            else:
+                # Cancel the pending step wait task
+                step_wait_task.cancel()
+                try:
+                    await step_wait_task
+                except asyncio.CancelledError:
+                    pass
+            
+            # Handle workflow event if it completed
+            if next_event_task in done:
+                try:
+                    event = next_event_task.result()
+                except StopAsyncIteration:
+                    workflow_done = True
+                    continue
+                
+                logger.info("Received workflow event: %s", type(event).__name__)
+                
+                # Drain any remaining step events before processing workflow event
+                for step_event_data in await drain_step_queue():
+                    yield f"data: {json.dumps(format_step_event(step_event_data))}\n\n"
+                    logger.info("Emitted accumulated tool step: %s", step_event_data)
 
-        async for event in workflow.run_stream(user_message):
-            if isinstance(event, WorkflowOutputEvent):
-                # This is the final rendered response from ChatAgentExecutor
-                # It's a JSON structure with 'text' and 'thread_id'
-                output_data = event.data
-                if isinstance(output_data, str):
-                    try:
-                        # Parse the structured output
-                        parsed = json.loads(output_data)
-                        output_text = parsed.get("text", output_data)
-                        foundry_thread_id = parsed.get("thread_id") or foundry_thread_id
-                    except json.JSONDecodeError:
-                        # Fallback if not JSON (backward compatibility)
-                        output_text = output_data
+                if isinstance(event, ExecutorInvokedEvent):
+                    # Track when nl2sql is seen (to distinguish chat routing vs rendering)
+                    if event.executor_id == "nl2sql":
+                        seen_nl2sql = True
+                    
+                    # Emit parent step event when executor starts
+                    # Skip first "chat" invocation (routing phase) - only show after nl2sql
+                    step_name = executor_step_names.get(event.executor_id)
+                    should_emit = step_name and (event.executor_id != "chat" or seen_nl2sql)
+                    if should_emit:
+                        executor_start_times[event.executor_id] = time.time()
+                        yield f"data: {json.dumps({'step': step_name, 'status': 'started', 'is_parent': True, 'done': False})}\n\n"
+                    logger.info("Executor invoked: %s (emit=%s)", event.executor_id, should_emit)
 
-                    # Stream the output in chunks for better UX
-                    chunk_size = 50
-                    for i in range(0, len(output_text), chunk_size):
-                        chunk = output_text[i:i + chunk_size]
-                        yield f"data: {json.dumps({'content': chunk, 'done': False})}\n\n"
-                        await asyncio.sleep(0.01)
-                    output_received = True
+                elif isinstance(event, ExecutorCompletedEvent):
+                    logger.info("Executor completed: %s", event.executor_id)
+                    
+                    # Drain any remaining tool step events after executor completes
+                    for step_event_data in await drain_step_queue():
+                        yield f"data: {json.dumps(format_step_event(step_event_data))}\n\n"
+                        logger.info("Emitted tool step (after executor): %s", step_event_data)
+                    
+                    # Emit parent step completion with duration (only if we emitted a start)
+                    step_name = executor_step_names.get(event.executor_id)
+                    if step_name and event.executor_id in executor_start_times:
+                        start_time = executor_start_times.pop(event.executor_id)
+                        duration_ms = int((time.time() - start_time) * 1000)
+                        yield f"data: {json.dumps({'step': step_name, 'status': 'completed', 'is_parent': True, 'duration_ms': duration_ms, 'done': False})}\n\n"
+                        logger.info("Executor %s completed in %dms", event.executor_id, duration_ms)
 
-            elif isinstance(event, WorkflowStatusEvent):
-                if event.state == WorkflowRunState.IDLE:
-                    logger.info("Workflow completed")
-                    break
+                elif isinstance(event, WorkflowOutputEvent):
+                    # This is the final rendered response from ChatAgentExecutor
+                    # It's a JSON structure with 'text', 'thread_id', and optional 'tool_call'
+                    output_data = event.data
+                    if isinstance(output_data, str):
+                        try:
+                            # Parse the structured output
+                            parsed = json.loads(output_data)
+                            output_text = parsed.get("text", "")
+                            foundry_thread_id = parsed.get("thread_id") or foundry_thread_id
+                            logger.info("Extracted Foundry thread_id: %s", foundry_thread_id)
+                            
+                            # Check for tool call data (NL2SQL response)
+                            tool_call = parsed.get("tool_call")
+                            if tool_call:
+                                # Emit tool call event for frontend tool UI rendering
+                                yield f"data: {json.dumps({'tool_call': tool_call, 'done': False})}\n\n"
+                                logger.info("Emitted tool_call: %s", tool_call.get("tool_name"))
+                                output_received = True
+                            elif output_text:
+                                # Stream the text content only if no tool call
+                                chunk_size = 50
+                                for i in range(0, len(output_text), chunk_size):
+                                    chunk = output_text[i:i + chunk_size]
+                                    yield f"data: {json.dumps({'content': chunk, 'done': False})}\n\n"
+                                    await asyncio.sleep(0.01)
+                                output_received = True
+                        except json.JSONDecodeError:
+                            # Fallback if not JSON (backward compatibility)
+                            output_text = output_data
+                            chunk_size = 50
+                            for i in range(0, len(output_text), chunk_size):
+                                chunk = output_text[i:i + chunk_size]
+                                yield f"data: {json.dumps({'content': chunk, 'done': False})}\n\n"
+                                await asyncio.sleep(0.01)
+                            output_received = True
+
+                elif isinstance(event, WorkflowStatusEvent):
+                    if event.state == WorkflowRunState.IDLE:
+                        logger.info("Workflow completed")
+                        workflow_done = True
+                        continue
+                
+                # Request next workflow event
+                next_event_task = asyncio.ensure_future(workflow_iter.__anext__())
 
         if not output_received:
             yield f"data: {json.dumps({'content': 'No response generated', 'done': False})}\n\n"
@@ -97,6 +272,30 @@ async def generate_workflow_streaming_response(
     except (ValueError, RuntimeError, OSError, TypeError) as e:
         logger.error("Workflow error: %s", e, exc_info=True)
         yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
+    finally:
+        # Cancel pending tasks
+        if next_event_task is not None and not next_event_task.done():
+            next_event_task.cancel()
+            try:
+                await next_event_task
+            except (asyncio.CancelledError, StopAsyncIteration):
+                pass
+        
+        # Cancel the step monitor and drain remaining events
+        if step_monitor_task is not None:
+            step_monitor_task.cancel()
+            try:
+                await step_monitor_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Emit any remaining step events
+        for step_event in await drain_step_queue():
+            yield f"data: {json.dumps(format_step_event(step_event))}\n\n"
+            logger.info("Emitted final step: %s", step_event)
+        
+        # Clean up step queue
+        clear_step_queue()
 
 
 async def generate_streaming_response(
@@ -131,10 +330,14 @@ async def generate_streaming_response(
             user_id, thread_id, title, thread_metadata
         )
 
+        # Emit initial step event
+        yield f"data: {json.dumps({'step': 'Analyzing your request...', 'done': False})}\n\n"
+
         # Stream the response - WorkflowAgent.run_stream yields AgentRunResponseUpdate
         # The executor's final output is a JSON object with 'text' and 'thread_id'
         update_count = 0
         foundry_thread_id = thread_id  # Default to incoming thread_id
+        
         async for update in agent.run_stream(message, thread=thread, metadata=thread_metadata):
             update_count += 1
             # AgentRunResponseUpdate has .text property that extracts text from contents
@@ -149,21 +352,28 @@ async def generate_streaming_response(
                         output_text = parsed.get("text", "")
                         foundry_thread_id = parsed.get("thread_id") or foundry_thread_id
                         logger.info("Extracted Foundry thread_id: %s", foundry_thread_id)
-                        # Stream the text content
-                        if output_text:
+                        
+                        # Check for tool call data (NL2SQL response)
+                        tool_call = parsed.get("tool_call")
+                        if tool_call:
+                            # Emit step event indicating query generation is complete
+                            yield f"data: {json.dumps({'step': 'Generating response...', 'done': False})}\n\n"
+                            # Emit tool call event for frontend tool UI rendering
+                            yield f"data: {json.dumps({'tool_call': tool_call, 'done': False})}\n\n"
+                            logger.info("Emitted tool_call: %s", tool_call.get("tool_name"))
+                            # Skip text streaming - tool UI will render instead
+                        elif output_text:
+                            # Stream the text content only if no tool call
                             chunk_size = 50
                             for i in range(0, len(output_text), chunk_size):
                                 chunk = output_text[i:i + chunk_size]
                                 yield f"data: {json.dumps({'content': chunk, 'done': False})}\n\n"
                                 await asyncio.sleep(0.01)
-                    else:
-                        # Not structured output, stream as-is
-                        yield f"data: {json.dumps({'content': text, 'done': False})}\n\n"
-                        await asyncio.sleep(0.01)
+                    # If it's JSON but not our expected format, skip it (don't stream raw JSON)
                 except json.JSONDecodeError:
-                    # Not JSON, stream as plain text
-                    yield f"data: {json.dumps({'content': text, 'done': False})}\n\n"
-                    await asyncio.sleep(0.01)
+                    # Not JSON - could be intermediate text, skip unless it looks like user-facing content
+                    # Only stream if it doesn't look like internal agent communication
+                    pass
 
         logger.info("Run complete after %d updates: foundry_thread_id=%s", update_count, foundry_thread_id)
 
@@ -197,17 +407,17 @@ async def chat_stream(
     - Include thread_id to continue existing conversation
     - Response includes thread_id for use in subsequent requests
     """
-    agent = getattr(request.app.state, "agent", None)
+    workflow = getattr(request.app.state, "workflow", None)
 
-    if agent is None:
+    if workflow is None:
         return StreamingResponse(
-            iter([f"data: {json.dumps({'error': 'Agent not initialized', 'done': True})}\n\n"]),
+            iter([f"data: {json.dumps({'error': 'Workflow not initialized', 'done': True})}\n\n"]),
             media_type="text/event-stream",
         )
 
-    # Use the WorkflowAgent which supports threads
+    # Use workflow streaming for executor-level progress events
     return StreamingResponse(
-        generate_streaming_response(agent, thread_id, message, user_id, title),
+        generate_workflow_streaming_response(workflow, message, thread_id, user_id, title),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )

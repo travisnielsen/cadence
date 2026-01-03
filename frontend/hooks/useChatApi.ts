@@ -17,7 +17,7 @@ import {
   type ExternalStoreThreadData,
 } from "@assistant-ui/react";
 import { useMsal, useIsAuthenticated } from "@azure/msal-react";
-import { streamChat, getThreadMessages } from "@/lib/chatApi";
+import { streamChat, getThreadMessages, type ToolCallData, type StepData } from "@/lib/chatApi";
 import { useAccessToken } from "@/lib/useAccessToken";
 import {
   loadCachedThreads,
@@ -31,6 +31,9 @@ interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  reasoning?: string; // Workflow step/reasoning info (deprecated)
+  steps?: StepData[]; // Accumulated workflow steps with timing
+  toolCall?: ToolCallData; // Tool call data for generative UI
 }
 
 export function useChatApi() {
@@ -115,11 +118,54 @@ export function useChatApi() {
 
   // Convert our Message to assistant-ui format
   const convertMessage = useCallback(
-    (m: Message): ThreadMessageLike => ({
-      id: m.id,
-      role: m.role,
-      content: [{ type: "text", text: m.content }],
-    }),
+    (m: Message): ThreadMessageLike => {
+      // Build content parts array using assistant-ui's expected types
+      const parts: Array<
+        | { type: "text"; text: string }
+        | { type: "reasoning"; text: string }
+        | { 
+            type: "tool-call"; 
+            toolCallId: string; 
+            toolName: string; 
+            args: Record<string, string | number | boolean | null>; 
+            result?: Record<string, unknown>;
+          }
+      > = [];
+      
+      // Add steps as reasoning parts (shows workflow step progress)
+      // Use steps array first (new), fallback to reasoning (deprecated)
+      if (m.steps && m.steps.length > 0) {
+        // Pass all steps as a single reasoning part with the full list
+        // The StepIndicator will parse and display them
+        const stepsJson = JSON.stringify(m.steps);
+        parts.push({ type: "reasoning", text: stepsJson });
+      } else if (m.reasoning) {
+        parts.push({ type: "reasoning", text: m.reasoning });
+      }
+      
+      // Add tool call part if present (for generative UI)
+      if (m.toolCall) {
+        parts.push({
+          type: "tool-call",
+          toolCallId: m.toolCall.tool_call_id,
+          toolName: m.toolCall.tool_name,
+          args: m.toolCall.args as Record<string, string | number | boolean | null>,
+          result: m.toolCall.result,
+        });
+      }
+      
+      // Add the main text content (if no tool call, or as fallback)
+      // When we have a tool call, we can skip the text since the tool UI renders it
+      if (!m.toolCall && m.content) {
+        parts.push({ type: "text", text: m.content });
+      }
+      
+      return {
+        id: m.id,
+        role: m.role,
+        content: parts.length > 0 ? parts : [{ type: "text", text: m.content }],
+      };
+    },
     []
   );
 
@@ -187,6 +233,19 @@ export function useChatApi() {
           setThreadId(newThreadId);
           setIsRunning(false);
           
+          // Clear only legacy reasoning, keep steps for display
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last.role === "assistant" && last.reasoning) {
+              updated[updated.length - 1] = {
+                ...last,
+                reasoning: undefined,
+              };
+            }
+            return updated;
+          });
+          
           // If this was a new thread, add it to the cache and list
           if (isNewThread && userId) {
             const title = chatTitle || "New Chat";
@@ -220,6 +279,77 @@ export function useChatApi() {
                 ...last,
                 content: `Error: ${error}`,
               };
+            }
+            return updated;
+          });
+        },
+        // onReasoning - update reasoning/step info on assistant message
+        (reasoning) => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last.role === "assistant") {
+              updated[updated.length - 1] = {
+                ...last,
+                reasoning,
+              };
+            }
+            return updated;
+          });
+        },
+        // onToolCall - store tool call data for generative UI
+        (toolCall) => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last.role === "assistant") {
+              updated[updated.length - 1] = {
+                ...last,
+                toolCall,
+                // Clear content since tool UI will render instead
+                content: "",
+              };
+            }
+            return updated;
+          });
+        },
+        // onStep - accumulate steps in assistant message with timing
+        (stepData) => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last.role === "assistant") {
+              const existingSteps = last.steps || [];
+              
+              // Check if this is a completion event for an existing step
+              if (stepData.status === "completed") {
+                // Find and update the matching started step with duration
+                const stepIndex = existingSteps.findIndex(
+                  s => s.step === stepData.step && s.status === "started"
+                );
+                if (stepIndex !== -1) {
+                  const updatedSteps = [...existingSteps];
+                  updatedSteps[stepIndex] = {
+                    ...updatedSteps[stepIndex],
+                    status: "completed",
+                    duration_ms: stepData.duration_ms,
+                    is_parent: stepData.is_parent,
+                  };
+                  updated[updated.length - 1] = {
+                    ...last,
+                    steps: updatedSteps,
+                  };
+                }
+              } else {
+                // New step starting - add if not already present
+                const alreadyExists = existingSteps.some(s => s.step === stepData.step);
+                if (!alreadyExists) {
+                  updated[updated.length - 1] = {
+                    ...last,
+                    steps: [...existingSteps, { ...stepData }],
+                  };
+                }
+              }
             }
             return updated;
           });
@@ -290,6 +420,19 @@ export function useChatApi() {
         (newThreadId) => {
           setThreadId(newThreadId);
           setIsRunning(false);
+          
+          // Clear only legacy reasoning, keep steps for display
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last.role === "assistant" && last.reasoning) {
+              updated[updated.length - 1] = {
+                ...last,
+                reasoning: undefined,
+              };
+            }
+            return updated;
+          });
         },
         // onError
         (error) => {
@@ -302,6 +445,74 @@ export function useChatApi() {
                 ...last,
                 content: `Error: ${error}`,
               };
+            }
+            return updated;
+          });
+        },
+        // onReasoning - update reasoning/step info on assistant message
+        (reasoning) => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last.role === "assistant") {
+              updated[updated.length - 1] = {
+                ...last,
+                reasoning,
+              };
+            }
+            return updated;
+          });
+        },
+        // onToolCall - store tool call data for generative UI
+        (toolCall) => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last.role === "assistant") {
+              updated[updated.length - 1] = {
+                ...last,
+                toolCall,
+                // Clear content since tool UI will render instead
+                content: "",
+              };
+            }
+            return updated;
+          });
+        },
+        // onStep - accumulate steps in assistant message with timing
+        (stepData) => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last.role === "assistant") {
+              const existingSteps = last.steps || [];
+              
+              if (stepData.status === "completed") {
+                const stepIndex = existingSteps.findIndex(
+                  s => s.step === stepData.step && s.status === "started"
+                );
+                if (stepIndex !== -1) {
+                  const updatedSteps = [...existingSteps];
+                  updatedSteps[stepIndex] = {
+                    ...updatedSteps[stepIndex],
+                    status: "completed",
+                    duration_ms: stepData.duration_ms,
+                    is_parent: stepData.is_parent,
+                  };
+                  updated[updated.length - 1] = {
+                    ...last,
+                    steps: updatedSteps,
+                  };
+                }
+              } else {
+                const alreadyExists = existingSteps.some(s => s.step === stepData.step);
+                if (!alreadyExists) {
+                  updated[updated.length - 1] = {
+                    ...last,
+                    steps: [...existingSteps, { ...stepData }],
+                  };
+                }
+              }
             }
             return updated;
           });

@@ -7,9 +7,35 @@
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+/**
+ * Tool call data from the backend (e.g., NL2SQL results)
+ */
+export interface ToolCallData {
+  tool_name: string;
+  tool_call_id: string;
+  args: Record<string, unknown>;
+  result: Record<string, unknown>;
+}
+
+/**
+ * Step event data with optional timing
+ */
+export interface StepData {
+  step: string;
+  status?: "started" | "completed";
+  duration_ms?: number;
+  is_parent?: boolean; // True for executor-level steps that contain child tool steps
+}
+
 export interface StreamChunk {
   thread_id?: string; // Foundry thread ID (returned with done: true)
   content?: string;
+  reasoning?: string; // Workflow step/reasoning info (deprecated)
+  step?: string; // Step name
+  status?: "started" | "completed"; // Step status
+  duration_ms?: number; // Step duration in ms (for completed steps)
+  is_parent?: boolean; // True for parent/executor steps
+  tool_call?: ToolCallData; // Tool call data for generative UI
   done?: boolean;
   error?: string;
 }
@@ -22,6 +48,9 @@ export interface StreamChunk {
  * @param onChunk - Called with each content chunk
  * @param onComplete - Called with Foundry thread_id when stream completes
  * @param onError - Called on error
+ * @param onReasoning - Called with reasoning/step info for UI display (deprecated, use onStep)
+ * @param onToolCall - Called with tool call data for generative UI
+ * @param onStep - Called with step data including timing information
  * @param accessToken - Optional access token for authentication
  * @param title - Optional title for new threads (truncated first message)
  */
@@ -31,6 +60,9 @@ export function streamChat(
   onChunk: (content: string) => void,
   onComplete: (threadId: string) => void,
   onError: (error: string) => void,
+  onReasoning?: (reasoning: string) => void,
+  onToolCall?: (toolCall: ToolCallData) => void,
+  onStep?: (stepData: StepData) => void,
   accessToken?: string | null,
   title?: string | null
 ): AbortController {
@@ -86,6 +118,20 @@ export function streamChat(
               if (chunk.error) {
                 onError(chunk.error);
                 return;
+              }
+              if (chunk.reasoning && onReasoning) {
+                onReasoning(chunk.reasoning);
+              }
+              if (chunk.step && onStep) {
+                onStep({
+                  step: chunk.step,
+                  status: chunk.status,
+                  duration_ms: chunk.duration_ms,
+                  is_parent: chunk.is_parent,
+                });
+              }
+              if (chunk.tool_call && onToolCall) {
+                onToolCall(chunk.tool_call);
               }
               if (chunk.content) {
                 onChunk(chunk.content);

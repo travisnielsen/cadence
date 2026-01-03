@@ -29,6 +29,12 @@ try:
 except ImportError:
     from src.entities.models import NL2SQLResponse
 
+# Import step events for progress reporting
+try:
+    from step_events import emit_step_start, emit_step_end  # type: ignore[import-not-found]
+except ImportError:
+    from src.api.step_events import emit_step_start, emit_step_end
+
 logger = logging.getLogger(__name__)
 
 # Shared state keys for thread management
@@ -166,6 +172,9 @@ class ChatAgentExecutor(Executor):
         """
         logger.info("ChatAgentExecutor rendering NL2SQL response")
 
+        # Emit step event for generating insights
+        emit_step_start("Generating insights...")
+
         # Deserialize the JSON string back to NL2SQLResponse model
         response = NL2SQLResponse.model_validate_json(response_json)
 
@@ -177,6 +186,9 @@ class ChatAgentExecutor(Executor):
 
         # Use the chat agent to generate a user-friendly response with the thread
         agent_response = await self.agent.run(render_prompt, thread=thread)
+        
+        # Mark insights generation complete
+        emit_step_end("Generating insights...")
 
         # Store the thread ID after the run (Foundry assigns it on first run)
         await self._store_thread_id(ctx, thread)
@@ -189,11 +201,43 @@ class ChatAgentExecutor(Executor):
             except KeyError:
                 pass
 
-        # Yield structured output with both text and thread ID
-        final_text = agent_response.text or self._fallback_render(response)
+        # Extract just the insights/commentary from the agent response (skip tables/SQL sections)
+        # Look for content after "Insights" heading or similar
+        observations = ""
+        if agent_response.text:
+            text = agent_response.text
+            # Try to extract insights section
+            for marker in ["### 🧠 **Insights**", "### Insights", "**Insights**", "Insights:"]:
+                if marker in text:
+                    # Get content after the marker
+                    idx = text.find(marker)
+                    insights_text = text[idx + len(marker):].strip()
+                    # Stop at next section marker or end
+                    for end_marker in ["---", "###", "<details>"]:
+                        if end_marker in insights_text:
+                            insights_text = insights_text[:insights_text.find(end_marker)].strip()
+                    observations = insights_text
+                    break
+
+        # Yield structured output with text, thread ID, and raw NL2SQL data for tool UI
         output = {
-            "text": final_text,
+            "text": self._fallback_render(response),  # Fallback text for non-tool-ui clients
             "thread_id": foundry_thread_id,
+            "tool_call": {
+                "tool_name": "nl2sql_query",
+                "tool_call_id": f"nl2sql_{id(response)}",
+                "args": {},  # Original question is not available here
+                "result": {
+                    "sql_query": response.sql_query,
+                    "sql_response": response.sql_response,
+                    "columns": response.columns,
+                    "row_count": response.row_count,
+                    "confidence_score": response.confidence_score,
+                    "used_cached_query": response.used_cached_query,
+                    "error": response.error,
+                    "observations": observations if observations else None,
+                }
+            }
         }
         await ctx.yield_output(json.dumps(output))
 

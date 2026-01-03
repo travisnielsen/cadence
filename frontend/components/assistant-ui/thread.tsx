@@ -27,7 +27,7 @@ import * as m from "motion/react-m";
 
 import { Button } from "@/components/ui/button";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
-import { Reasoning, ReasoningGroup } from "@/components/assistant-ui/reasoning";
+import { StepIndicator } from "@/components/assistant-ui/step-indicator";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import {
@@ -250,11 +250,10 @@ const AssistantMessage: FC = () => {
         data-role="assistant"
       >
         <div className="aui-assistant-message-content mx-2 leading-7 break-words text-foreground">
+          <StepIndicator />
           <MessagePrimitive.Parts
             components={{
               Text: MarkdownText,
-              Reasoning: Reasoning,
-              ReasoningGroup: ReasoningGroup,
               tools: { Fallback: ToolFallback },
             }}
           />

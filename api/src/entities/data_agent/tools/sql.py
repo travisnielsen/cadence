@@ -52,9 +52,24 @@ async def execute_sql(query: str) -> dict[str, Any]:
     """
     logger.info("Executing SQL query: %s", query[:200])
 
+    # Emit step start event for UI progress
+    step_name = "Executing SQL query..."
+    emit_step_end_fn = None
+    try:
+        from src.api.step_events import emit_step_start, emit_step_end
+        emit_step_start(step_name)
+        emit_step_end_fn = emit_step_end
+    except ImportError:
+        pass  # Step events not available (e.g., running outside API context)
+
+    def finish_step():
+        if emit_step_end_fn:
+            emit_step_end_fn(step_name)
+
     # Validate query is read-only
     query_upper = query.strip().upper()
     if not query_upper.startswith("SELECT"):
+        finish_step()
         return {
             "success": False,
             "error": "Only SELECT queries are allowed. Query must start with SELECT.",
@@ -67,6 +82,7 @@ async def execute_sql(query: str) -> dict[str, Any]:
     dangerous_keywords = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "TRUNCATE", "EXEC", "EXECUTE"]
     for keyword in dangerous_keywords:
         if keyword in query_upper:
+            finish_step()
             return {
                 "success": False,
                 "error": f"Query contains forbidden keyword: {keyword}. Only read-only SELECT queries are allowed.",
@@ -81,6 +97,7 @@ async def execute_sql(query: str) -> dict[str, Any]:
         database = os.getenv("AZURE_SQL_DATABASE", "WideWorldImporters")
 
         if not server:
+            finish_step()
             return {
                 "success": False,
                 "error": "AZURE_SQL_SERVER environment variable is required",
@@ -132,6 +149,7 @@ async def execute_sql(query: str) -> dict[str, Any]:
 
                 logger.info("Query executed successfully. Returned %d rows.", len(rows))
 
+                finish_step()
                 return {
                     "success": True,
                     "columns": columns,
@@ -142,6 +160,7 @@ async def execute_sql(query: str) -> dict[str, Any]:
 
     except Exception as e:
         logger.error("SQL execution error: %s", e)
+        finish_step()
         return {
             "success": False,
             "error": str(e),

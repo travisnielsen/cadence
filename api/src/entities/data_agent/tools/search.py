@@ -142,6 +142,20 @@ async def search_cached_queries(user_question: str) -> dict[str, Any]:
     """
     logger.info("Searching cached queries for: %s", user_question[:100])
 
+    # Emit step start event for UI progress
+    step_name = "Searching cached queries..."
+    emit_step_end_fn = None
+    try:
+        from src.api.step_events import emit_step_start, emit_step_end
+        emit_step_start(step_name)
+        emit_step_end_fn = emit_step_end
+    except ImportError:
+        pass  # Step events not available
+
+    def finish_step():
+        if emit_step_end_fn:
+            emit_step_end_fn(step_name)
+
     try:
         async with AzureSearchClient(
             index_name="queries",
@@ -154,6 +168,7 @@ async def search_cached_queries(user_question: str) -> dict[str, Any]:
             )
 
         if not results:
+            finish_step()
             return {
                 "has_high_confidence_match": False,
                 "best_match": None,
@@ -171,6 +186,7 @@ async def search_cached_queries(user_question: str) -> dict[str, Any]:
             CONFIDENCE_THRESHOLD
         )
 
+        finish_step()
         return {
             "has_high_confidence_match": has_high_confidence,
             "best_match": best_match if has_high_confidence else None,
@@ -180,6 +196,7 @@ async def search_cached_queries(user_question: str) -> dict[str, Any]:
 
     except Exception as e:
         logger.error("Error searching cached queries: %s", e)
+        finish_step()
         return {
             "has_high_confidence_match": False,
             "best_match": None,

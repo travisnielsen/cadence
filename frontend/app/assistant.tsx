@@ -14,12 +14,16 @@ import { Thread } from "@/components/assistant-ui/thread";
 import { ThreadListSidebar } from "@/components/assistant-ui/threadlist-sidebar";
 import { useChatApi } from "@/hooks/useChatApi";
 import { AuthButton } from "@/components/ui/authButton";
+import { NL2SQLToolUI } from "@/components/assistant-ui/nl2sql-tool-ui";
 
 export const Assistant = () => {
   const { runtime, isLoadingMessages } = useChatApi();
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      {/* Register tool UIs for generative UI rendering */}
+      <NL2SQLToolUI />
+      
       <SidebarProvider>
         <ThreadListSidebar />
         <SidebarInset>

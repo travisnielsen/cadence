@@ -211,7 +211,14 @@ cd api
 az acr build --registry ay2q3pacr --image dataagent-api:latest --platform linux/amd64 .
 ```
 
-> **Note:** Using `az acr build` builds the image on Azure's infrastructure, avoiding architecture mismatches that can occur when building locally on ARM-based machines (e.g., Apple Silicon Macs).
+>[!NOTE]
+>Using `az acr build` builds the image on Azure's infrastructure, avoiding architecture mismatches that can occur when building locally on ARM-based machines (e.g., Apple Silicon Macs).
+
+After the image is updated and you are using the `latest` tag, you can update the Container App by running:
+
+```bash
+az containerapp update --name [container_app_name] --resource-group [resource_group_name] --image [container_registry_name].azurecr.io/dataagent-api:latest
+```
 
 ### Post-Deployment: SQL Database User Setup
 

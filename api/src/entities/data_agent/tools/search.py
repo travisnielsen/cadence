@@ -45,7 +45,12 @@ class AzureSearchClient:
         if not self.endpoint:
             raise ValueError("AZURE_SEARCH_ENDPOINT environment variable is required")
 
-        self._credential = DefaultAzureCredential()
+        # Use AZURE_CLIENT_ID for user-assigned managed identity in Container Apps
+        client_id = os.getenv("AZURE_CLIENT_ID")
+        if client_id:
+            self._credential = DefaultAzureCredential(managed_identity_client_id=client_id)
+        else:
+            self._credential = DefaultAzureCredential()
         self._search_client = SearchClient(
             endpoint=self.endpoint,
             index_name=self.index_name,

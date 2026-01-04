@@ -245,9 +245,6 @@ module "ai_search" {
   authentication_failure_mode   = "http401WithBearerChallenge"
   tags                          = local.tags
 
-  # Allow deployer IP through firewall
-  allowed_ips = [local.deployer_ip]
-
   # Enable managed identity for RBAC access to storage and AI services
   managed_identities = {
     system_assigned = true
@@ -494,15 +491,15 @@ module "sql_server" {
 
   public_network_access_enabled = true
   
-  # Allow Azure services to access the server
+  # Allow all IP addresses (for demo/development purposes)
   firewall_rules = {
     allow_azure_services = {
       start_ip_address = "0.0.0.0"
       end_ip_address   = "0.0.0.0"
     }
-    allow_deployer = {
-      start_ip_address = local.deployer_ip
-      end_ip_address   = local.deployer_ip
+    allow_all = {
+      start_ip_address = "0.0.0.0"
+      end_ip_address   = "255.255.255.255"
     }
   }
 
@@ -920,8 +917,22 @@ resource "azurerm_role_assignment" "api_acr_pull" {
   principal_id         = azurerm_user_assigned_identity.api_identity.principal_id
 }
 
-# Grant API identity access to AI Foundry
-resource "azurerm_role_assignment" "api_ai_foundry" {
+# Grant API identity access to AI Foundry account (for agent operations)
+resource "azurerm_role_assignment" "api_ai_foundry_developer_containerapp" {
+  scope                = module.ai_foundry.ai_foundry_id
+  role_definition_name = "Azure AI Developer"
+  principal_id         = azurerm_user_assigned_identity.api_identity.principal_id
+}
+
+# Grant API identity Cognitive Services User role (for AIServices/agents data actions)
+resource "azurerm_role_assignment" "api_cognitive_services_user" {
+  scope                = module.ai_foundry.ai_foundry_id
+  role_definition_name = "Cognitive Services User"
+  principal_id         = azurerm_user_assigned_identity.api_identity.principal_id
+}
+
+# Grant API identity access to AI Foundry project
+resource "azurerm_role_assignment" "api_ai_foundry_project" {
   scope                = module.ai_foundry.ai_foundry_project_id["dataagent"]
   role_definition_name = "Azure AI Developer"
   principal_id         = azurerm_user_assigned_identity.api_identity.principal_id
@@ -981,10 +992,18 @@ resource "azurerm_container_app" "api" {
       percentage      = 100
       latest_revision = true
     }
+
+    cors {
+      allowed_origins    = ["*"]
+      allowed_methods    = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+      allowed_headers    = ["*"]
+      exposed_headers    = ["*"]
+      max_age_in_seconds = 3600
+    }
   }
 
   template {
-    min_replicas = 0
+    min_replicas = 1
     max_replicas = 3
 
     container {
@@ -994,12 +1013,16 @@ resource "azurerm_container_app" "api" {
       memory = "2Gi"
 
       env {
+        name  = "AZURE_CLIENT_ID"
+        value = azurerm_user_assigned_identity.api_identity.client_id
+      }
+      env {
         name  = "AZURE_AD_TENANT_ID"
         value = data.azurerm_client_config.current.tenant_id
       }
       env {
         name  = "AZURE_AD_CLIENT_ID"
-        value = azurerm_user_assigned_identity.api_identity.client_id
+        value = var.frontend_app_client_id
       }
       env {
         name  = "AZURE_AI_PROJECT_ENDPOINT"
@@ -1036,7 +1059,7 @@ resource "azurerm_container_app" "api" {
       }
       env {
         name  = "AZURE_SQL_DATABASE"
-        value = "WideWorldImporters"
+        value = "WideWorldImportersStd"
       }
       env {
         name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
@@ -1055,7 +1078,7 @@ resource "azurerm_container_app" "api" {
 
   depends_on = [
     azurerm_role_assignment.api_acr_pull,
-    azurerm_role_assignment.api_ai_foundry,
+    azurerm_role_assignment.api_ai_foundry_developer_containerapp,
     azurerm_role_assignment.api_search,
     azurerm_role_assignment.api_storage
   ]

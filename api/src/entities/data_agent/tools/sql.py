@@ -21,8 +21,18 @@ def _get_azure_sql_token() -> bytes:
     Returns:
         Token bytes formatted for pyodbc
     """
-    credential = DefaultAzureCredential()
+    # Use AZURE_CLIENT_ID for user-assigned managed identity in Container Apps
+    # When running locally, DefaultAzureCredential will use CLI/VS Code credentials
+    client_id = os.getenv("AZURE_CLIENT_ID")
+    logger.info("Getting SQL token, AZURE_CLIENT_ID=%s", client_id)
+    
+    if client_id:
+        credential = DefaultAzureCredential(managed_identity_client_id=client_id)
+    else:
+        credential = DefaultAzureCredential()
+    
     token = credential.get_token("https://database.windows.net/.default")
+    logger.info("Token acquired, expires_on=%s", token.expires_on)
 
     # Format token for SQL Server ODBC driver
     token_bytes = token.token.encode("utf-16-le")

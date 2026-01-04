@@ -31,7 +31,12 @@ def _create_agent() -> ChatAgent:
         )
 
     # Create chat client with Azure credential
-    credential = DefaultAzureCredential()
+    # Use AZURE_CLIENT_ID for user-assigned managed identity in Container Apps
+    client_id = os.getenv("AZURE_CLIENT_ID")
+    if client_id:
+        credential = DefaultAzureCredential(managed_identity_client_id=client_id)
+    else:
+        credential = DefaultAzureCredential()
     chat_client = AzureAIAgentClient(
         endpoint=endpoint,
         credential=credential,

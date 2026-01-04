@@ -29,7 +29,7 @@ export const Assistant = () => {
         <SidebarInset>
           <div className="flex h-dvh w-full flex-col">
             <header className="flex h-14 shrink-0 items-center justify-between border-b px-4">
-              <h1 className="text-lg font-semibold">Data Agent Chat</h1>
+              <h1 className="text-lg font-semibold">Data Explorer Chat</h1>
               <AuthButton />
             </header>
             <div className="flex-1 overflow-hidden">

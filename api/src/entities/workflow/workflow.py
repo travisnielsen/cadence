@@ -1,14 +1,17 @@
 """
-Data Agent Workflow - Orchestrates Chat and NL2SQL agents with intelligent routing.
+Data Agent Workflow - Orchestrates Chat, NL2SQL, and Parameter Extractor agents.
 
 This module exports 'workflow' for DevUI auto-discovery.
 
 The workflow:
 1. ChatAgentExecutor receives user messages and triages them
 2. For data questions: routes to NL2SQLAgentExecutor
-3. For general chat: responds directly (no routing)
-4. NL2SQLAgentExecutor returns structured results
-5. ChatAgentExecutor renders data results for the user
+3. NL2SQLAgentExecutor searches query templates to understand intent
+4. If high confidence match: routes to ParameterExtractorExecutor
+5. ParameterExtractorExecutor extracts parameters and builds SQL
+6. NL2SQLAgentExecutor executes SQL and returns results
+7. ChatAgentExecutor renders data results for the user
+8. For clarification: user provides more info, flow repeats from step 5
 
 Agent Reuse:
 - Agents are found by name (deterministic) on first request
@@ -32,10 +35,12 @@ from azure.identity.aio import DefaultAzureCredential
 try:
     from chat_agent.executor import ChatAgentExecutor  # type: ignore[import-not-found]
     from data_agent.executor import NL2SQLAgentExecutor  # type: ignore[import-not-found]
+    from parameter_extractor.executor import ParameterExtractorExecutor  # type: ignore[import-not-found]
     from shared.reusable_client import ReusableAgentClient  # type: ignore[import-not-found]
 except ImportError:
     from src.entities.chat_agent.executor import ChatAgentExecutor
     from src.entities.data_agent.executor import NL2SQLAgentExecutor
+    from src.entities.parameter_extractor.executor import ParameterExtractorExecutor
     from src.entities.shared.reusable_client import ReusableAgentClient
 
 logger = logging.getLogger(__name__)
@@ -43,19 +48,20 @@ logger = logging.getLogger(__name__)
 # Module-level clients - reused across requests (they cache agent IDs globally)
 _chat_client: ReusableAgentClient | None = None
 _nl2sql_client: ReusableAgentClient | None = None
+_param_extractor_client: ReusableAgentClient | None = None
 
 
-def _get_clients() -> tuple[ReusableAgentClient, ReusableAgentClient]:
+def _get_clients() -> tuple[ReusableAgentClient, ReusableAgentClient, ReusableAgentClient]:
     """
     Get or create the agent clients (singleton pattern).
     
     Clients are reused because they cache agent IDs globally,
     avoiding repeated agent lookups.
     """
-    global _chat_client, _nl2sql_client
+    global _chat_client, _nl2sql_client, _param_extractor_client
     
-    if _chat_client is not None and _nl2sql_client is not None:
-        return _chat_client, _nl2sql_client
+    if _chat_client is not None and _nl2sql_client is not None and _param_extractor_client is not None:
+        return _chat_client, _nl2sql_client, _param_extractor_client
     
     # Get Azure AI Foundry endpoint from environment
     endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT", "")
@@ -76,6 +82,7 @@ def _get_clients() -> tuple[ReusableAgentClient, ReusableAgentClient]:
     default_model = os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME")
     chat_model = os.getenv("AZURE_AI_CHAT_MODEL", default_model)
     nl2sql_model = os.getenv("AZURE_AI_NL2SQL_MODEL", default_model)
+    param_extractor_model = os.getenv("AZURE_AI_PARAM_EXTRACTOR_MODEL", default_model)
     
     _chat_client = ReusableAgentClient(
         endpoint=endpoint,
@@ -91,7 +98,14 @@ def _get_clients() -> tuple[ReusableAgentClient, ReusableAgentClient]:
         should_cleanup_agent=False,
     )
     
-    return _chat_client, _nl2sql_client
+    _param_extractor_client = ReusableAgentClient(
+        endpoint=endpoint,
+        credential=credential,
+        model_deployment_name=param_extractor_model,
+        should_cleanup_agent=False,
+    )
+    
+    return _chat_client, _nl2sql_client, _param_extractor_client
 
 
 def create_workflow_instance():
@@ -105,17 +119,22 @@ def create_workflow_instance():
     Returns:
         Tuple of (workflow, chat_executor, chat_client)
     """
-    chat_client, nl2sql_client = _get_clients()
+    chat_client, nl2sql_client, param_extractor_client = _get_clients()
     
     # Create fresh executors for this request
     chat_executor = ChatAgentExecutor(chat_client)
     nl2sql_executor = NL2SQLAgentExecutor(nl2sql_client)
+    param_extractor_executor = ParameterExtractorExecutor(param_extractor_client)
 
-    # Build fresh workflow
+    # Build fresh workflow with all edges
+    # Chat <-> NL2SQL: For routing questions and receiving responses
+    # NL2SQL <-> ParamExtractor: For parameter extraction workflow
     workflow = (
         WorkflowBuilder()
         .add_edge(chat_executor, nl2sql_executor)
         .add_edge(nl2sql_executor, chat_executor)
+        .add_edge(nl2sql_executor, param_extractor_executor)
+        .add_edge(param_extractor_executor, nl2sql_executor)
         .set_start_executor(chat_executor)
         .build()
     )

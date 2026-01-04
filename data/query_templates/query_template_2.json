@@ -1,7 +1,7 @@
 {
     "intent": "orders_and_revenue_last_N_days`",
     "question": "How many orders were placed in the last 30 days from today and what is the total revenue?",
-    "confidence_threshold": 0.85,
+    "confidence_threshold": 0.02,
     "sql_template": "SELECT COUNT(DISTINCT Sales.Orders.OrderID) AS TotalOrders, SUM(Sales.InvoiceLines.ExtendedPrice) AS TotalRevenue FROM Sales.Orders JOIN Sales.Invoices ON Sales.Orders.OrderID = Sales.Invoices.OrderID JOIN Sales.InvoiceLines ON Sales.Invoices.InvoiceID = Sales.InvoiceLines.InvoiceID WHERE Sales.Orders.OrderDate >= DATEADD(day, -%{{days}}%, %{{from_date}}%)",
     "reasoning": "This query counts distinct orders and sums the extended price from invoice lines for orders placed in the last N days. It joins Orders, Invoices, and InvoiceLines to get accurate revenue figures.",
     "parameters": [

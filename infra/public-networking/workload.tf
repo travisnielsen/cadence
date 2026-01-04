@@ -19,10 +19,12 @@ locals {
 # Log Analytics Workspace (shared)
 module "log_analytics" {
   source  = "Azure/avm-res-operationalinsights-workspace/azurerm"
-  name                = "${local.identifier}-law"
-  resource_group_name = azurerm_resource_group.shared_rg.name
-  location            = azurerm_resource_group.shared_rg.location
-  tags                = local.tags
+  name                            = "${local.identifier}-law"
+  resource_group_name             = azurerm_resource_group.shared_rg.name
+  location                        = azurerm_resource_group.shared_rg.location
+  log_analytics_workspace_internet_ingestion_enabled = true
+  log_analytics_workspace_internet_query_enabled     = true
+  tags                            = local.tags
 }
 
 # Application Insights
@@ -1120,6 +1122,10 @@ resource "azurerm_container_app" "api" {
       env {
         name  = "ENABLE_SENSITIVE_DATA"
         value = "true"
+      }
+      env {
+        name  = "QUERY_TEMPLATE_CONFIDENCE_THRESHOLD"
+        value = "0.025"
       }
     }
   }

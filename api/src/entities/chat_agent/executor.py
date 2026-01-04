@@ -9,7 +9,7 @@ at class definition time, which is incompatible with PEP 563 stringified annotat
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 from agent_framework import (
     AgentThread,
@@ -25,17 +25,28 @@ from typing_extensions import Never
 
 # Support both DevUI (entities on path) and FastAPI (src on path) import patterns
 try:
-    from models import NL2SQLResponse  # type: ignore[import-not-found]
+    from models import NL2SQLResponse, ClarificationMessage  # type: ignore[import-not-found]
 except ImportError:
-    from src.entities.models import NL2SQLResponse
-
-# Import step events for progress reporting
-try:
-    from step_events import get_request_user_id  # type: ignore[import-not-found]
-except ImportError:
-    from src.api.step_events import get_request_user_id
+    from src.entities.models import NL2SQLResponse, ClarificationMessage
 
 logger = logging.getLogger(__name__)
+
+# Type alias for messages that can be sent to NL2SQL executor
+NL2SQLMessage = Union[str, ClarificationMessage]
+
+
+def get_request_user_id() -> str | None:
+    """
+    Get the user ID from the request context.
+    
+    This is a lazy import wrapper to avoid circular imports.
+    """
+    try:
+        from src.api.step_events import get_request_user_id as _get_request_user_id
+        return _get_request_user_id()
+    except ImportError:
+        return None
+
 
 # Shared state keys for thread management
 FOUNDRY_THREAD_ID_KEY = "foundry_thread_id"
@@ -43,8 +54,14 @@ FOUNDRY_THREAD_ID_KEY = "foundry_thread_id"
 # Key used by Agent Framework for workflow.run_stream() kwargs
 WORKFLOW_RUN_KWARGS_KEY = "_workflow_run_kwargs"
 
+# Key for storing pending clarification state (shared with NL2SQL executor)
+CLARIFICATION_STATE_KEY = "pending_clarification"
+
 # Routing decision marker - indicates chat agent decided to route to NL2SQL
 ROUTE_TO_NL2SQL = "nl2sql"
+
+# Routing marker for clarification responses
+ROUTE_TO_NL2SQL_CLARIFICATION = "nl2sql_clarification"
 
 # Keywords that strongly indicate a data question (skip LLM triage)
 DATA_QUESTION_KEYWORDS = {
@@ -225,14 +242,33 @@ class ChatAgentExecutor(Executor):
 
     async def _triage_message(self, user_text: str, ctx: WorkflowContext[Any, Any]) -> tuple[str | None, str]:
         """
-        Triage the user message - use fast keyword check first, then LLM fallback.
+        Triage the user message - check for pending clarification, then fast keyword check, then LLM fallback.
         
         Returns:
             Tuple of (route_to, result):
-            - If routing to NL2SQL: ("nl2sql", question) 
+            - If routing to NL2SQL as clarification: ("nl2sql_clarification", clarification_text)
+            - If routing to NL2SQL as new question: ("nl2sql", question) 
             - If direct response: (None, json_response)
         """
         logger.info("Triaging user message: %s", user_text[:100])
+        
+        # First: Check if there's a pending clarification request
+        try:
+            clarification_state = await ctx.get_shared_state(CLARIFICATION_STATE_KEY)
+            if clarification_state and isinstance(clarification_state, dict):
+                # There's a pending clarification
+                # Check if this looks like a new question or a response to clarification
+                if _is_likely_data_question(user_text) and self._looks_like_new_question(user_text, clarification_state):
+                    # This looks like a new question, not a clarification response
+                    # Clear the clarification state
+                    logger.info("Pending clarification exists but message looks like new question")
+                    await ctx.set_shared_state(CLARIFICATION_STATE_KEY, None)
+                else:
+                    # This is likely a clarification response
+                    logger.info("Routing as clarification response to NL2SQL")
+                    return ROUTE_TO_NL2SQL_CLARIFICATION, user_text
+        except KeyError:
+            pass
         
         # Fast path: keyword-based routing for obvious data questions
         # This skips the LLM triage call and saves ~8-10 seconds
@@ -280,18 +316,57 @@ class ChatAgentExecutor(Executor):
         }
         return None, json.dumps(output)
 
+    def _looks_like_new_question(self, user_text: str, clarification_state: dict) -> bool:  # noqa: ARG002
+        """
+        Determine if the user text looks like a new question rather than a clarification response.
+        
+        Heuristics:
+        - If it contains question words and multiple data keywords, it's likely a new question
+        - If it's short and doesn't contain question words, it's likely a clarification
+        
+        Note: clarification_state is kept for future enhancement (e.g., comparing to expected parameter types)
+        
+        Args:
+            user_text: The user's message
+            clarification_state: The stored clarification state (reserved for future use)
+            
+        Returns:
+            True if this looks like a new question, False if it looks like a clarification response
+        """
+        text_lower = user_text.lower().strip()
+        
+        # Short responses are likely clarifications (e.g., "5", "Tailspin Toys", "DESC")
+        if len(text_lower) < 30:
+            return False
+        
+        # Count data keywords - if many, likely a new question
+        keyword_count = sum(1 for kw in DATA_QUESTION_KEYWORDS if kw in text_lower)
+        
+        # If it has multiple data keywords and ends with ?, likely a new question
+        if keyword_count >= 2 and "?" in text_lower:
+            return True
+        
+        # If it starts with question words and is long, likely a new question
+        question_starters = ["what", "which", "how", "show", "list", "find", "get", "tell"]
+        for starter in question_starters:
+            if text_lower.startswith(starter) and len(text_lower) > 40:
+                return True
+        
+        return False
+
     @handler
     async def handle_chat_message(
         self,
         message: ChatMessage,
-        ctx: WorkflowContext[str, str]
+        ctx: WorkflowContext[NL2SQLMessage, str]
     ) -> None:
         """
         Handle a single ChatMessage with intelligent triage.
 
         The chat agent decides whether to:
-        1. Route data questions to NL2SQL executor
-        2. Respond directly to general conversation
+        1. Route clarification responses to NL2SQL executor
+        2. Route data questions to NL2SQL executor
+        3. Respond directly to general conversation
 
         Args:
             message: Single chat message
@@ -303,8 +378,12 @@ class ChatAgentExecutor(Executor):
         # Triage the message
         route_to, result = await self._triage_message(user_text, ctx)
         
-        if route_to == ROUTE_TO_NL2SQL:
-            # Forward to NL2SQL executor
+        if route_to == ROUTE_TO_NL2SQL_CLARIFICATION:
+            # Forward to NL2SQL executor as clarification using typed wrapper
+            clarification_msg = ClarificationMessage(clarification_text=result)
+            await ctx.send_message(clarification_msg, target_id="nl2sql")
+        elif route_to == ROUTE_TO_NL2SQL:
+            # Forward to NL2SQL executor as new question
             await ctx.send_message(result)
         else:
             # Direct response - yield as final output
@@ -314,7 +393,7 @@ class ChatAgentExecutor(Executor):
     async def handle_user_messages(
         self,
         messages: list[ChatMessage],
-        ctx: WorkflowContext[str, str]
+        ctx: WorkflowContext[NL2SQLMessage, str]
     ) -> None:
         """
         Handle a list of ChatMessages with intelligent triage.
@@ -335,8 +414,12 @@ class ChatAgentExecutor(Executor):
         # Triage the message
         route_to, result = await self._triage_message(user_text, ctx)
         
-        if route_to == ROUTE_TO_NL2SQL:
-            # Forward to NL2SQL executor
+        if route_to == ROUTE_TO_NL2SQL_CLARIFICATION:
+            # Forward to NL2SQL executor as clarification using typed wrapper
+            clarification_msg = ClarificationMessage(clarification_text=result)
+            await ctx.send_message(clarification_msg, target_id="nl2sql")
+        elif route_to == ROUTE_TO_NL2SQL:
+            # Forward to NL2SQL executor as new question
             await ctx.send_message(result)
         else:
             # Direct response - yield as final output
@@ -383,6 +466,7 @@ class ChatAgentExecutor(Executor):
                     "row_count": response.row_count,
                     "confidence_score": response.confidence_score,
                     "used_cached_query": response.used_cached_query,
+                    "query_source": response.query_source,
                     "error": response.error,
                     "observations": None,  # No LLM-generated insights
                 }

@@ -355,6 +355,7 @@ export function useChatApi() {
                   s => s.step === stepData.step && s.status === "started"
                 );
                 if (stepIndex !== -1) {
+                  // Update existing started step to completed
                   const updatedSteps = [...existingSteps];
                   updatedSteps[stepIndex] = {
                     ...updatedSteps[stepIndex],
@@ -365,6 +366,13 @@ export function useChatApi() {
                   updated[updated.length - 1] = {
                     ...last,
                     steps: updatedSteps,
+                  };
+                } else {
+                  // No matching started step - add completed step directly
+                  // This handles cases where events arrive out of order or start was missed
+                  updated[updated.length - 1] = {
+                    ...last,
+                    steps: [...existingSteps, { ...stepData }],
                   };
                 }
               } else {

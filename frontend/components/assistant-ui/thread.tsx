@@ -131,14 +131,14 @@ const ThreadSuggestions: FC = () => {
           action: "Which customers have spent the most money in total?",
         },
         {
-          title: "Products low on stock",
-          label: "need to be reordered",
-          action: "What products are running low on stock and need to be reordered?",
+          title: "Orders placed last month",
+          label: "for last 30 days",
+          action: "How many orders were placed in the last 30 days from today and what is the total revenue?",
         },
         {
-          title: "Create a meal plan",
-          label: "for healthy weight loss",
-          action: "Create a meal plan for healthy weight loss",
+          title: "Average order value",
+          label: "for supermarkets",
+          action: "What is the average order value for supermarkets?",
         },
       ].map((suggestedAction, index) => (
         <m.div

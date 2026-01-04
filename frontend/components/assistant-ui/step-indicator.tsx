@@ -31,6 +31,8 @@ const StepIndicatorImpl: FC = () => {
   const message = useMessage();
   const [isExpanded, setIsExpanded] = useState(true);
   const wasRunningRef = useRef(false);
+  const startTimeRef = useRef<number | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
   
   // Find the reasoning part (which contains our steps as JSON)
   const reasoningPart = message.content.find(
@@ -38,6 +40,30 @@ const StepIndicatorImpl: FC = () => {
   );
   
   const isRunning = message.status?.type === "running";
+  
+  // Track elapsed time while running
+  useEffect(() => {
+    if (isRunning && !startTimeRef.current) {
+      startTimeRef.current = Date.now();
+    }
+    
+    let intervalId: NodeJS.Timeout | null = null;
+    
+    if (isRunning && startTimeRef.current) {
+      intervalId = setInterval(() => {
+        setElapsedMs(Date.now() - startTimeRef.current!);
+      }, 100);
+    }
+    
+    // When done running, calculate final elapsed time
+    if (!isRunning && startTimeRef.current) {
+      setElapsedMs(Date.now() - startTimeRef.current);
+    }
+    
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [isRunning]);
   
   // Auto-collapse when message transitions from running to complete
   useEffect(() => {
@@ -78,19 +104,10 @@ const StepIndicatorImpl: FC = () => {
   // Find the current active parent (last one that's started but not completed)
   // Or if all parents are completed, get the last completed one
   const activeParent = [...parentSteps].reverse().find(s => s.status === "started");
-  const lastCompletedParent = [...parentSteps].reverse().find(s => s.status === "completed");
-  const currentParent = activeParent || lastCompletedParent;
-  
-  // Calculate total duration from all completed parent steps
-  const totalDuration = parentSteps
-    .filter(s => s.status === "completed")
-    .reduce((sum, s) => sum + (s.duration_ms || 0), 0) ||
-    childSteps.filter(s => s.status === "completed")
-      .reduce((sum, s) => sum + (s.duration_ms || 0), 0);
   
   // Find current in-progress child step for header display
   const currentChildStep = childSteps.find(s => s.status !== "completed");
-  const allComplete = !activeParent && !currentChildStep;
+  const allComplete = !activeParent && !currentChildStep && !isRunning;
   
   return (
     <div className="mb-3 rounded-lg border border-border/50 bg-muted/30 overflow-hidden">
@@ -110,9 +127,9 @@ const StepIndicatorImpl: FC = () => {
             <CheckCircle2 className="h-4 w-4 text-green-500" />
             <span className="flex-1 text-left">
               Completed
-              {totalDuration > 0 && (
+              {elapsedMs > 0 && (
                 <span className="text-muted-foreground/70 ml-1">
-                  ({formatDuration(totalDuration)})
+                  ({formatDuration(elapsedMs)})
                 </span>
               )}
             </span>
@@ -121,7 +138,12 @@ const StepIndicatorImpl: FC = () => {
           <>
             <Loader2 className="h-4 w-4 animate-spin" />
             <span className="flex-1 text-left truncate">
-              {currentParent?.step || currentChildStep?.step || "Processing..."}
+              {currentChildStep?.step || "Processing..."}
+              {elapsedMs > 0 && (
+                <span className="text-muted-foreground/70 ml-1">
+                  ({formatDuration(elapsedMs)})
+                </span>
+              )}
             </span>
           </>
         )}

@@ -64,13 +64,16 @@ terraform plan
 terraform apply
 ```
 
-## Deployment - Frontend Application
+## Continuous Deployment - GitHub Actions
 
-The frontend is automatically deployed to Azure Static Website (blob storage) via GitHub Actions when changes are pushed to the `main` branch affecting the `frontend/` folder.
+The frontend and API are automatically deployed via GitHub Actions when changes are pushed to the `main` branch:
+
+- **Frontend**: Changes to the `frontend/` folder trigger deployment to Azure Static Website (blob storage)
+- **API**: Changes to the `api/` folder trigger a Docker image build, push to Azure Container Registry, and deployment to Azure Container Apps
 
 ### Prerequisites
 
-**Create Azure AD App Registration for GitHub Actions OIDC:**
+To enable continueous deployment, use the following script template to create the Azure AD App Registration and grant deployment permissions:
 
 ```bash
 # Create app registration
@@ -103,19 +106,32 @@ az role assignment create \
   --assignee $APP_ID \
   --role "Storage Account Contributor" \
   --scope "/subscriptions/<SUB_ID>/resourceGroups/<RG>/providers/Microsoft.Storage/storageAccounts/<STORAGE_ACCOUNT>"
+
+# Grant Azure Container Registry Push permission (to push images)
+az role assignment create \
+  --assignee $APP_ID \
+  --role "AcrPush" \
+  --scope $ACR_ID
+
+# Grant Container Apps Contributor permission (resource group level)
+az role assignment create \
+  --assignee $APP_ID \
+  --role "Contributor" \
+  --scope "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<RG_NAME>"
 ```
 
-**Configure GitHub Repository Variables:**
-
-Navigate to your repository's **Settings → Secrets and variables → Actions → Variables** and add the following:
+Next, navigate to your repository's **Settings → Secrets and variables → Actions → Variables** and add the following:
 
 | Variable | Description |
 | -------- | ----------- |
 | `AZURE_CLIENT_ID` | App registration client ID from step 1 |
 | `AZURE_TENANT_ID` | Your Azure tenant ID |
 | `AZURE_SUBSCRIPTION_ID` | Your Azure subscription ID |
-| `AZURE_STORAGE_ACCOUNT` | Storage account name (run `terraform output static_website_url` to get the account name) |
-| `NEXT_PUBLIC_API_URL` | Backend API URL (e.g., `https://your-api.azurewebsites.net`) |
+| `AZURE_STORAGE_ACCOUNT` | Storage account name for frontend (run `terraform output static_website_url` to get the account name) |
+| `AZURE_CONTAINER_REGISTRY` | Container Registry name without `.azurecr.io` (run `terraform output container_registry_login_server`) |
+| `AZURE_CONTAINER_APP_NAME` | Container App name (run `terraform output container_app_url` to identify) |
+| `AZURE_RESOURCE_GROUP` | Resource group name containing the Container App |
+| `NEXT_PUBLIC_API_URL` | Backend API URL (e.g., `https://[your_instance].eastus2.azurecontainerapps.io`) |
 | `NEXT_PUBLIC_AZURE_AD_CLIENT_ID` | Frontend app registration client ID for authentication |
 | `NEXT_PUBLIC_AZURE_AD_TENANT_ID` | Azure AD tenant ID for authentication |
 

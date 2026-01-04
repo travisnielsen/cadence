@@ -32,6 +32,7 @@ def configure_observability() -> None:
     2. OTLP exporters (for Aspire Dashboard, Jaeger, etc.)
     """
     if not is_observability_enabled():
+        logger.info("Observability disabled (ENABLE_INSTRUMENTATION != true)")
         return
 
     try:
@@ -59,13 +60,32 @@ def _configure_azure_monitor(connection_string: str) -> None:
 
         enable_sensitive = os.getenv("ENABLE_SENSITIVE_DATA", "false").lower() == "true"
 
+        # Configure Azure Monitor with instrumentation options
+        # Enable azure_sdk to trace Azure AI Foundry/Inference calls
         configure_azure_monitor(
             connection_string=connection_string,
             resource=create_resource(),
             enable_live_metrics=True,
+            instrumentation_options={
+                "azure_sdk": {"enabled": True},  # Trace Azure SDK calls (AI Foundry)
+                "fastapi": {"enabled": True},    # Trace FastAPI requests
+                "requests": {"enabled": True},   # Trace HTTP requests
+                "urllib3": {"enabled": True},    # Trace urllib3 requests
+            },
         )
+        
+        # Enable Agent Framework instrumentation for workflow/executor tracing
+        # Note: This may cause "Failed to detach context" warnings in SSE streaming
+        # scenarios, but the spans are still captured and exported correctly.
         enable_instrumentation(enable_sensitive_data=enable_sensitive)
-        logger.info("OpenTelemetry configured with Azure Monitor")
+        
+        # Suppress the noisy context detach error logs (they're harmless warnings)
+        logging.getLogger("opentelemetry.context").setLevel(logging.CRITICAL)
+        
+        logger.info(
+            "OpenTelemetry configured with Azure Monitor (sensitive_data=%s)",
+            enable_sensitive
+        )
 
     except ImportError:
         logger.warning(
@@ -80,8 +100,13 @@ def _configure_otlp_exporters() -> None:
     """Configure OTLP exporters for local development (Aspire Dashboard, Jaeger, etc.)."""
     from agent_framework.observability import configure_otel_providers
 
+    enable_sensitive = os.getenv("ENABLE_SENSITIVE_DATA", "false").lower() == "true"
+    
     # Reads OTEL_EXPORTER_OTLP_ENDPOINT from environment
     # For console exporters, set ENABLE_CONSOLE_EXPORTERS=true in environment
-    configure_otel_providers()
+    configure_otel_providers(enable_sensitive_data=enable_sensitive)
+    
+    # Suppress the noisy context detach error logs (they're harmless warnings)
+    logging.getLogger("opentelemetry.context").setLevel(logging.CRITICAL)
 
     logger.info("OpenTelemetry configured with OTLP exporters")

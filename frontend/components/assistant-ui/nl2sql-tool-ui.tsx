@@ -21,6 +21,7 @@ interface NL2SQLResult {
   row_count: number;
   confidence_score: number;
   used_cached_query: boolean;
+  query_source?: "template" | "cached" | "dynamic";
   error?: string;
   observations?: string;
 }
@@ -186,9 +187,21 @@ export const NL2SQLToolUI = makeAssistantToolUI<NL2SQLArgs, NL2SQLResult>({
           <span className="text-xs text-muted-foreground">
             ({result.row_count} {result.row_count === 1 ? "row" : "rows"})
           </span>
-          {result.used_cached_query && (
+          {/* Query source badge */}
+          {(result.query_source === "template" || result.query_source === "cached") && (
             <span className="ml-auto text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded">
-              Cached Query
+              Verified Query
+            </span>
+          )}
+          {result.query_source === "dynamic" && (
+            <span className="ml-auto text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-0.5 rounded">
+              Custom Query
+            </span>
+          )}
+          {/* Fallback for backward compatibility when query_source is not set */}
+          {!result.query_source && result.used_cached_query && (
+            <span className="ml-auto text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded">
+              Verified Query
             </span>
           )}
         </div>

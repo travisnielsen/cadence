@@ -50,6 +50,14 @@ export function useChatApi() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  
+  // Ref to track current threadId for use in callbacks (avoids stale closure issues)
+  const threadIdRef = useRef<string | null>(null);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    threadIdRef.current = threadId;
+  }, [threadId]);
 
   // Thread list state
   const [threads, setThreads] = useState<ExternalStoreThreadData<"regular">[]>([]);
@@ -202,17 +210,20 @@ export function useChatApi() {
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
       setIsRunning(true);
 
+      // Use ref to get current threadId (avoids stale closure issues)
+      const currentThreadId = threadIdRef.current;
+      
       // For new threads, compute a title from the first message
-      const isNewThread = !threadId;
+      const isNewThread = !currentThreadId;
       const chatTitle = isNewThread
         ? text.length > 50
           ? text.slice(0, 50) + "..."
           : text
         : null;
 
-      // Stream response
+      // Stream response - use currentThreadId from ref
       abortRef.current = streamChat(
-        threadId,
+        currentThreadId,
         text,
         // onChunk - append to assistant message
         (chunk) => {
@@ -230,7 +241,6 @@ export function useChatApi() {
         },
         // onComplete - save Foundry thread ID and add to thread list/cache
         (newThreadId) => {
-          setThreadId(newThreadId);
           setIsRunning(false);
           
           // Clear only legacy reasoning, keep steps for display
@@ -246,26 +256,43 @@ export function useChatApi() {
             return updated;
           });
           
-          // If this was a new thread, add it to the cache and list
-          if (isNewThread && userId) {
+          // Only add to thread list if this is actually a new thread
+          // Use isNewThread which was captured when the request started
+          if (isNewThread) {
             const title = chatTitle || "New Chat";
             
-            // Add to local cache
-            const cachedThread: CachedThread = {
-              id: newThreadId,
-              title,
-              status: "regular",
-              createdAt: new Date().toISOString(),
-            };
-            addThreadToCache(userId, cachedThread);
+            // Add to local cache if we have userId
+            if (userId) {
+              const cachedThread: CachedThread = {
+                id: newThreadId,
+                title,
+                status: "regular",
+                createdAt: new Date().toISOString(),
+              };
+              addThreadToCache(userId, cachedThread);
+            }
             
-            // Update UI state
-            const newThreadData: ExternalStoreThreadData<"regular"> = {
-              status: "regular",
-              id: newThreadId,
-              title,
-            };
-            setThreads((prev) => [newThreadData, ...prev]);
+            // Add to thread list
+            setThreads((prev) => {
+              // Double-check thread doesn't already exist (edge case)
+              if (prev.some((t) => t.id === newThreadId)) {
+                return prev;
+              }
+              const newThreadData: ExternalStoreThreadData<"regular"> = {
+                status: "regular",
+                id: newThreadId,
+                title,
+              };
+              return [newThreadData, ...prev];
+            });
+          }
+          
+          // Update ref immediately so subsequent messages use correct threadId
+          threadIdRef.current = newThreadId;
+          
+          // Only update state if it actually changed (for new threads)
+          if (isNewThread) {
+            setThreadId(newThreadId);
           }
         },
         // onError
@@ -360,7 +387,7 @@ export function useChatApi() {
         chatTitle
       );
     },
-    [threadId, acquireToken, userId]
+    [acquireToken, userId]
   );
 
   const onCancel = useCallback(async () => {
@@ -398,9 +425,12 @@ export function useChatApi() {
       setMessages((prev) => [...prev.slice(0, messageIndex + 1), assistantMsg]);
       setIsRunning(true);
 
+      // Use ref to get current threadId (avoids stale closure issues)
+      const currentThreadId = threadIdRef.current;
+
       // Stream new response
       abortRef.current = streamChat(
-        threadId,
+        currentThreadId,
         userMessage.content,
         // onChunk
         (chunk) => {
@@ -418,7 +448,6 @@ export function useChatApi() {
         },
         // onComplete
         (newThreadId) => {
-          setThreadId(newThreadId);
           setIsRunning(false);
           
           // Clear only legacy reasoning, keep steps for display
@@ -433,6 +462,11 @@ export function useChatApi() {
             }
             return updated;
           });
+          
+          // Only update threadId if it actually changed
+          if (newThreadId !== threadId) {
+            setThreadId(newThreadId);
+          }
         },
         // onError
         (error) => {
@@ -521,7 +555,7 @@ export function useChatApi() {
         null // No title update for regeneration
       );
     },
-    [threadId, messages, acquireToken]
+    [messages, acquireToken]
   );
 
   // Thread list adapter for sidebar
@@ -533,12 +567,14 @@ export function useChatApi() {
 
     onSwitchToNewThread: () => {
       // Start a fresh conversation
+      threadIdRef.current = null;
       setThreadId(null);
       setMessages([]);
     },
 
     onSwitchToThread: async (switchThreadId: string) => {
       // Switch to existing thread and load its messages
+      threadIdRef.current = switchThreadId;
       setThreadId(switchThreadId);
       setMessages([]); // Clear while loading
       setIsLoadingMessages(true);
@@ -547,12 +583,20 @@ export function useChatApi() {
         const accessToken = await acquireToken();
         const apiMessages = await getThreadMessages(switchThreadId, accessToken);
         
-        // Convert API messages to our Message format
-        const loadedMessages: Message[] = apiMessages.map((msg) => ({
-          id: msg.id,
-          role: msg.role as "user" | "assistant",
-          content: msg.content,
-        }));
+        // Convert API messages to our Message format, parsing tool calls from stored content
+        const loadedMessages: Message[] = apiMessages.map((msg) => {
+          const message: Message = {
+            id: msg.id,
+            role: msg.role as "user" | "assistant",
+            content: msg.content,
+          };
+          
+          // Keep original markdown content for stored messages
+          // The markdown already includes formatted tables and collapsible SQL query
+          // Tool UI rendering is only for live streaming responses
+          
+          return message;
+        });
         
         setMessages(loadedMessages);
       } catch (error) {

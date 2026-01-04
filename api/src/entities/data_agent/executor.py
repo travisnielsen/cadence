@@ -27,12 +27,21 @@ try:
 except ImportError:
     from src.entities.models import NL2SQLResponse
 
+# Import request context for user_id
+try:
+    from step_events import get_request_user_id  # type: ignore[import-not-found]
+except ImportError:
+    from src.api.step_events import get_request_user_id
+
 from .tools import execute_sql, search_cached_queries
 
 logger = logging.getLogger(__name__)
 
 # Shared state key for Foundry thread ID (must match ChatAgentExecutor)
 FOUNDRY_THREAD_ID_KEY = "foundry_thread_id"
+
+# Key used by Agent Framework for workflow.run_stream() kwargs
+WORKFLOW_RUN_KWARGS_KEY = "_workflow_run_kwargs"
 
 
 def _load_prompt() -> str:
@@ -77,24 +86,40 @@ class NL2SQLAgentExecutor(Executor):
         super().__init__(id=executor_id)
         logger.info("NL2SQLAgentExecutor initialized with tools: ['search_cached_queries', 'execute_sql']")
 
-    async def _get_or_create_thread(self, ctx: WorkflowContext[Any, Any]) -> AgentThread:
+    async def _get_or_create_thread(self, ctx: WorkflowContext[Any, Any]) -> tuple[AgentThread, bool]:
         """
         Get existing Foundry thread from shared state or create a new one.
         
-        The ChatAgentExecutor typically creates the thread first. This executor
-        retrieves it from shared state to continue the same conversation.
+        Thread ID sources (checked in order):
+        1. workflow.run_stream() kwargs (thread_id passed from API)
+        2. Regular shared state (thread created by previous executor in this request)
+        
+        Returns:
+            Tuple of (thread, is_new) where is_new indicates if this is a new thread
         """
+        # First, check workflow run kwargs (set by chat.py via run_stream kwargs)
+        try:
+            run_kwargs = await ctx.get_shared_state(WORKFLOW_RUN_KWARGS_KEY)
+            if run_kwargs and isinstance(run_kwargs, dict):
+                thread_id = run_kwargs.get("thread_id")
+                if thread_id:
+                    logger.info("NL2SQL using thread from run kwargs: %s", thread_id)
+                    return self.agent.get_new_thread(service_thread_id=thread_id), False
+        except KeyError:
+            pass
+        
+        # Then, check regular shared state (may have been set by previous executor)
         try:
             thread_id = await ctx.get_shared_state(FOUNDRY_THREAD_ID_KEY)
             if thread_id:
                 logger.info("NL2SQL using existing Foundry thread: %s", thread_id)
-                return self.agent.get_new_thread(service_thread_id=thread_id)
+                return self.agent.get_new_thread(service_thread_id=thread_id), False
         except KeyError:
             pass
         
         # Create a new thread if none exists yet
         logger.info("NL2SQL creating new Foundry thread")
-        return self.agent.get_new_thread()
+        return self.agent.get_new_thread(), True
     
     async def _store_thread_id(self, ctx: WorkflowContext[Any, Any], thread: AgentThread) -> None:
         """Store the Foundry thread ID in shared state if it was created."""
@@ -125,10 +150,18 @@ class NL2SQLAgentExecutor(Executor):
 
         try:
             # Get or create the Foundry thread for this conversation
-            thread = await self._get_or_create_thread(ctx)
+            thread, is_new_thread = await self._get_or_create_thread(ctx)
+            
+            # Set metadata for new threads to track ownership
+            metadata = None
+            if is_new_thread:
+                user_id = get_request_user_id()
+                if user_id:
+                    metadata = {"user_id": user_id}
+                    logger.info("Setting thread metadata with user_id: %s", user_id)
 
             # Run the NL2SQL agent with the thread
-            response = await self.agent.run(question, thread=thread)
+            response = await self.agent.run(question, thread=thread, metadata=metadata)
 
             # Store the thread ID after the run (Foundry assigns it on first run)
             await self._store_thread_id(ctx, thread)

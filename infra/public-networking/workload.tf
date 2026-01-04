@@ -429,6 +429,54 @@ resource "azapi_resource" "ai_model_deployment_embedding_large" {
   depends_on = [azapi_resource.ai_model_deployment_embedding_small]
 }
 
+resource "azapi_resource" "ai_model_deployment_gpt41" {
+  name      = "gpt-4.1"
+  parent_id = module.ai_foundry.ai_foundry_id
+  type      = "Microsoft.CognitiveServices/accounts/deployments@2025-10-01-preview"
+  body = {
+    properties = {
+      model = {
+        format  = "OpenAI"
+        name    = "gpt-4.1"
+        version = "2025-04-14"
+      }
+      versionUpgradeOption = "OnceNewDefaultVersionAvailable"
+    }
+    sku = {
+      name     = "GlobalStandard"
+      capacity = 150
+    }
+  }
+  schema_validation_enabled = false
+
+  # Sequential deployment to avoid Azure API concurrency issues
+  depends_on = [azapi_resource.ai_model_deployment_embedding_large]
+}
+
+resource "azapi_resource" "ai_model_deployment_gpt41_mini" {
+  name      = "gpt-4.1-mini"
+  parent_id = module.ai_foundry.ai_foundry_id
+  type      = "Microsoft.CognitiveServices/accounts/deployments@2025-10-01-preview"
+  body = {
+    properties = {
+      model = {
+        format  = "OpenAI"
+        name    = "gpt-4.1-mini"
+        version = "2025-04-14"
+      }
+      versionUpgradeOption = "OnceNewDefaultVersionAvailable"
+    }
+    sku = {
+      name     = "GlobalStandard"
+      capacity = 150
+    }
+  }
+  schema_validation_enabled = false
+
+  # Sequential deployment to avoid Azure API concurrency issues
+  depends_on = [azapi_resource.ai_model_deployment_gpt41]
+}
+
 
 #################################################################################
 # Application Insights Connection for AI Foundry Project

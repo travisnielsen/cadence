@@ -13,7 +13,7 @@ Usage with DevUI:
     devui ./src/entities
 """
 
-from .workflow import workflow, chat_executor, chat_client
+from .workflow import workflow, chat_executor, chat_client, create_workflow_instance
 from .builder import build_data_agent_workflow
 
 
@@ -28,5 +28,5 @@ def get_workflow():
 
 
 # Export for programmatic access and DevUI discovery
-__all__ = ["workflow", "chat_executor", "chat_client", "get_workflow", "build_data_agent_workflow"]
+__all__ = ["workflow", "chat_executor", "chat_client", "get_workflow", "build_data_agent_workflow", "create_workflow_instance"]
 

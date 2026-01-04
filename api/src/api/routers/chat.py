@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 from src.api.models import ChatRequest
 from src.api.dependencies import get_optional_user_id
-from src.api.step_events import set_step_queue, clear_step_queue
+from src.api.step_events import set_step_queue, clear_step_queue, set_request_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +68,10 @@ async def generate_workflow_streaming_response(
     step_queue: asyncio.Queue = asyncio.Queue()
     set_step_queue(step_queue)
     logger.info("Step queue created and set in context")
+    
+    # Set user_id in context so executors can access it when creating threads
+    set_request_user_id(user_id)
+    logger.info("User ID set in request context: %s", user_id)
     
     # Use an async queue for real-time step event streaming
     # This allows us to emit step events as they happen, not just when workflow events occur
@@ -144,7 +148,8 @@ async def generate_workflow_streaming_response(
         step_monitor_task = asyncio.create_task(step_monitor())
         
         # Get the async iterator for the workflow
-        workflow_iter = workflow.run_stream(user_message).__aiter__()
+        # Pass incoming_thread_id as a kwarg - this survives shared_state.clear() in run_stream
+        workflow_iter = workflow.run_stream(user_message, thread_id=incoming_thread_id).__aiter__()
         workflow_done = False
         
         # Create a task for the next workflow event
@@ -388,7 +393,6 @@ async def generate_streaming_response(
 
 @router.get("/stream")
 async def chat_stream(
-    request: Request,
     message: str = Query(..., description="User message"),
     thread_id: str | None = Query(None, description="Foundry thread ID (omit for new thread)"),
     title: str | None = Query(None, description="Thread title (for new threads only)"),
@@ -407,13 +411,12 @@ async def chat_stream(
     - Include thread_id to continue existing conversation
     - Response includes thread_id for use in subsequent requests
     """
-    workflow = getattr(request.app.state, "workflow", None)
-
-    if workflow is None:
-        return StreamingResponse(
-            iter([f"data: {json.dumps({'error': 'Workflow not initialized', 'done': True})}\n\n"]),
-            media_type="text/event-stream",
-        )
+    # Import here to avoid circular imports
+    from src.entities.workflow import create_workflow_instance
+    
+    # Create a fresh workflow instance for this request
+    # The Agent Framework doesn't support concurrent workflow executions
+    workflow, _, _ = create_workflow_instance()
 
     # Use workflow streaming for executor-level progress events
     return StreamingResponse(

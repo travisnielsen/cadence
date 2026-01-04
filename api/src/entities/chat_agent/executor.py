@@ -31,14 +31,70 @@ except ImportError:
 
 # Import step events for progress reporting
 try:
-    from step_events import emit_step_start, emit_step_end  # type: ignore[import-not-found]
+    from step_events import get_request_user_id  # type: ignore[import-not-found]
 except ImportError:
-    from src.api.step_events import emit_step_start, emit_step_end
+    from src.api.step_events import get_request_user_id
 
 logger = logging.getLogger(__name__)
 
 # Shared state keys for thread management
 FOUNDRY_THREAD_ID_KEY = "foundry_thread_id"
+
+# Key used by Agent Framework for workflow.run_stream() kwargs
+WORKFLOW_RUN_KWARGS_KEY = "_workflow_run_kwargs"
+
+# Routing decision marker - indicates chat agent decided to route to NL2SQL
+ROUTE_TO_NL2SQL = "nl2sql"
+
+# Keywords that strongly indicate a data question (skip LLM triage)
+DATA_QUESTION_KEYWORDS = {
+    # Aggregation/analysis keywords
+    "how many", "how much", "total", "average", "avg", "sum", "count", "max", "min",
+    "top", "bottom", "best", "worst", "highest", "lowest", "most", "least",
+    # Query action words
+    "list", "show", "find", "get", "what are", "which", "who", "where",
+    "give me", "tell me about", "display", "report",
+    # Business entity keywords
+    "sales", "orders", "invoice", "customer", "supplier", "product", "stock",
+    "inventory", "purchase", "revenue", "quantity", "price",
+}
+
+# Keywords that indicate general chat (not data questions)
+GENERAL_CHAT_KEYWORDS = {
+    "hello", "hi", "hey", "thanks", "thank you", "bye", "goodbye",
+    "joke", "help", "who are you", "what can you do", "your name",
+}
+
+
+def _is_likely_data_question(text: str) -> bool:
+    """
+    Fast keyword check to determine if message is likely a data question.
+    
+    Returns True if the message should be routed directly to NL2SQL
+    without calling the LLM triage.
+    """
+    text_lower = text.lower().strip()
+    
+    # Short greetings are not data questions
+    if len(text_lower) < 10:
+        for kw in GENERAL_CHAT_KEYWORDS:
+            if kw in text_lower:
+                return False
+    
+    # Check for data question keywords
+    for keyword in DATA_QUESTION_KEYWORDS:
+        if keyword in text_lower:
+            return True
+    
+    # If message ends with ? and is reasonably long, likely a question about data
+    if text_lower.endswith("?") and len(text_lower) > 20:
+        # But not if it's a general chat question
+        for kw in GENERAL_CHAT_KEYWORDS:
+            if kw in text_lower:
+                return False
+        return True
+    
+    return False
 
 
 def _load_prompt() -> str:
@@ -51,14 +107,52 @@ def _load_prompt() -> str:
     return prompt_path.read_text(encoding="utf-8")
 
 
+def _parse_routing_decision(response_text: str) -> dict | None:
+    """
+    Parse the chat agent's response to extract routing decision.
+    
+    Returns:
+        dict with 'route' and 'question' if routing JSON found, None otherwise
+    """
+    if not response_text:
+        return None
+    
+    # Look for JSON routing decision in the response
+    text = response_text.strip()
+    
+    # Try to parse as JSON directly
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict) and parsed.get("route") == ROUTE_TO_NL2SQL:
+            return parsed
+    except json.JSONDecodeError:
+        pass
+    
+    # Look for JSON block in markdown code fence
+    if "```json" in text:
+        try:
+            start = text.find("```json") + 7
+            end = text.find("```", start)
+            if end > start:
+                json_str = text[start:end].strip()
+                parsed = json.loads(json_str)
+                if isinstance(parsed, dict) and parsed.get("route") == ROUTE_TO_NL2SQL:
+                    return parsed
+        except (json.JSONDecodeError, ValueError):
+            pass
+    
+    return None
+
+
 class ChatAgentExecutor(Executor):
     """
-    Executor that handles user-facing chat interactions.
+    Executor that handles user-facing chat interactions with intelligent routing.
 
     This executor:
-    1. Receives user messages
-    2. Forwards data questions to the NL2SQL executor
-    3. Renders structured responses for the chat client
+    1. Receives user messages and triages them using the chat agent
+    2. Routes data questions to the NL2SQL executor
+    3. Handles general conversation directly
+    4. Renders structured responses from NL2SQL for the user
     """
 
     agent: ChatAgent
@@ -82,24 +176,40 @@ class ChatAgentExecutor(Executor):
         super().__init__(id=executor_id)
         logger.info("ChatAgentExecutor initialized")
 
-    async def _get_or_create_thread(self, ctx: WorkflowContext[Any, Any]) -> AgentThread:
+    async def _get_or_create_thread(self, ctx: WorkflowContext[Any, Any]) -> tuple[AgentThread, bool]:
         """
         Get existing Foundry thread from shared state or create a new one.
         
-        The first executor to call this creates the thread and stores the ID
-        in shared state. Subsequent calls return a thread with the same ID.
+        Thread ID sources (checked in order):
+        1. workflow.run_stream() kwargs (thread_id passed from API)
+        2. Regular shared state (thread created by previous executor in this request)
+        
+        Returns:
+            Tuple of (thread, is_new) where is_new indicates if this is a new thread
         """
+        # First, check workflow run kwargs (set by chat.py via run_stream kwargs)
+        try:
+            run_kwargs = await ctx.get_shared_state(WORKFLOW_RUN_KWARGS_KEY)
+            if run_kwargs and isinstance(run_kwargs, dict):
+                thread_id = run_kwargs.get("thread_id")
+                if thread_id:
+                    logger.info("Using thread from run kwargs: %s", thread_id)
+                    return self.agent.get_new_thread(service_thread_id=thread_id), False
+        except KeyError:
+            pass
+        
+        # Then, check regular shared state (may have been set by previous executor)
         try:
             thread_id = await ctx.get_shared_state(FOUNDRY_THREAD_ID_KEY)
             if thread_id:
                 logger.info("Using existing Foundry thread: %s", thread_id)
-                return self.agent.get_new_thread(service_thread_id=thread_id)
+                return self.agent.get_new_thread(service_thread_id=thread_id), False
         except KeyError:
             pass
         
         # Create a new thread - Foundry will assign the ID on first run
         logger.info("Creating new Foundry thread")
-        return self.agent.get_new_thread()
+        return self.agent.get_new_thread(), True
     
     async def _store_thread_id(self, ctx: WorkflowContext[Any, Any], thread: AgentThread) -> None:
         """Store the Foundry thread ID in shared state if it was created."""
@@ -113,37 +223,105 @@ class ChatAgentExecutor(Executor):
             await ctx.set_shared_state(FOUNDRY_THREAD_ID_KEY, thread.service_thread_id)
             logger.info("Stored Foundry thread ID in shared state: %s", thread.service_thread_id)
 
+    async def _triage_message(self, user_text: str, ctx: WorkflowContext[Any, Any]) -> tuple[str | None, str]:
+        """
+        Triage the user message - use fast keyword check first, then LLM fallback.
+        
+        Returns:
+            Tuple of (route_to, result):
+            - If routing to NL2SQL: ("nl2sql", question) 
+            - If direct response: (None, json_response)
+        """
+        logger.info("Triaging user message: %s", user_text[:100])
+        
+        # Fast path: keyword-based routing for obvious data questions
+        # This skips the LLM triage call and saves ~8-10 seconds
+        # The NL2SQL agent will create the thread and set user_id metadata
+        if _is_likely_data_question(user_text):
+            logger.info("Fast triage: detected data question via keywords, routing to NL2SQL")
+            return ROUTE_TO_NL2SQL, user_text
+        
+        # Slow path: use LLM for ambiguous messages or general chat
+        logger.info("Using LLM triage for ambiguous message")
+        
+        # Get or create thread for this conversation
+        thread, is_new_thread = await self._get_or_create_thread(ctx)
+        
+        # Set metadata for new threads to track ownership
+        metadata = None
+        if is_new_thread:
+            user_id = get_request_user_id()
+            if user_id:
+                metadata = {"user_id": user_id}
+                logger.info("Setting thread metadata with user_id: %s", user_id)
+        
+        # Run the chat agent to triage
+        response = await self.agent.run(user_text, thread=thread, metadata=metadata)
+        
+        # Store thread ID after run
+        await self._store_thread_id(ctx, thread)
+        
+        response_text = response.text or ""
+        
+        # Check if the agent decided to route to NL2SQL
+        routing = _parse_routing_decision(response_text)
+        if routing:
+            question = routing.get("question", user_text)
+            logger.info("Triage result: route to NL2SQL with question: %s", question[:100])
+            return ROUTE_TO_NL2SQL, question
+        
+        # Agent responded directly - return the response
+        logger.info("Triage result: direct response (no routing)")
+        
+        # Build output JSON with thread_id
+        output = {
+            "text": response_text,
+            "thread_id": thread.service_thread_id,
+        }
+        return None, json.dumps(output)
+
     @handler
     async def handle_chat_message(
         self,
         message: ChatMessage,
-        ctx: WorkflowContext[str]
+        ctx: WorkflowContext[str, str]
     ) -> None:
         """
-        Handle a single ChatMessage (e.g., from DevUI).
+        Handle a single ChatMessage with intelligent triage.
+
+        The chat agent decides whether to:
+        1. Route data questions to NL2SQL executor
+        2. Respond directly to general conversation
 
         Args:
             message: Single chat message
-            ctx: Workflow context for sending to next executor
+            ctx: Workflow context for sending to next executor or yielding response
         """
         user_text = message.text or ""
         logger.info("ChatAgentExecutor received user message: %s", user_text[:100] if user_text else "(empty)")
 
-        # Forward the question to NL2SQL executor
-        await ctx.send_message(user_text)
+        # Triage the message
+        route_to, result = await self._triage_message(user_text, ctx)
+        
+        if route_to == ROUTE_TO_NL2SQL:
+            # Forward to NL2SQL executor
+            await ctx.send_message(result)
+        else:
+            # Direct response - yield as final output
+            await ctx.yield_output(result)
 
     @handler
     async def handle_user_messages(
         self,
         messages: list[ChatMessage],
-        ctx: WorkflowContext[str]
+        ctx: WorkflowContext[str, str]
     ) -> None:
         """
-        Handle a list of ChatMessages (for workflow.as_agent() compatibility).
+        Handle a list of ChatMessages with intelligent triage.
 
         Args:
             messages: List of chat messages
-            ctx: Workflow context for sending to next executor
+            ctx: Workflow context for sending to next executor or yielding response
         """
         # Get the last user message
         user_text = ""
@@ -154,8 +332,15 @@ class ChatAgentExecutor(Executor):
 
         logger.info("ChatAgentExecutor received user messages: %s", user_text[:100] if user_text else "(empty)")
 
-        # Forward the question to NL2SQL executor
-        await ctx.send_message(user_text)
+        # Triage the message
+        route_to, result = await self._triage_message(user_text, ctx)
+        
+        if route_to == ROUTE_TO_NL2SQL:
+            # Forward to NL2SQL executor
+            await ctx.send_message(result)
+        else:
+            # Direct response - yield as final output
+            await ctx.yield_output(result)
 
     @handler
     async def handle_nl2sql_response(
@@ -172,56 +357,20 @@ class ChatAgentExecutor(Executor):
         """
         logger.info("ChatAgentExecutor rendering NL2SQL response")
 
-        # Emit step event for generating insights
-        emit_step_start("Generating insights...")
-
         # Deserialize the JSON string back to NL2SQLResponse model
         response = NL2SQLResponse.model_validate_json(response_json)
 
-        # Build a prompt for the chat agent to render the response
-        render_prompt = self._build_render_prompt(response)
-
-        # Get or create the Foundry thread for this conversation
-        thread = await self._get_or_create_thread(ctx)
-
-        # Use the chat agent to generate a user-friendly response with the thread
-        agent_response = await self.agent.run(render_prompt, thread=thread)
-        
-        # Mark insights generation complete
-        emit_step_end("Generating insights...")
-
-        # Store the thread ID after the run (Foundry assigns it on first run)
-        await self._store_thread_id(ctx, thread)
-
-        # Get the Foundry thread ID (may have been created by NL2SQL agent if this is first run)
-        foundry_thread_id = thread.service_thread_id
-        if not foundry_thread_id:
-            try:
-                foundry_thread_id = await ctx.get_shared_state(FOUNDRY_THREAD_ID_KEY)
-            except KeyError:
-                pass
-
-        # Extract just the insights/commentary from the agent response (skip tables/SQL sections)
-        # Look for content after "Insights" heading or similar
-        observations = ""
-        if agent_response.text:
-            text = agent_response.text
-            # Try to extract insights section
-            for marker in ["### 🧠 **Insights**", "### Insights", "**Insights**", "Insights:"]:
-                if marker in text:
-                    # Get content after the marker
-                    idx = text.find(marker)
-                    insights_text = text[idx + len(marker):].strip()
-                    # Stop at next section marker or end
-                    for end_marker in ["---", "###", "<details>"]:
-                        if end_marker in insights_text:
-                            insights_text = insights_text[:insights_text.find(end_marker)].strip()
-                    observations = insights_text
-                    break
+        # Get thread ID from shared state (set during triage phase)
+        foundry_thread_id = None
+        try:
+            foundry_thread_id = await ctx.get_shared_state(FOUNDRY_THREAD_ID_KEY)
+        except KeyError:
+            pass
 
         # Yield structured output with text, thread ID, and raw NL2SQL data for tool UI
+        # Skip the LLM render call - use direct rendering for ~10s faster response
         output = {
-            "text": self._fallback_render(response),  # Fallback text for non-tool-ui clients
+            "text": self._fallback_render(response),  # Direct render without LLM
             "thread_id": foundry_thread_id,
             "tool_call": {
                 "tool_name": "nl2sql_query",
@@ -235,7 +384,7 @@ class ChatAgentExecutor(Executor):
                     "confidence_score": response.confidence_score,
                     "used_cached_query": response.used_cached_query,
                     "error": response.error,
-                    "observations": observations if observations else None,
+                    "observations": None,  # No LLM-generated insights
                 }
             }
         }

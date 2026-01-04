@@ -69,8 +69,31 @@ async def verify_thread_ownership(
     try:
         thread = await chat_client.agents_client.threads.get(thread_id)
         metadata = getattr(thread, "metadata", {}) or {}
+        thread_owner = metadata.get("user_id")
 
-        if metadata.get("user_id") != user_id:
+        # Log ownership check details for debugging
+        logger.info(
+            "Thread ownership check: thread_id=%s, thread_owner=%s, current_user=%s",
+            thread_id, thread_owner, user_id
+        )
+
+        # Check ownership - threads without user_id (legacy) are accessible to no one
+        # To migrate legacy threads, you'd need to update their metadata with the owner's user_id
+        if thread_owner is None:
+            logger.warning(
+                "Thread %s has no user_id in metadata (legacy thread). Access denied.",
+                thread_id
+            )
+            raise HTTPException(
+                status_code=403,
+                detail="This thread was created before user tracking was enabled. It cannot be accessed."
+            )
+
+        if thread_owner != user_id:
+            logger.warning(
+                "Thread ownership mismatch: thread_id=%s, owner=%s, requester=%s",
+                thread_id, thread_owner, user_id
+            )
             raise HTTPException(status_code=403, detail="Access denied")
 
         return {"thread": thread, "metadata": metadata, "user_id": user_id}

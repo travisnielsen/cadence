@@ -1,37 +1,62 @@
 """
-Data Agent Workflow - Orchestrates Chat and NL2SQL agents.
+Data Agent Workflow - Orchestrates Chat and NL2SQL agents with intelligent routing.
 
 This module exports 'workflow' for DevUI auto-discovery.
 
 The workflow:
-1. ChatAgentExecutor receives user messages
-2. Forwards to NL2SQLAgentExecutor for data queries
-3. NL2SQLAgentExecutor returns structured results
-4. ChatAgentExecutor renders results for the user
+1. ChatAgentExecutor receives user messages and triages them
+2. For data questions: routes to NL2SQLAgentExecutor
+3. For general chat: responds directly (no routing)
+4. NL2SQLAgentExecutor returns structured results
+5. ChatAgentExecutor renders data results for the user
+
+Agent Reuse:
+- Agents are found by name (deterministic) on first request
+- If an agent with the matching name exists, it is reused
+- If not found, a new agent is created
+- Set should_cleanup_agent=False to prevent agent deletion on app shutdown
+
+Workflow Per-Request:
+- The Agent Framework doesn't support concurrent workflow executions
+- We create a fresh workflow instance per request
+- Agent clients are reused (they cache agent IDs globally)
 """
 
+import logging
 import os
 
 from agent_framework import WorkflowBuilder
-from agent_framework_azure_ai import AzureAIAgentClient
 from azure.identity.aio import DefaultAzureCredential
 
 # Support both DevUI (entities on path) and FastAPI (src on path) import patterns
 try:
     from chat_agent.executor import ChatAgentExecutor  # type: ignore[import-not-found]
     from data_agent.executor import NL2SQLAgentExecutor  # type: ignore[import-not-found]
+    from shared.reusable_client import ReusableAgentClient  # type: ignore[import-not-found]
 except ImportError:
     from src.entities.chat_agent.executor import ChatAgentExecutor
     from src.entities.data_agent.executor import NL2SQLAgentExecutor
+    from src.entities.shared.reusable_client import ReusableAgentClient
+
+logger = logging.getLogger(__name__)
+
+# Module-level clients - reused across requests (they cache agent IDs globally)
+_chat_client: ReusableAgentClient | None = None
+_nl2sql_client: ReusableAgentClient | None = None
 
 
-def _create_workflow():
+def _get_clients() -> tuple[ReusableAgentClient, ReusableAgentClient]:
     """
-    Create the data agent workflow.
-
-    Returns:
-        Tuple of (workflow, chat_executor, chat_client)
+    Get or create the agent clients (singleton pattern).
+    
+    Clients are reused because they cache agent IDs globally,
+    avoiding repeated agent lookups.
     """
+    global _chat_client, _nl2sql_client
+    
+    if _chat_client is not None and _nl2sql_client is not None:
+        return _chat_client, _nl2sql_client
+    
     # Get Azure AI Foundry endpoint from environment
     endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT", "")
     if not endpoint:
@@ -40,33 +65,72 @@ def _create_workflow():
             "Set it to your Azure AI Foundry project endpoint."
         )
 
-    # Create chat client with Azure credential
-    # Use AZURE_CLIENT_ID for user-assigned managed identity in Container Apps
+    # Create credential with optional managed identity
     client_id = os.getenv("AZURE_CLIENT_ID")
     if client_id:
         credential = DefaultAzureCredential(managed_identity_client_id=client_id)
     else:
         credential = DefaultAzureCredential()
-    _chat_client = AzureAIAgentClient(
+    
+    # Model deployments
+    default_model = os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME")
+    chat_model = os.getenv("AZURE_AI_CHAT_MODEL", default_model)
+    nl2sql_model = os.getenv("AZURE_AI_NL2SQL_MODEL", default_model)
+    
+    _chat_client = ReusableAgentClient(
         endpoint=endpoint,
         credential=credential,
+        model_deployment_name=chat_model,
+        should_cleanup_agent=False,
     )
+    
+    _nl2sql_client = ReusableAgentClient(
+        endpoint=endpoint,
+        credential=credential,
+        model_deployment_name=nl2sql_model,
+        should_cleanup_agent=False,
+    )
+    
+    return _chat_client, _nl2sql_client
 
-    # Create executors
-    _chat_executor = ChatAgentExecutor(_chat_client)
-    nl2sql_executor = NL2SQLAgentExecutor(_chat_client)
 
-    # Build the workflow
-    # Chat -> NL2SQL -> Chat (render)
-    _workflow = (
+def create_workflow_instance():
+    """
+    Create a fresh workflow instance for a single request.
+    
+    The Agent Framework doesn't support concurrent workflow executions,
+    so we create a new workflow per request. The agent clients are reused
+    (they cache agent IDs globally).
+    
+    Returns:
+        Tuple of (workflow, chat_executor, chat_client)
+    """
+    chat_client, nl2sql_client = _get_clients()
+    
+    # Create fresh executors for this request
+    chat_executor = ChatAgentExecutor(chat_client)
+    nl2sql_executor = NL2SQLAgentExecutor(nl2sql_client)
+
+    # Build fresh workflow
+    workflow = (
         WorkflowBuilder()
-        .add_edge(_chat_executor, nl2sql_executor)  # User message -> NL2SQL
-        .add_edge(nl2sql_executor, _chat_executor)  # NL2SQL response -> Chat render
-        .set_start_executor(_chat_executor)
+        .add_edge(chat_executor, nl2sql_executor)
+        .add_edge(nl2sql_executor, chat_executor)
+        .set_start_executor(chat_executor)
         .build()
     )
 
-    return _workflow, _chat_executor, _chat_client
+    return workflow, chat_executor, chat_client
+
+
+def _create_workflow():
+    """
+    Create the data agent workflow (for DevUI and initial setup).
+
+    Returns:
+        Tuple of (workflow, chat_executor, chat_client)
+    """
+    return create_workflow_instance()
 
 
 # Create workflow at module level for DevUI discovery

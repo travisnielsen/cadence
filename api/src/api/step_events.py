@@ -6,6 +6,8 @@ step events from within executors that can be consumed by the SSE streaming endp
 
 Supports timing by emitting start/end events that the streaming endpoint uses
 to calculate durations.
+
+Also provides context for passing request-scoped data (like user_id) to executors.
 """
 
 import asyncio
@@ -21,6 +23,20 @@ _step_queue_var: ContextVar[Optional[asyncio.Queue]] = ContextVar("step_queue", 
 
 # Track step start times for duration calculation
 _step_start_times: ContextVar[dict[str, float]] = ContextVar("step_start_times", default=None)
+
+# Context variable to hold the current user_id for this request
+# This allows executors to access the authenticated user when creating threads
+_user_id_var: ContextVar[Optional[str]] = ContextVar("user_id", default=None)
+
+
+def get_request_user_id() -> Optional[str]:
+    """Get the current user_id for this request context."""
+    return _user_id_var.get()
+
+
+def set_request_user_id(user_id: Optional[str]) -> None:
+    """Set the user_id for this request context."""
+    _user_id_var.set(user_id)
 
 
 def get_step_queue() -> Optional[asyncio.Queue]:

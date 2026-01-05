@@ -1,150 +1,112 @@
 # Enterprise Data Agent
 
-This is a sample application that demonstrates exploration of structured and unstructured data using and agentic retrieval and NL2SQL. It leverages [Microsoft Agent Framework](https://aka.ms/agent-framework) (MAF) as an agent orchestratory and [assistant-ui](https://github.com/assistant-ui/assistant-ui) for the core user experience. These two pieces work together using the Server Side Events protocol with all thread management delegated to Microsoft Foundry.
+`dataagent` is a reference application that demonstrates exploration of structured and unstructured data using natrual language and agentic retrieval. Its built using [Microsoft Agent Framework](https://aka.ms/agent-framework) (MAF) hosted on FastAPI for intent and retrieval orchestration and [assistant-ui](https://github.com/assistant-ui/assistant-ui) for the user experience. Communication between these two components happens via Server-Sent Events with thread management delegated to Microsoft Foundry.
 
-## Prerequisites
+![screenshot](./docs/images/data-agent-screenshot.png)
 
-- Azure OpenAI credentials (for the Microsoft Agent Framework agent)
-- Python 3.12+
-- uv
-- Node.js 20+ 
-- Any of the following package managers:
-  - pnpm (recommended)
-  - npm
-  - yarn
-  - bun
+## Architecture Overview
 
-It is assumed you have administrative permissions to an Azure subscription as well as the ability to register applications in Entra ID.
+### API Sequence Diagram
+
+The following diagram shows the key API interactions between the frontend and backend:
+
+```mermaid
+%%{init: {'theme': 'dark'}}%%
+sequenceDiagram
+    participant Client as Frontend<br/>assistant-ui
+    participant API as FastAPI
+    participant MAF as Orchestration<br/>Agent Framework
+    participant Foundry as Microsoft Foundry
+
+    rect rgb(50, 40, 60)
+        Note over Client, Foundry: Chat Interaction (SSE Stream)
+        Client->>API: Send message<br/>(with access_token)
+        API->>API: Validate token   
+        API->>MAF: Execute workflow
+        activate MAF           
+        MAF->>Foundry: Create thread (if new)
+        Foundry-->>MAF: Thread ID       
+        MAF->>Foundry: Agent operations
+        
+        loop Real-time Updates
+            MAF-->>Client: Step progress events
+            MAF-->>Client: Tool execution results
+            MAF-->>Client: Streamed content
+        end
+        
+        MAF-->>Client: Thread ID + completion
+        deactivate MAF         
+    end
+
+    rect rgb(30, 50, 70)
+        Note over Client, Foundry: Thread Management
+        Client->>API: List user threads
+        API->>Foundry: Query threads by user_id
+        Foundry-->>Client: Thread list with metadata
+        
+        Client->>API: Load thread history
+        API->>Foundry: Fetch messages
+        Foundry-->>Client: Conversation messages
+        
+        Client->>API: Update thread (title/status)
+        Client->>API: Delete thread
+        API-->>Client: Confirmation
+    end
+```
+
+### Agent Workflow
+
+The application uses a multi-agent workflow to process user queries:
+
+```mermaid
+%%{init: {'theme': 'dark'}}%%
+flowchart TB
+    subgraph Workflow["NL2SQL Workflow"]
+        direction TB
+        
+        subgraph ChatAgent["Chat Agent"]
+            CA_DESC["• Receives user messages<br/>• Triages requests<br/>• Renders final responses"]
+        end
+        
+        subgraph DataAgent["Data Agent (NL2SQL)"]
+            DA_DESC["• Match user intent to SQL template<br/>• Executes SQL queries<br/>• Returns structured results"]
+            DA_TOOLS["Tools: search_templates, execute_sql"]
+        end
+        
+        subgraph ParamExtractor["Parameter Extractor"]
+            PE_DESC["• Extracts parameter values from user input<br/>• Fills SQL template tokens"]
+        end
+    end
+
+    User([User Query]) --> ChatAgent
+    ChatAgent -->|"Data question"| DataAgent
+    DataAgent -->|"Template match found"| ParamExtractor
+    ParamExtractor -->|"Extracted parameters"| DataAgent
+    DataAgent -->|"Query results"| ChatAgent
+    ChatAgent --> Response([Rendered Response])
+
+    style Workflow fill:#1a1a2e,stroke:#4a4a6a
+    style ChatAgent fill:#32284d,stroke:#6b5b95
+    style DataAgent fill:#1e3246,stroke:#4a7c9b
+    style ParamExtractor fill:#28473d,stroke:#5a9a7a
+
+```
+
+### Workflow Steps
+
+| Agent | Purpose |
+|-------|---------|
+| **Chat Agent** | User-facing agent that receives messages, triages them (data vs. general questions), and renders the final response with helpful context |
+| **Data Agent (NL2SQL)** | Searches for cached query templates matching user intent, executes SQL against the database, and returns structured results |
+| **Parameter Extractor** | When a query template is matched, extracts parameter values from the user's natural language input to fill SQL template tokens |
 
 ## Getting Started
 
-### Deploy Azure Infrastructure
+For complete setup instructions including Azure infrastructure deployment, local development, and production deployment, see the [Infrastructure Guide](infra/README.md).
 
-Details about infrastructure deployment can be found within the [infra](/infra/) folder.
+### Quick Start
 
-
-
-## Run locally
-
-### Install dependencies
-
-Install dependencies using your preferred package manager:
-
-   ```bash
-   # Using pnpm (recommended)
-   pnpm install
-
-   # Using npm
-   npm install
-
-   # Using yarn
-   yarn install
-
-   # Using bun
-   bun install
-   ```
-
-   > **Note:** This automatically sets up the Python environment as well. If you have manual issues, you can run: `npm run install:agent`
-
-### Set environment variables
-
-Using the output from the application enrollment script, set up your agent credentials. The backend automatically uses Azure when the Azure env vars below are present. Create an `.env` file inside the `agent` folder with one of the following configurations:
-  
-   ```env
-   # Microsoft Foundry settings
-   AZURE_OPENAI_ENDPOINT=https://[your-resource].services.ai.azure.com/
-   AZURE_OPENAI_PROJECT_ENDPOINT=https://[your-resource].services.ai.azure.com/api/projects/[your-project]
-   AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=gpt-4o
-
-   # Agent name (optional) used to find or create an agent (default: data-explorer-agent)
-   # AZURE_AI_AGENT_NAME=[custom-name-]
-
-   # Entra ID Authentication
-   AZURE_AD_CLIENT_ID=[your-app-id]
-   AZURE_AD_TENANT_ID=[your-tenant-id]
-   ```
-
-> [!IMPORTANT]
-> The Entra ID section is optional. When the two environment variables are set, the API will require a valid token issued by the source tenant with the correct target scope. If you don't require user-level authorization to the API, you can delete this section.
-
-Next, create a new `.env.local` file within the `frontend` directory and populate the values. You can use the [.env.example](frontend/.env.example) as a reference.
-
-   ```env
-   NEXT_PUBLIC_AZURE_AD_CLIENT_ID=your-client-id-here
-   NEXT_PUBLIC_AZURE_AD_TENANT_ID=your-tenant-id-here
-   ```
-
-### Start the development server
-
-The following commands can be used to start the enviroment locally:
-
-   ```bash
-   # Using pnpm
-   pnpm dev
-
-   # Using npm
-   npm run dev
-
-   # Using yarn
-   yarn dev
-
-   # Using bun
-   bun run dev
-   ```
-
-   This will start both the UI and the Microsoft Agent Framework server concurrently.
-
-## Telemetry and DevUI
-
-### Running with DevUI
-
-The Microsoft Agent Framework includes a development UI for testing and debugging agents and workflows. To run the application with DevUI instead of the FastAPI server:
-
-```bash
-cd api
-source .venv/bin/activate
-devui ./src/entities
-```
-
-DevUI will auto-discover the agents and workflows in the `entities` directory and provide an interactive interface for testing. You can run individual agents (`data_agent`, `chat_agent`) or the full `workflow`.
-
-### Enabling Telemetry
-
-The application supports OpenTelemetry for observability. Add these environment variables to your `api/.env` file:
-
-```env
-# Enable OpenTelemetry instrumentation
-ENABLE_INSTRUMENTATION=true
-
-# Option 1: Azure Monitor (production)
-APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=...
-
-# Option 2: OTLP exporters (local development with Aspire Dashboard, Jaeger, etc.)
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
-
-# Optional: Enable console output for debugging
-ENABLE_CONSOLE_EXPORTERS=true
-
-# Optional: Log prompts and responses (use with caution - contains sensitive data)
-ENABLE_SENSITIVE_DATA=true
-```
-
-To install the required telemetry packages:
-
-```bash
-cd api
-uv pip install -e ".[observability]"
-```
-
-## Available Scripts
-
-The following scripts can also be run using your preferred package manager:
-
-- `dev` – Starts both UI and agent servers in development mode
-- `dev:debug` – Starts development servers with debug logging enabled
-- `dev:ui` – Starts only the Next.js UI server
-- `dev:agent` – Starts only the Microsoft Agent Framework server
-- `build` – Builds the Next.js application for production
-- `start` – Starts the production server
-- `lint` – Runs ESLint for code linting
-- `install:agent` – Installs Python dependencies for the agent
+1. **Deploy Infrastructure** - Follow the [Infrastructure Guide](infra/README.md) to set up Azure resources
+2. **Install Dependencies** - `pnpm install` (also sets up Python environment)
+3. **Configure Environment** - Set up `.env` files for API and frontend
+4. **Run Locally** - `pnpm dev` starts both UI and agent servers

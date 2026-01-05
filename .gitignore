@@ -9,3 +9,6 @@ build/
 node_modules/
 .next/
 .env.local
+
+# MacOS
+.DS_Store

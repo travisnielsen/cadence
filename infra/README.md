@@ -1,4 +1,19 @@
-# Azure Infrastructure Deployment
+# Infrastructure & Deployment Guide
+
+This guide covers Azure infrastructure deployment, local development setup, and production deployment for the Enterprise Data Agent.
+
+## Prerequisites
+
+- **Azure Access**: Administrative permissions to an Azure subscription and ability to register applications in Entra ID
+- **Development Tools**:
+  - Python 3.12+
+  - [uv](https://github.com/astral-sh/uv) (Python package manager)
+  - Node.js 20+
+  - pnpm (recommended), npm, yarn, or bun
+  - Azure CLI (`az`)
+  - Terraform
+
+## Azure Infrastructure
 
 This repo includes Infrastructure-as-Code (IaC) that deploys a baseline set of services for supporting RAG and NL2SQL scenarios. These services are summarized as follows:
 
@@ -17,9 +32,9 @@ This repo includes Infrastructure-as-Code (IaC) that deploys a baseline set of s
 The IaC is based on Terraform and uses [Azure Verified Modules](https://azure.github.io/Azure-Verified-Modules/).
 
 > [!IMPORTANT]
-> Currently, this repo assumes you have permissiones to create resources in an Azure subscription and can configure RBAC roles.
+> Currently, this repo assumes you have permissions to create resources in an Azure subscription and can configure RBAC roles.
 
-## AI Search Configuration
+### AI Search Configuration
 
 The Terraform deployment automatically configures AI Search with vector indexes for NL2SQL scenarios:
 
@@ -32,13 +47,13 @@ The Terraform deployment automatically configures AI Search with vector indexes 
 
 The Search service uses managed identity authentication to access storage and AI Foundry for embedding generation. Sample data is uploaded from the `search-config/` folder during deployment.
 
-## Deployment - Infrastructure
+### Deploy Infrastructure
 
-### Entra ID App Registration
+#### Entra ID App Registration
 
-This repo supports user-level authentication to the agent API, which supports enterprise security as well as documenting user feedback. The application can be created using: [create-chat-app.ps1](scripts/create-chat-app.ps1). Be sure to sign-into your Entra ID tenant using `az login` first.
+This repo supports user-level authentication to the agent API, which supports enterprise security as well as documenting user feedback. The application can be created using: [create-chat-app.ps1](../scripts/create-chat-app.ps1). Be sure to sign-into your Entra ID tenant using `az login` first.
 
-### Azure Services
+#### Azure Services
 
 In the sub-folder you are working from, create a new `terraform.tfvars` file and populate the following variables:
 
@@ -62,6 +77,145 @@ terraform plan
 
 # Deploy resources
 terraform apply
+```
+
+### SQL Database User Setup
+
+After deploying the infrastructure, create a contained database user in SQL Server to allow the API's managed identity to authenticate. This is a one-time setup step.
+
+Run the setup script (PowerShell):
+
+```powershell
+cd scripts
+
+# Get the values from Terraform state
+$SqlServer = (cd ../infra/public-networking && terraform state show module.sql_server.azurerm_mssql_server.this | Select-String '^\s*name\s*=' | ForEach-Object { $_ -replace '.*"(.+)".*', '$1' })
+$IdentityName = (cd ../infra/public-networking && terraform state show azurerm_user_assigned_identity.api_identity | Select-String '^\s*name\s*=' | ForEach-Object { $_ -replace '.*"(.+)".*', '$1' })
+
+# Run the PowerShell script
+./setup-sql-user.ps1 -SqlServerName $SqlServer -DatabaseName "WideWorldImportersStd" -IdentityName $IdentityName
+```
+
+Or with explicit values:
+
+```powershell
+cd scripts
+./setup-sql-user.ps1 -SqlServerName "ay2q3p-sql" -DatabaseName "WideWorldImportersStd" -IdentityName "ay2q3p-api-identity"
+```
+
+The script creates the managed identity as a database user and grants **db_datareader** and **db_datawriter** roles.
+
+> **Note:** You must be logged in with `az login` as the SQL Server Entra ID admin. The script requires the PowerShell `SqlServer` module (auto-installs if missing).
+
+## Local Development
+
+### Install Dependencies
+
+Install dependencies using your preferred package manager:
+
+```bash
+# Using pnpm (recommended)
+pnpm install
+
+# Using npm
+npm install
+
+# Using yarn
+yarn install
+
+# Using bun
+bun install
+```
+
+> **Note:** This automatically sets up the Python environment as well. If you have issues, run: `pnpm run install:agent`
+
+### Environment Variables - API
+
+Create an `.env` file inside the `api` folder. Next, copy the contents of the [.env.example](/api/.env.example) file into `.env` and update the values to match your enviorment.
+
+> [!IMPORTANT]
+> The Entra ID section is optional. When these environment variables are set, the API will require a valid token issued by the source tenant with the correct target scope. If you don't require user-level authorization to the API, you can omit these.
+
+### Environment Variables - Frontend
+
+Create a `.env.local` file within the `frontend` directory. Use [.env.example](../frontend/.env.example) as a reference:
+
+```env
+NEXT_PUBLIC_AZURE_AD_CLIENT_ID=your-client-id-here
+NEXT_PUBLIC_AZURE_AD_TENANT_ID=your-tenant-id-here
+```
+
+### Start Development Server
+
+From the [frontend](/frontend/) directory, run any of the following commands:
+
+```bash
+# Using pnpm (recommended)
+pnpm dev
+
+# Using npm
+npm run dev
+
+# Using yarn
+yarn dev
+
+# Using bun
+bun run dev
+```
+
+This starts both the UI and the FastAPI backend concurrently.
+
+### Available Scripts
+
+| Script | Description |
+|--------|-------------|
+| `dev` | Starts both UI and agent servers in development mode |
+| `dev:debug` | Starts development servers with debug logging enabled |
+| `dev:ui` | Starts only the Next.js UI server |
+| `dev:agent` | Starts only the Microsoft Agent Framework server |
+| `build` | Builds the Next.js application for production |
+| `start` | Starts the production server |
+| `lint` | Runs ESLint for code linting |
+| `install:agent` | Installs Python dependencies for the agent |
+
+### DevUI for Testing
+
+The Microsoft Agent Framework includes a development UI for testing and debugging agents and workflows:
+
+```bash
+cd api
+source .venv/bin/activate
+devui ./src/entities
+```
+
+DevUI auto-discovers agents and workflows in the `entities` directory, providing an interactive interface for testing individual agents (`data_agent`, `chat_agent`) or the full `workflow`.
+
+### Telemetry
+
+The application supports OpenTelemetry for observability. Add these environment variables to your `api/.env` file:
+
+```env
+# Enable OpenTelemetry instrumentation
+ENABLE_INSTRUMENTATION=true
+
+# Option 1: Azure Monitor (production)
+APPLICATIONINSIGHTS_CONNECTION_STRING=InstrumentationKey=...
+
+# Option 2: OTLP exporters (local development with Aspire Dashboard, Jaeger, etc.)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+
+# Optional: Enable console output for debugging
+ENABLE_CONSOLE_EXPORTERS=true
+
+# Optional: Log prompts and responses (use with caution - contains sensitive data)
+ENABLE_SENSITIVE_DATA=true
+```
+
+Install the required telemetry packages:
+
+```bash
+cd api
+uv pip install -e ".[observability]"
 ```
 
 ## Continuous Deployment - GitHub Actions
@@ -135,7 +289,21 @@ Next, navigate to your repository's **Settings → Secrets and variables → Act
 | `NEXT_PUBLIC_AZURE_AD_CLIENT_ID` | Frontend app registration client ID for authentication |
 | `NEXT_PUBLIC_AZURE_AD_TENANT_ID` | Azure AD tenant ID for authentication |
 
-### Manual Deployment
+### Workflow Trigger
+
+The GitHub Actions workflow (`.github/workflows/deploy-frontend.yml`) triggers on:
+
+- Push to `main` branch with changes in `frontend/**`
+- Manual dispatch via GitHub Actions UI
+
+### Redirect URI Configuration
+
+>[!IMPORTANT]
+>Regardless of how the frontend is deployed, once you have the URL of the static website, you will need to update the app registration to include the URL as a Redirect URI. In Entra ID, this is done in the **Authentication** section of the App Registration.
+
+## Manual Deployment
+
+### Chat Client Deployment to Azure Static Webapp
 
 To manually deploy the frontend:
 
@@ -155,29 +323,9 @@ az storage blob upload-batch \
   --auth-mode login
 ```
 
-### Workflow Trigger
+### FastAPI Deployment to Azure Container Apps
 
-The GitHub Actions workflow (`.github/workflows/deploy-frontend.yml`) triggers on:
-
-- Push to `main` branch with changes in `frontend/**`
-- Manual dispatch via GitHub Actions UI
-
-### Update Redirect URI for App Registration
-
->[!IMPORTANT]
->Regardless of how the frontend is deployed, once you have the URL of the static website, you will need to update the app registration to include the URL as a Redirect URI. In Entra ID, this is done in the **Authentication** section of the App Registration.
-
-## Deployment - API
-
-The API is containerized and deployed to Azure Container Apps. Follow these steps to build and push the container image.
-
-### Prerequisites
-
-- Docker installed and running
-- Azure CLI authenticated (`az login`)
-- Access to the Azure Container Registry deployed by Terraform
-
-### Build the Container Image
+#### Build the Container Image for local testing (optional)
 
 From the `api/` directory, build the Docker image:
 
@@ -188,8 +336,6 @@ cd api
 docker build -t dataagent-api .
 ```
 
-### Run Locally (Optional)
-
 To test the container locally before pushing:
 
 ```bash
@@ -199,9 +345,12 @@ docker run -p 8000:8000 --env-file .env dataagent-api
 
 The API will be available at `http://localhost:8000`. Verify it's running by checking the health endpoint: `http://localhost:8000/health`
 
-### Build and Push to Azure Container Registry
+#### Build and Push to Azure Container Registry
 
-Use `az acr build` to build the container image directly in Azure. This ensures the image is built for the correct platform (linux/amd64) regardless of your local machine's architecture.
+Follow these steps to build and push the container image to Azure.
+
+>[!NOTE]
+>Using `az acr build` builds the image on Azure's infrastructure, avoiding architecture mismatches that can occur when building locally on ARM-based machines (e.g., Apple Silicon, Windows Arm, etc...).
 
 1. **Get the ACR name from Terraform:**
 
@@ -227,41 +376,8 @@ cd api
 az acr build --registry ay2q3pacr --image dataagent-api:latest --platform linux/amd64 .
 ```
 
->[!NOTE]
->Using `az acr build` builds the image on Azure's infrastructure, avoiding architecture mismatches that can occur when building locally on ARM-based machines (e.g., Apple Silicon Macs).
-
 After the image is updated and you are using the `latest` tag, you can update the Container App by running:
 
 ```bash
 az containerapp update --name [container_app_name] --resource-group [resource_group_name] --image [container_registry_name].azurecr.io/dataagent-api:latest
 ```
-
-### Post-Deployment: SQL Database User Setup
-
-After deploying the infrastructure, you must create a contained database user in SQL Server to allow the API's managed identity to authenticate. This is a one-time setup step.
-
-**Run the setup script (PowerShell):**
-
-```powershell
-cd scripts
-
-# Get the values from Terraform state
-$SqlServer = (cd ../infra/public-networking && terraform state show module.sql_server.azurerm_mssql_server.this | Select-String '^\s*name\s*=' | ForEach-Object { $_ -replace '.*"(.+)".*', '$1' })
-$IdentityName = (cd ../infra/public-networking && terraform state show azurerm_user_assigned_identity.api_identity | Select-String '^\s*name\s*=' | ForEach-Object { $_ -replace '.*"(.+)".*', '$1' })
-
-# Run the PowerShell script
-./setup-sql-user.ps1 -SqlServerName $SqlServer -DatabaseName "WideWorldImportersStd" -IdentityName $IdentityName
-```
-
-Or with explicit values:
-
-```powershell
-cd scripts
-./setup-sql-user.ps1 -SqlServerName "ay2q3p-sql" -DatabaseName "WideWorldImportersStd" -IdentityName "ay2q3p-api-identity"
-```
-
-The script creates the managed identity as a database user and grants:
-- **db_datareader** - Read access to all tables
-- **db_datawriter** - Write access to all tables
-
-> **Note:** You must be logged in with `az login` as the SQL Server Entra ID admin to run this script. The script requires the PowerShell `SqlServer` module (it will auto-install if missing).

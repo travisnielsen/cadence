@@ -1127,6 +1127,18 @@ resource "azurerm_container_app" "api" {
         name  = "QUERY_TEMPLATE_CONFIDENCE_THRESHOLD"
         value = "0.025"
       }
+      env {
+        name  = "AZURE_AI_CHAT_MODEL"
+        value = "gpt-4.1"
+      }
+      env {
+        name  = "AZURE_AI_NL2SQL_MODEL"
+        value = "gpt-4.1-mini"
+      }
+      env {
+        name  = "AZURE_AI_PARAM_EXTRACTOR_MODEL"
+        value = "gpt-4.1-mini"
+      }
     }
   }
 

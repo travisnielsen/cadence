@@ -272,12 +272,14 @@ class ChatAgentExecutor(Executor):
         
         # Fast path: keyword-based routing for obvious data questions
         # This skips the LLM triage call and saves ~8-10 seconds
-        # The NL2SQL agent will create the thread and set user_id metadata
+        # Note: Thread creation is deferred until first LLM call (param_extractor)
+        # because Azure AI Foundry only creates threads on agent.run()
         if _is_likely_data_question(user_text):
             logger.info("Fast triage: detected data question via keywords, routing to NL2SQL")
             return ROUTE_TO_NL2SQL, user_text
         
         # Slow path: use LLM for ambiguous messages or general chat
+        # This path creates the thread because we need to call the LLM
         logger.info("Using LLM triage for ambiguous message")
         
         # Get or create thread for this conversation
@@ -291,7 +293,7 @@ class ChatAgentExecutor(Executor):
                 metadata = {"user_id": user_id}
                 logger.info("Setting thread metadata with user_id: %s", user_id)
         
-        # Run the chat agent to triage
+        # Run the chat agent to triage - this creates the thread in Foundry
         response = await self.agent.run(user_text, thread=thread, metadata=metadata)
         
         # Store thread ID after run

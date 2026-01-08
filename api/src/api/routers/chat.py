@@ -16,6 +16,7 @@ from typing import AsyncGenerator, TYPE_CHECKING
 
 from fastapi import APIRouter, Query, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse
+from opentelemetry import trace, context as otel_context
 
 from agent_framework import (
     ChatMessage,
@@ -38,6 +39,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
+# Get tracer for workflow-level spans
+tracer = trace.get_tracer(__name__)
+
 
 async def generate_workflow_streaming_response(
     workflow: "Workflow",
@@ -55,6 +59,10 @@ async def generate_workflow_streaming_response(
     3. ChatAgentExecutor renders the final response
 
     The output is a JSON structure with 'text', 'thread_id', and optional 'tool_call' from Foundry.
+    
+    Tracing:
+    - Creates a parent 'workflow.run' span that wraps the entire execution
+    - All executor spans become children of this parent span for trace correlation
     """
     # Friendly names for executor steps (parent steps that contain tool steps)
     # Note: "chat" appears twice in the workflow (routing and rendering), 
@@ -63,6 +71,19 @@ async def generate_workflow_streaming_response(
         "nl2sql": "Analyzing data and generating query...",
         "chat": "Preparing response...",
     }
+    
+    # Create a parent span for the entire workflow execution
+    # This ensures all executor spans are correlated under a single trace in Foundry
+    workflow_span = tracer.start_span(
+        "workflow.run",
+        attributes={
+            "workflow.message": message[:100],  # Truncate for attribute limits
+            "workflow.thread_id": incoming_thread_id or "new",
+            "workflow.user_id": user_id or "anonymous",
+        }
+    )
+    # Attach the span to current context so child spans are linked
+    context_token = otel_context.attach(trace.set_span_in_context(workflow_span))
 
     # Set up step event queue for tool-level progress
     step_queue: asyncio.Queue = asyncio.Queue()
@@ -273,10 +294,17 @@ async def generate_workflow_streaming_response(
 
         # Include thread_id in the done signal for the frontend
         yield f"data: {json.dumps({'done': True, 'thread_id': foundry_thread_id})}\n\n"
+        
+        # Mark span as successful
+        workflow_span.set_status(trace.StatusCode.OK)
 
     except (ValueError, RuntimeError, OSError, TypeError) as e:
         logger.error("Workflow error: %s", e, exc_info=True)
         yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
+        
+        # Record error on span
+        workflow_span.set_status(trace.StatusCode.ERROR, str(e))
+        workflow_span.record_exception(e)
     finally:
         # Cancel pending tasks
         if next_event_task is not None and not next_event_task.done():
@@ -301,6 +329,10 @@ async def generate_workflow_streaming_response(
         
         # Clean up step queue
         clear_step_queue()
+        
+        # End the workflow span and detach context
+        workflow_span.end()
+        otel_context.detach(context_token)
 
 
 async def generate_streaming_response(

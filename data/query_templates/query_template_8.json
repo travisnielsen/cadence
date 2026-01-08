@@ -1,7 +1,6 @@
 {
     "intent": "average_order_value_for_customer_category",
     "question": "What is the average order value for supermarkets?",
-    "confidence_threshold": 0.02,
     "sql_template": "SELECT Sales.CustomerCategories.CustomerCategoryName, COUNT(DISTINCT Sales.Orders.OrderID) AS TotalOrders, AVG(OrderTotal.Total) AS AvgOrderValue FROM Sales.CustomerCategories JOIN Sales.Customers ON Sales.CustomerCategories.CustomerCategoryID = Sales.Customers.CustomerCategoryID JOIN Sales.Orders ON Sales.Customers.CustomerID = Sales.Orders.CustomerID JOIN (SELECT Sales.OrderLines.OrderID, SUM(Sales.OrderLines.Quantity * Sales.OrderLines.UnitPrice) AS Total FROM Sales.OrderLines GROUP BY Sales.OrderLines.OrderID) OrderTotal ON Sales.Orders.OrderID = OrderTotal.OrderID WHERE Sales.CustomerCategories.CustomerCategoryName = '%{{category_name}}%' GROUP BY Sales.CustomerCategories.CustomerCategoryID, Sales.CustomerCategories.CustomerCategoryName ORDER BY AvgOrderValue DESC",
     "reasoning": "This query calculates average order value by customer category. It uses a subquery to get order totals from OrderLines, then aggregates by customer category to find average order value per category.",
     "parameters": [

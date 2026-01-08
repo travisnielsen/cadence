@@ -81,10 +81,6 @@ class QueryTemplate(BaseModel):
     id: str = Field(default="", description="Document ID from search index")
     intent: str = Field(description="Intent identifier for this template")
     question: str = Field(description="Example question this template answers")
-    confidence_threshold: float = Field(
-        default=0.85,
-        description="Minimum confidence score to use this template"
-    )
     sql_template: str = Field(
         description="SQL template with %{{param}}% tokens"
     )

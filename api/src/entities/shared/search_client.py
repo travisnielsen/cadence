@@ -169,13 +169,18 @@ class AzureSearchClient:
         """
         Execute pure vector search (no keyword matching).
 
+        Uses cosine similarity scoring which provides more discriminative
+        scores compared to hybrid RRF scoring, making it easier to detect
+        ambiguous matches.
+
         Args:
             query: The search query text
             select: List of fields to return in results
             top: Maximum number of results to return
 
         Returns:
-            List of result dictionaries with selected fields and score
+            List of result dictionaries with selected fields and score.
+            Scores are cosine similarity values (0.0 to 1.0 range).
         """
         assert self._search_client is not None, "Client not initialized"
 
@@ -199,6 +204,7 @@ class AzureSearchClient:
         matches = []
         async for result in results:
             match = {field: result.get(field, "") for field in select}
+            # @search.score for pure vector search is cosine similarity (0-1 range)
             match["score"] = result.get("@search.score", 0)
             matches.append(match)
 

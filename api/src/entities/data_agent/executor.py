@@ -127,14 +127,15 @@ class NL2SQLAgentExecutor(Executor):
             search_result = await search_query_templates(question)  # type: ignore[misc]
 
             if search_result.get("has_high_confidence_match") and search_result.get("best_match"):
-                # High confidence match found - route to parameter extractor
+                # High confidence AND unambiguous match found - route to parameter extractor
                 best_match = search_result["best_match"]
                 template = QueryTemplate.model_validate(best_match)
 
                 logger.info(
-                    "High confidence template match: '%s' (score: %.3f)",
+                    "High confidence unambiguous template match: '%s' (score: %.3f, gap: %.3f)",
                     template.intent,
-                    template.score
+                    template.score,
+                    search_result.get("ambiguity_gap", 0.0)
                 )
 
                 # Build extraction request and route to parameter extractor
@@ -159,19 +160,46 @@ class NL2SQLAgentExecutor(Executor):
                 await ctx.send_message(request_msg, target_id="param_extractor")
 
             else:
-                # Low confidence - ask for clarification
-                logger.info(
-                    "No high confidence template match (best score: %.3f, threshold: %.3f)",
-                    search_result.get("confidence_score", 0),
-                    search_result.get("confidence_threshold", 0.85)
-                )
+                # Either low confidence or ambiguous match - ask for clarification
+                is_ambiguous = search_result.get("is_ambiguous", False)
+                confidence_score = search_result.get("confidence_score", 0)
+                confidence_threshold = search_result.get("confidence_threshold", 0.75)
+                
+                if is_ambiguous:
+                    # Ambiguous match - multiple templates with similar high scores
+                    all_matches = search_result.get("all_matches", [])
+                    matching_intents = [m.get("intent", "unknown") for m in all_matches[:3] if m.get("score", 0) >= confidence_threshold]
+                    
+                    logger.info(
+                        "Ambiguous template match (gap: %.3f < %.3f). Top matches: %s",
+                        search_result.get("ambiguity_gap", 0),
+                        search_result.get("ambiguity_gap_threshold", 0.05),
+                        matching_intents
+                    )
+                    
+                    # Build clarification message listing possible interpretations
+                    intent_list = ", ".join(f"'{intent}'" for intent in matching_intents)
+                    error_message = (
+                        f"Your question could match multiple query types: {intent_list}. "
+                        "Could you please be more specific about what data you're looking for?"
+                    )
+                else:
+                    # Low confidence - no good match found
+                    logger.info(
+                        "No high confidence template match (best score: %.3f, threshold: %.3f)",
+                        confidence_score,
+                        confidence_threshold
+                    )
+                    error_message = (
+                        "I couldn't understand your question well enough to query the database. "
+                        "Could you please rephrase or provide more details about what data you're looking for?"
+                    )
 
                 # Build a clarification response
                 nl2sql_response = NL2SQLResponse(
                     sql_query="",
-                    error="I couldn't understand your question well enough to query the database. "
-                          "Could you please rephrase or provide more details about what data you're looking for?",
-                    confidence_score=search_result.get("confidence_score", 0),
+                    error=error_message,
+                    confidence_score=confidence_score,
                 )
 
                 await ctx.send_message(nl2sql_response.model_dump_json())

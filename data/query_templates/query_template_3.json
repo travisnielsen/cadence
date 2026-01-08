@@ -1,7 +1,6 @@
 {
     "intent": "list_customers_by_total_spent",
     "question": "Which customers have spent the most money in total?",
-    "confidence_threshold": 0.02,
     "sql_template": "SELECT TOP %{{count}}% Sales.Customers.CustomerID, Sales.Customers.CustomerName, SUM(Sales.InvoiceLines.ExtendedPrice) AS TotalSpent FROM Sales.Customers JOIN Sales.Invoices ON Sales.Customers.CustomerID = Sales.Invoices.CustomerID JOIN Sales.InvoiceLines ON Sales.Invoices.InvoiceID = Sales.InvoiceLines.InvoiceID GROUP BY Sales.Customers.CustomerID, Sales.Customers.CustomerName ORDER BY TotalSpent %{{order}}%",
     "reasoning": "This query joins Customers, Invoices, and InvoiceLines to calculate total spending per customer. It groups by customer and orders by total spent ascending or descending to find the top or least spenders.",
     "parameters": [

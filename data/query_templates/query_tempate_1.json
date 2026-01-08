@@ -1,7 +1,6 @@
 {
     "intent": "best_worst_N_selling_products_by_quantity",
     "question": "What are the top 10 best-selling products by total quantity sold?",
-    "confidence_threshold": 0.02,
     "sql_template": "SELECT TOP %{{count}}% Warehouse.StockItems.StockItemID, Warehouse.StockItems.StockItemName, SUM(Sales.InvoiceLines.Quantity) AS TotalQuantitySold FROM Warehouse.StockItems JOIN Sales.InvoiceLines ON Warehouse.StockItems.StockItemID = Sales.InvoiceLines.StockItemID GROUP BY Warehouse.StockItems.StockItemID, Warehouse.StockItems.StockItemName ORDER BY TotalQuantitySold %{{order}}%",
     "reasoning": "This query joins StockItems with InvoiceLines to calculate the total quantity sold for each product. It groups by product and orders by total quantity in descending or ascending order to find the best or worst selling items.",
     "parameters": [

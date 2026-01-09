@@ -439,8 +439,8 @@ async def chat_stream(
     3. ChatAgentExecutor - renders structured response
 
     Thread support:
-    - Omit thread_id for new conversation - Foundry will create one
-    - Include thread_id to continue existing conversation
+    - Omit thread_id for new thread - Foundry will create one
+    - Include thread_id to continue existing thread
     - Response includes thread_id for use in subsequent requests
     """
     # Import here to avoid circular imports

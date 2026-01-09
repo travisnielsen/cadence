@@ -11,13 +11,8 @@ import os
 from pathlib import Path
 
 from agent_framework import ChatAgent
+from agent_framework_azure_ai import AzureAIClient
 from azure.identity.aio import DefaultAzureCredential
-
-# Support both DevUI (entities on path) and FastAPI (src on path) import patterns
-try:
-    from shared.reusable_client import ReusableAgentClient  # type: ignore[import-not-found]
-except ImportError:
-    from src.entities.shared.reusable_client import ReusableAgentClient
 
 from .tools import execute_sql, search_cached_queries
 
@@ -44,10 +39,12 @@ def _create_agent() -> ChatAgent:
         credential = DefaultAzureCredential(managed_identity_client_id=client_id)
     else:
         credential = DefaultAzureCredential()
-    chat_client = ReusableAgentClient(
-        endpoint=endpoint,
+    
+    # V2 AzureAIClient with agent versioning
+    chat_client = AzureAIClient(
+        project_endpoint=endpoint,
         credential=credential,
-        should_cleanup_agent=False,  # Don't delete agent on client close
+        use_latest_version=True,
     )
 
     # Load instructions

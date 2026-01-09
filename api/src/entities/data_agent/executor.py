@@ -18,7 +18,10 @@ from agent_framework import (
     WorkflowContext,
     handler,
 )
-from agent_framework_azure_ai import AzureAIAgentClient
+from agent_framework_azure_ai import AzureAIClient
+
+# Type alias for V2 client
+AzureAIAgentClient = AzureAIClient
 
 # Support both DevUI (entities on path) and FastAPI (src on path) import patterns
 try:

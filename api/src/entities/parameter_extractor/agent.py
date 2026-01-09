@@ -9,13 +9,8 @@ import os
 from pathlib import Path
 
 from agent_framework import ChatAgent
+from agent_framework_azure_ai import AzureAIClient
 from azure.identity.aio import DefaultAzureCredential
-
-# Support both DevUI (entities on path) and FastAPI (src on path) import patterns
-try:
-    from shared.reusable_client import ReusableAgentClient  # type: ignore[import-not-found]
-except ImportError:
-    from src.entities.shared.reusable_client import ReusableAgentClient
 
 
 def load_prompt() -> str:
@@ -45,11 +40,12 @@ def _create_agent() -> ChatAgent:
     default_model = os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME")
     extractor_model = os.getenv("AZURE_AI_PARAM_EXTRACTOR_MODEL", default_model)
 
-    chat_client = ReusableAgentClient(
-        endpoint=endpoint,
+    # V2 AzureAIClient with agent versioning
+    chat_client = AzureAIClient(
+        project_endpoint=endpoint,
         credential=credential,
         model_deployment_name=extractor_model,
-        should_cleanup_agent=False,  # Don't delete agent on client close
+        use_latest_version=True,
     )
 
     # Load instructions

@@ -5,7 +5,7 @@ Workflow builder for the data agent workflow.
 import logging
 
 from agent_framework import WorkflowBuilder
-from agent_framework_azure_ai import AzureAIAgentClient
+from agent_framework_azure_ai import AzureAIClient
 
 # Support both DevUI (entities on path) and FastAPI (src on path) import patterns
 try:
@@ -18,7 +18,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def build_data_agent_workflow(chat_client: AzureAIAgentClient):
+def build_data_agent_workflow(chat_client: AzureAIClient):
     """
     Build the data agent workflow.
 

@@ -13,22 +13,23 @@ The workflow:
 7. ChatAgentExecutor renders data results for the user
 8. For clarification: user provides more info, flow repeats from step 5
 
-Agent Reuse:
-- Agents are found by name (deterministic) on first request
-- If an agent with the matching name exists, it is reused
-- If not found, a new agent is created
-- Set should_cleanup_agent=False to prevent agent deletion on app shutdown
+Agent Management (V2 Responses API):
+- Uses AzureAIClient with use_latest_version=True
+- Agents are versioned by name - V2 automatically finds/creates latest version
+- No manual agent cleanup needed (versioned agents are immutable)
+- Conversations are stored in Foundry with conversation_id
 
 Workflow Per-Request:
 - The Agent Framework doesn't support concurrent workflow executions
 - We create a fresh workflow instance per request
-- Agent clients are reused (they cache agent IDs globally)
+- Agent clients are reused across requests
 """
 
 import logging
 import os
 
 from agent_framework import WorkflowBuilder
+from agent_framework_azure_ai import AzureAIClient
 from azure.identity.aio import DefaultAzureCredential
 
 # Support both DevUI (entities on path) and FastAPI (src on path) import patterns
@@ -36,27 +37,26 @@ try:
     from chat_agent.executor import ChatAgentExecutor  # type: ignore[import-not-found]
     from data_agent.executor import NL2SQLAgentExecutor  # type: ignore[import-not-found]
     from parameter_extractor.executor import ParameterExtractorExecutor  # type: ignore[import-not-found]
-    from shared.reusable_client import ReusableAgentClient  # type: ignore[import-not-found]
 except ImportError:
     from src.entities.chat_agent.executor import ChatAgentExecutor
     from src.entities.data_agent.executor import NL2SQLAgentExecutor
     from src.entities.parameter_extractor.executor import ParameterExtractorExecutor
-    from src.entities.shared.reusable_client import ReusableAgentClient
 
 logger = logging.getLogger(__name__)
 
-# Module-level clients - reused across requests (they cache agent IDs globally)
-_chat_client: ReusableAgentClient | None = None
-_nl2sql_client: ReusableAgentClient | None = None
-_param_extractor_client: ReusableAgentClient | None = None
+# Module-level clients - reused across requests
+# V2 AzureAIClient uses agent versioning with use_latest_version=True
+_chat_client: AzureAIClient | None = None
+_nl2sql_client: AzureAIClient | None = None
+_param_extractor_client: AzureAIClient | None = None
 
 
-def _get_clients() -> tuple[ReusableAgentClient, ReusableAgentClient, ReusableAgentClient]:
+def _get_clients() -> tuple[AzureAIClient, AzureAIClient, AzureAIClient]:
     """
     Get or create the agent clients (singleton pattern).
     
-    Clients are reused because they cache agent IDs globally,
-    avoiding repeated agent lookups.
+    V2 AzureAIClient uses agent versioning - with use_latest_version=True,
+    it automatically finds or creates the latest version of named agents.
     """
     global _chat_client, _nl2sql_client, _param_extractor_client
     
@@ -84,25 +84,26 @@ def _get_clients() -> tuple[ReusableAgentClient, ReusableAgentClient, ReusableAg
     nl2sql_model = os.getenv("AZURE_AI_NL2SQL_MODEL", default_model)
     param_extractor_model = os.getenv("AZURE_AI_PARAM_EXTRACTOR_MODEL", default_model)
     
-    _chat_client = ReusableAgentClient(
-        endpoint=endpoint,
+    # V2 AzureAIClient: use_latest_version=True handles agent versioning automatically
+    _chat_client = AzureAIClient(
+        project_endpoint=endpoint,
         credential=credential,
         model_deployment_name=chat_model,
-        should_cleanup_agent=False,
+        use_latest_version=True,
     )
     
-    _nl2sql_client = ReusableAgentClient(
-        endpoint=endpoint,
+    _nl2sql_client = AzureAIClient(
+        project_endpoint=endpoint,
         credential=credential,
         model_deployment_name=nl2sql_model,
-        should_cleanup_agent=False,
+        use_latest_version=True,
     )
     
-    _param_extractor_client = ReusableAgentClient(
-        endpoint=endpoint,
+    _param_extractor_client = AzureAIClient(
+        project_endpoint=endpoint,
         credential=credential,
         model_deployment_name=param_extractor_model,
-        should_cleanup_agent=False,
+        use_latest_version=True,
     )
     
     return _chat_client, _nl2sql_client, _param_extractor_client

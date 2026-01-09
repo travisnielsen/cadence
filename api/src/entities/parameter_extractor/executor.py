@@ -23,7 +23,10 @@ from agent_framework import (
     WorkflowContext,
     handler,
 )
-from agent_framework_azure_ai import AzureAIAgentClient
+from agent_framework_azure_ai import AzureAIClient
+
+# Type alias for V2 client
+AzureAIAgentClient = AzureAIClient
 
 # Support both DevUI (entities on path) and FastAPI (src on path) import patterns
 try:
@@ -61,8 +64,8 @@ def get_request_user_id() -> str | None:
         return None
 
 
-# Shared state key for Foundry thread ID (must match other executors)
-FOUNDRY_THREAD_ID_KEY = "foundry_thread_id"
+# Shared state key for Foundry thread ID (V2 uses conversation_id internally)
+FOUNDRY_CONVERSATION_ID_KEY = "foundry_conversation_id"
 
 # Key used by Agent Framework for workflow.run_stream() kwargs
 WORKFLOW_RUN_KWARGS_KEY = "_workflow_run_kwargs"
@@ -266,7 +269,7 @@ class ParameterExtractorExecutor(Executor):
 
         # Then, check regular shared state (may have been set by previous executor)
         try:
-            thread_id = await ctx.get_shared_state(FOUNDRY_THREAD_ID_KEY)
+            thread_id = await ctx.get_shared_state(FOUNDRY_CONVERSATION_ID_KEY)
             if thread_id:
                 logger.info("ParamExtractor using existing Foundry thread: %s", thread_id)
                 return self.agent.get_new_thread(service_thread_id=thread_id), False
@@ -281,12 +284,12 @@ class ParameterExtractorExecutor(Executor):
         """Store the Foundry thread ID in shared state if it was created."""
         if thread.service_thread_id:
             try:
-                existing = await ctx.get_shared_state(FOUNDRY_THREAD_ID_KEY)
+                existing = await ctx.get_shared_state(FOUNDRY_CONVERSATION_ID_KEY)
                 if existing:
                     return  # Already stored
             except KeyError:
                 pass
-            await ctx.set_shared_state(FOUNDRY_THREAD_ID_KEY, thread.service_thread_id)
+            await ctx.set_shared_state(FOUNDRY_CONVERSATION_ID_KEY, thread.service_thread_id)
             logger.info("ParamExtractor stored Foundry thread ID: %s", thread.service_thread_id)
 
     @handler

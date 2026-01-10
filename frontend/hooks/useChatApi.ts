@@ -33,6 +33,7 @@ interface Message {
   content: string;
   reasoning?: string; // Workflow step/reasoning info (deprecated)
   steps?: StepData[]; // Accumulated workflow steps with timing
+  stepsComplete?: boolean; // True when all steps are done (sent before stream ends)
   toolCall?: ToolCallData; // Tool call data for generative UI
 }
 
@@ -143,9 +144,13 @@ export function useChatApi() {
       // Add steps as reasoning parts (shows workflow step progress)
       // Use steps array first (new), fallback to reasoning (deprecated)
       if (m.steps && m.steps.length > 0) {
-        // Pass all steps as a single reasoning part with the full list
+        // Pass all steps and stepsComplete flag as a single reasoning part
         // The StepIndicator will parse and display them
-        const stepsJson = JSON.stringify(m.steps);
+        const stepsData = {
+          steps: m.steps,
+          stepsComplete: m.stepsComplete || false,
+        };
+        const stepsJson = JSON.stringify(stepsData);
         parts.push({ type: "reasoning", text: stepsJson });
       } else if (m.reasoning) {
         parts.push({ type: "reasoning", text: m.reasoning });
@@ -242,6 +247,12 @@ export function useChatApi() {
         // onComplete - save Foundry thread ID and add to thread list/cache
         (newThreadId) => {
           setIsRunning(false);
+          
+          // Handle edge case where stream ended without thread_id
+          if (!newThreadId) {
+            console.warn("Stream completed without thread_id");
+            return;
+          }
           
           // Clear only legacy reasoning, keep steps for display
           setMessages((prev) => {
@@ -392,7 +403,21 @@ export function useChatApi() {
         // accessToken for Authorization header
         accessToken,
         // title for new threads
-        chatTitle
+        chatTitle,
+        // onStepsComplete - mark steps as complete for step indicator
+        () => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last.role === "assistant") {
+              updated[updated.length - 1] = {
+                ...last,
+                stepsComplete: true,
+              };
+            }
+            return updated;
+          });
+        }
       );
     },
     [acquireToken, userId]
@@ -457,6 +482,12 @@ export function useChatApi() {
         // onComplete
         (newThreadId) => {
           setIsRunning(false);
+          
+          // Handle edge case where stream ended without thread_id
+          if (!newThreadId) {
+            console.warn("Stream completed without thread_id (reload)");
+            return;
+          }
           
           // Clear only legacy reasoning, keep steps for display
           setMessages((prev) => {
@@ -560,7 +591,21 @@ export function useChatApi() {
           });
         },
         accessToken,
-        null // No title update for regeneration
+        null, // No title update for regeneration
+        // onStepsComplete - mark steps as complete for step indicator
+        () => {
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last.role === "assistant") {
+              updated[updated.length - 1] = {
+                ...last,
+                stepsComplete: true,
+              };
+            }
+            return updated;
+          });
+        }
       );
     },
     [messages, acquireToken]

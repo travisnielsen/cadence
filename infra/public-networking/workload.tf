@@ -1125,11 +1125,11 @@ resource "azurerm_container_app" "api" {
       }
       env {
         name  = "QUERY_TEMPLATE_CONFIDENCE_THRESHOLD"
-        value = "0.80"
+        value = "0.025"
       }
       env {
         name  = "QUERY_TEMPLATE_AMBIGUITY_GAP"
-        value = "0.20"
+        value = "0.01"
       }
       env {
         name  = "AZURE_AI_CHAT_MODEL"

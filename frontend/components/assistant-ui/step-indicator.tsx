@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useState, useEffect, useRef, type FC } from "react";
+import { memo, useState, useEffect, useRef, useMemo, type FC } from "react";
 import { Loader2, ChevronDown, ChevronRight, CheckCircle2 } from "lucide-react";
 import { useMessage } from "@assistant-ui/react";
 
@@ -33,6 +33,7 @@ const StepIndicatorImpl: FC = () => {
   const wasRunningRef = useRef(false);
   const startTimeRef = useRef<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [timerStopped, setTimerStopped] = useState(false);
   
   // Find the reasoning part (which contains our steps as JSON)
   const reasoningPart = message.content.find(
@@ -41,7 +42,51 @@ const StepIndicatorImpl: FC = () => {
   
   const isRunning = message.status?.type === "running";
   
-  // Track elapsed time while running
+  // Parse steps from reasoning part (it's a JSON object with steps array and stepsComplete flag)
+  // Use useMemo to parse only when reasoningPart changes
+  const { allSteps, stepsComplete } = useMemo(() => {
+    let steps: StepData[] = [];
+    let complete = false;
+    
+    if (reasoningPart?.type === "reasoning" && reasoningPart.text) {
+      try {
+        const parsed = JSON.parse(reasoningPart.text);
+        if (Array.isArray(parsed)) {
+          // Handle old format (string[] or StepData[])
+          steps = parsed.map(item => 
+            typeof item === "string" 
+              ? { step: item, status: "started" as const } 
+              : item
+          );
+        } else if (parsed && typeof parsed === "object") {
+          // New format: { steps: StepData[], stepsComplete: boolean }
+          if (Array.isArray(parsed.steps)) {
+            steps = parsed.steps.map((item: StepData | string) => 
+              typeof item === "string" 
+                ? { step: item, status: "started" as const } 
+                : item
+            );
+          }
+          complete = parsed.stepsComplete === true;
+        }
+      } catch {
+        // Not JSON, might be legacy single step string
+        steps = [{ step: reasoningPart.text, status: "started" }];
+      }
+    }
+    
+    return { allSteps: steps, stepsComplete: complete };
+  }, [reasoningPart]);
+  
+  // Stop timer when stepsComplete becomes true
+  useEffect(() => {
+    if (stepsComplete && !timerStopped && startTimeRef.current) {
+      setElapsedMs(Date.now() - startTimeRef.current);
+      setTimerStopped(true);
+    }
+  }, [stepsComplete, timerStopped]);
+  
+  // Track elapsed time while running (and timer not stopped)
   useEffect(() => {
     if (isRunning && !startTimeRef.current) {
       startTimeRef.current = Date.now();
@@ -49,65 +94,48 @@ const StepIndicatorImpl: FC = () => {
     
     let intervalId: NodeJS.Timeout | null = null;
     
-    if (isRunning && startTimeRef.current) {
+    // Only run timer if still running and not stopped by stepsComplete
+    if (isRunning && startTimeRef.current && !timerStopped) {
       intervalId = setInterval(() => {
         setElapsedMs(Date.now() - startTimeRef.current!);
       }, 100);
     }
     
-    // When done running, calculate final elapsed time
-    if (!isRunning && startTimeRef.current) {
+    // When done running, calculate final elapsed time (if not already stopped)
+    if (!isRunning && startTimeRef.current && !timerStopped) {
       setElapsedMs(Date.now() - startTimeRef.current);
     }
     
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [isRunning]);
+  }, [isRunning, timerStopped]);
   
-  // Auto-collapse when message transitions from running to complete
+  // Auto-collapse when message transitions from running to complete OR when stepsComplete
   useEffect(() => {
-    if (wasRunningRef.current && !isRunning) {
+    if ((wasRunningRef.current && !isRunning) || stepsComplete) {
       setIsExpanded(false);
     }
     wasRunningRef.current = isRunning;
-  }, [isRunning]);
-  
-  // Parse steps from reasoning part (it's a JSON array of StepData)
-  let allSteps: StepData[] = [];
-  if (reasoningPart?.type === "reasoning" && reasoningPart.text) {
-    try {
-      const parsed = JSON.parse(reasoningPart.text);
-      if (Array.isArray(parsed)) {
-        // Handle both old format (string[]) and new format (StepData[])
-        allSteps = parsed.map(item => 
-          typeof item === "string" 
-            ? { step: item, status: "started" as const } 
-            : item
-        );
-      }
-    } catch {
-      // Not JSON, might be legacy single step string
-      allSteps = [{ step: reasoningPart.text, status: "started" }];
-    }
-  }
+  }, [isRunning, stepsComplete]);
   
   if (allSteps.length === 0) {
     return null;
   }
   
   // Organize steps into parent/child hierarchy
-  // Parent steps are executor-level, child steps are tool-level
   const parentSteps = allSteps.filter(s => s.is_parent);
   const childSteps = allSteps.filter(s => !s.is_parent);
   
   // Find the current active parent (last one that's started but not completed)
-  // Or if all parents are completed, get the last completed one
   const activeParent = [...parentSteps].reverse().find(s => s.status === "started");
   
   // Find current in-progress child step for header display
   const currentChildStep = childSteps.find(s => s.status !== "completed");
-  const allComplete = !activeParent && !currentChildStep && !isRunning;
+  
+  // Complete when message is no longer running OR when stepsComplete signal is received
+  // stepsComplete is sent before the stream ends, allowing early UI completion
+  const allComplete = !isRunning || stepsComplete;
   
   return (
     <div className="mb-3 rounded-lg border border-border/50 bg-muted/30 overflow-hidden">

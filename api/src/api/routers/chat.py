@@ -105,7 +105,6 @@ async def generate_workflow_streaming_response(
                 # Wait for a step event with a short timeout
                 event = await asyncio.wait_for(step_queue.get(), timeout=0.1)
                 await step_output_queue.put(event)
-                logger.info("Step monitor forwarded event: %s", event)
             except asyncio.TimeoutError:
                 # Check if we should stop (sentinel value)
                 continue
@@ -126,7 +125,6 @@ async def generate_workflow_streaming_response(
             try:
                 event = step_output_queue.get_nowait()
                 events.append(event)
-                logger.info("Drained step event: %s", event)
             except asyncio.QueueEmpty:
                 break
         return events
@@ -189,7 +187,6 @@ async def generate_workflow_streaming_response(
             if step_wait_task in done:
                 step_event = step_wait_task.result()
                 yield f"data: {json.dumps(format_step_event(step_event))}\n\n"
-                logger.info("Emitted real-time tool step: %s", step_event)
             else:
                 # Cancel the pending step wait task
                 step_wait_task.cancel()
@@ -222,6 +219,7 @@ async def generate_workflow_streaming_response(
                     # Skip first "chat" invocation (routing phase) - only show after nl2sql
                     step_name = executor_step_names.get(event.executor_id)
                     should_emit = step_name and (event.executor_id != "chat" or seen_nl2sql)
+                    
                     if should_emit:
                         executor_start_times[event.executor_id] = time.time()
                         yield f"data: {json.dumps({'step': step_name, 'status': 'started', 'is_parent': True, 'done': False})}\n\n"
@@ -233,7 +231,6 @@ async def generate_workflow_streaming_response(
                     # Drain any remaining tool step events after executor completes
                     for step_event_data in await drain_step_queue():
                         yield f"data: {json.dumps(format_step_event(step_event_data))}\n\n"
-                        logger.info("Emitted tool step (after executor): %s", step_event_data)
                     
                     # Emit parent step completion with duration (only if we emitted a start)
                     step_name = executor_step_names.get(event.executor_id)
@@ -270,6 +267,18 @@ async def generate_workflow_streaming_response(
                                     yield f"data: {json.dumps({'content': chunk, 'done': False})}\n\n"
                                     await asyncio.sleep(0.01)
                                 output_received = True
+                            
+                            # Emit steps_complete signal so step indicator shows "Completed"
+                            # This is sent before the workflow fully terminates
+                            yield f"data: {json.dumps({'steps_complete': True, 'done': False})}\n\n"
+                            logger.info("Emitted steps_complete signal")
+                            
+                            # Exit the loop immediately after output is received
+                            # This closes the SSE stream so the message exits "running" state
+                            # The workflow will continue cleanup in the background
+                            logger.info("Setting workflow_done=True to close SSE stream")
+                            workflow_done = True
+                            continue
                         except json.JSONDecodeError:
                             # Fallback if not JSON (backward compatibility)
                             output_text = output_data
@@ -279,6 +288,9 @@ async def generate_workflow_streaming_response(
                                 yield f"data: {json.dumps({'content': chunk, 'done': False})}\n\n"
                                 await asyncio.sleep(0.01)
                             output_received = True
+                            # Also exit for fallback case
+                            workflow_done = True
+                            continue
 
                 elif isinstance(event, WorkflowStatusEvent):
                     if event.state == WorkflowRunState.IDLE:

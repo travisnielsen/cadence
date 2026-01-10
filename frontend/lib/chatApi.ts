@@ -36,6 +36,7 @@ export interface StreamChunk {
   duration_ms?: number; // Step duration in ms (for completed steps)
   is_parent?: boolean; // True for parent/executor steps
   tool_call?: ToolCallData; // Tool call data for generative UI
+  steps_complete?: boolean; // Signal that all steps are done (sent before stream ends)
   done?: boolean;
   error?: string;
 }
@@ -53,6 +54,7 @@ export interface StreamChunk {
  * @param onStep - Called with step data including timing information
  * @param accessToken - Optional access token for authentication
  * @param title - Optional title for new threads (truncated first message)
+ * @param onStepsComplete - Called when all workflow steps are done (before stream ends)
  */
 export function streamChat(
   threadId: string | null,
@@ -64,7 +66,8 @@ export function streamChat(
   onToolCall?: (toolCall: ToolCallData) => void,
   onStep?: (stepData: StepData) => void,
   accessToken?: string | null,
-  title?: string | null
+  title?: string | null,
+  onStepsComplete?: () => void
 ): AbortController {
   const abortController = new AbortController();
 
@@ -101,6 +104,46 @@ export function streamChat(
 
       const decoder = new TextDecoder();
       let buffer = "";
+      let streamComplete = false;
+
+      // Helper to process SSE lines
+      const processLine = (line: string) => {
+        if (!line.startsWith("data: ")) return;
+        try {
+          const chunk: StreamChunk = JSON.parse(line.slice(6));
+
+          if (chunk.error) {
+            onError(chunk.error);
+            return;
+          }
+          if (chunk.reasoning && onReasoning) {
+            onReasoning(chunk.reasoning);
+          }
+          if (chunk.step && onStep) {
+            onStep({
+              step: chunk.step,
+              status: chunk.status,
+              duration_ms: chunk.duration_ms,
+              is_parent: chunk.is_parent,
+            });
+          }
+          if (chunk.tool_call && onToolCall) {
+            onToolCall(chunk.tool_call);
+          }
+          if (chunk.steps_complete && onStepsComplete) {
+            onStepsComplete();
+          }
+          if (chunk.content) {
+            onChunk(chunk.content);
+          }
+          if (chunk.done && chunk.thread_id) {
+            onComplete(chunk.thread_id);
+            streamComplete = true;
+          }
+        } catch {
+          // Skip malformed JSON
+        }
+      };
 
       while (true) {
         const { done, value } = await reader.read();
@@ -111,40 +154,23 @@ export function streamChat(
         buffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              const chunk: StreamChunk = JSON.parse(line.slice(6));
-
-              if (chunk.error) {
-                onError(chunk.error);
-                return;
-              }
-              if (chunk.reasoning && onReasoning) {
-                onReasoning(chunk.reasoning);
-              }
-              if (chunk.step && onStep) {
-                onStep({
-                  step: chunk.step,
-                  status: chunk.status,
-                  duration_ms: chunk.duration_ms,
-                  is_parent: chunk.is_parent,
-                });
-              }
-              if (chunk.tool_call && onToolCall) {
-                onToolCall(chunk.tool_call);
-              }
-              if (chunk.content) {
-                onChunk(chunk.content);
-              }
-              if (chunk.done && chunk.thread_id) {
-                onComplete(chunk.thread_id);
-                return;
-              }
-            } catch {
-              // Skip malformed JSON
-            }
-          }
+          processLine(line);
+          if (streamComplete) return;
         }
+      }
+
+      // Process any remaining data in buffer after stream ends
+      if (buffer.trim()) {
+        processLine(buffer);
+      }
+
+      // If we never received a done signal, the stream ended unexpectedly
+      // Call onComplete with a fallback to prevent stuck "running" state
+      if (!streamComplete) {
+        console.warn("Stream ended without done signal");
+        // We still need to call onComplete to set isRunning to false
+        // Use empty string as fallback - the hook will handle it
+        onComplete("");
       }
     })
     .catch((error) => {

@@ -1125,7 +1125,7 @@ resource "azurerm_container_app" "api" {
       }
       env {
         name  = "QUERY_TEMPLATE_CONFIDENCE_THRESHOLD"
-        value = "0.025"
+        value = "0.05"
       }
       env {
         name  = "QUERY_TEMPLATE_AMBIGUITY_GAP"

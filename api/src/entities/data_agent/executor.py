@@ -28,30 +28,41 @@ try:
     from models import (  # type: ignore[import-not-found]
         NL2SQLResponse,
         QueryTemplate,
+        TableMetadata,
         ParameterExtractionRequest,
         ParameterExtractionResponse,
         ClarificationMessage,
         ExtractionRequestMessage,
         ExtractionResponseMessage,
+        QueryBuilderRequest,
+        QueryBuilderResponse,
+        QueryBuilderRequestMessage,
+        QueryBuilderResponseMessage,
     )
 except ImportError:
     from src.entities.models import (
         NL2SQLResponse,
         QueryTemplate,
+        TableMetadata,
         ParameterExtractionRequest,
         ParameterExtractionResponse,
         ClarificationMessage,
         ExtractionRequestMessage,
         ExtractionResponseMessage,
+        QueryBuilderRequest,
+        QueryBuilderResponse,
+        QueryBuilderRequestMessage,
+        QueryBuilderResponseMessage,
     )
 
-from .tools import execute_sql, search_query_templates
+from .tools import execute_sql, search_query_templates, search_tables
 
 logger = logging.getLogger(__name__)
 
 # Type alias for NL2SQL output messages
-# NL2SQL sends str (JSON) to chat and ExtractionRequestMessage to param_extractor
-NL2SQLOutputMessage = Union[str, ExtractionRequestMessage]
+# NL2SQL sends str (JSON) to chat, ExtractionRequestMessage to param_extractor,
+# and QueryBuilderRequestMessage to query_builder
+NL2SQLOutputMessage = Union[str, ExtractionRequestMessage, QueryBuilderRequestMessage]
 
 # Key for storing pending clarification state
 CLARIFICATION_STATE_KEY = "pending_clarification"
@@ -163,49 +174,101 @@ class NL2SQLAgentExecutor(Executor):
                 await ctx.send_message(request_msg, target_id="param_extractor")
 
             else:
-                # Either low confidence or ambiguous match - ask for clarification
+                # Either low confidence or ambiguous match
                 is_ambiguous = search_result.get("is_ambiguous", False)
                 confidence_score = search_result.get("confidence_score", 0)
                 confidence_threshold = search_result.get("confidence_threshold", 0.75)
-                
+
                 if is_ambiguous:
                     # Ambiguous match - multiple templates with similar high scores
+                    # Ask for clarification rather than generating a dynamic query
                     all_matches = search_result.get("all_matches", [])
                     matching_intents = [m.get("intent", "unknown") for m in all_matches[:3] if m.get("score", 0) >= confidence_threshold]
-                    
+
                     logger.info(
                         "Ambiguous template match (gap: %.3f < %.3f). Top matches: %s",
                         search_result.get("ambiguity_gap", 0),
                         search_result.get("ambiguity_gap_threshold", 0.05),
                         matching_intents
                     )
-                    
+
                     # Build clarification message listing possible interpretations
                     intent_list = ", ".join(f"'{intent}'" for intent in matching_intents)
                     error_message = (
                         f"Your question could match multiple query types: {intent_list}. "
                         "Could you please be more specific about what data you're looking for?"
                     )
+
+                    nl2sql_response = NL2SQLResponse(
+                        sql_query="",
+                        error=error_message,
+                        confidence_score=confidence_score,
+                    )
+                    await ctx.send_message(nl2sql_response.model_dump_json())
+
                 else:
-                    # Low confidence - no good match found
+                    # Low confidence - no good template match found
+                    # Fallback to dynamic query generation via table search
                     logger.info(
-                        "No high confidence template match (best score: %.3f, threshold: %.3f)",
+                        "No high confidence template match (best score: %.3f, threshold: %.3f). "
+                        "Attempting dynamic query generation via table search.",
                         confidence_score,
                         confidence_threshold
                     )
-                    error_message = (
-                        "I couldn't understand your question well enough to query the database. "
-                        "Could you please rephrase or provide more details about what data you're looking for?"
-                    )
 
-                # Build a clarification response
-                nl2sql_response = NL2SQLResponse(
-                    sql_query="",
-                    error=error_message,
-                    confidence_score=confidence_score,
-                )
+                    # Search for relevant tables
+                    table_search_result = await search_tables(question)  # type: ignore[misc]
 
-                await ctx.send_message(nl2sql_response.model_dump_json())
+                    if table_search_result.get("has_matches") and table_search_result.get("tables"):
+                        # Found relevant tables - route to query builder
+                        tables_data = table_search_result["tables"]
+                        tables = [TableMetadata.model_validate(t) for t in tables_data]
+
+                        logger.info(
+                            "Found %d relevant tables for dynamic query: %s",
+                            len(tables),
+                            [t.table for t in tables]
+                        )
+
+                        # Store state for potential debugging/logging
+                        await ctx.set_shared_state(
+                            CLARIFICATION_STATE_KEY,
+                            {
+                                "original_question": question,
+                                "dynamic_query": True,
+                                "tables": [t.model_dump() for t in tables],
+                            }
+                        )
+
+                        # Build query builder request and route
+                        query_request = QueryBuilderRequest(
+                            user_query=question,
+                            tables=tables,
+                        )
+
+                        request_msg = QueryBuilderRequestMessage(
+                            request_json=query_request.model_dump_json()
+                        )
+                        await ctx.send_message(request_msg, target_id="query_builder")
+
+                    else:
+                        # No tables found either - return error
+                        logger.info(
+                            "No relevant tables found. Table search result: %s",
+                            table_search_result.get("message", "unknown")
+                        )
+
+                        error_message = (
+                            "I couldn't find a matching query pattern or relevant tables for your question. "
+                            "Could you please rephrase or provide more details about what data you're looking for?"
+                        )
+
+                        nl2sql_response = NL2SQLResponse(
+                            sql_query="",
+                            error=error_message,
+                            confidence_score=confidence_score,
+                        )
+                        await ctx.send_message(nl2sql_response.model_dump_json())
 
         except Exception as e:
             logger.error("NL2SQL execution error: %s", e)
@@ -401,6 +464,86 @@ class NL2SQLAgentExecutor(Executor):
                 error=str(e)
             )
             await ctx.send_message(nl2sql_response.model_dump_json())
+
+    @handler
+    async def handle_query_builder_response(
+        self,
+        query_builder_response_msg: QueryBuilderResponseMessage,
+        ctx: WorkflowContext[NL2SQLOutputMessage]
+    ) -> None:
+        """
+        Handle the response from QueryBuilder.
+
+        This is called after the QueryBuilder has generated a dynamic SQL query
+        based on table metadata.
+
+        Args:
+            query_builder_response_msg: Wrapped JSON string containing QueryBuilderResponse
+            ctx: Workflow context for sending the response
+        """
+        logger.info("NL2SQLAgentExecutor received query builder response")
+
+        try:
+            # Parse the query builder response
+            response_data = json.loads(query_builder_response_msg.response_json)
+            query_response = QueryBuilderResponse.model_validate(response_data)
+
+            if query_response.status == "success":
+                # Query generated successfully - execute the SQL
+                completed_sql = query_response.completed_sql
+
+                if not completed_sql:
+                    raise ValueError("Query generation succeeded but no SQL was generated")
+
+                logger.info("Executing dynamically generated SQL: %s", completed_sql[:200])
+
+                # Execute the SQL query
+                sql_result = await execute_sql(completed_sql)  # type: ignore[misc]
+
+                # Clear clarification state since we succeeded
+                try:
+                    await ctx.set_shared_state(CLARIFICATION_STATE_KEY, None)
+                except Exception:
+                    pass
+
+                # Build successful response with query_source="dynamic"
+                nl2sql_response = NL2SQLResponse(
+                    sql_query=completed_sql,
+                    sql_response=sql_result.get("rows", []),
+                    columns=sql_result.get("columns", []),
+                    row_count=sql_result.get("row_count", 0),
+                    confidence_score=0.7,  # Lower confidence for dynamic queries
+                    used_cached_query=False,  # Not from a template
+                    query_source="dynamic",  # Mark as dynamically generated
+                    error=sql_result.get("error") if not sql_result.get("success") else None,
+                )
+
+                logger.info(
+                    "NL2SQL completed via dynamic query generation: rows=%d, tables_used=%s",
+                    nl2sql_response.row_count,
+                    query_response.tables_used
+                )
+
+            else:
+                # Error during query generation
+                nl2sql_response = NL2SQLResponse(
+                    sql_query="",
+                    error=query_response.error or "Unknown error during query generation",
+                    query_source="dynamic",
+                )
+
+                logger.error("Query generation failed: %s", query_response.error)
+
+        except Exception as e:
+            logger.error("Error handling query builder response: %s", e)
+            nl2sql_response = NL2SQLResponse(
+                sql_query="",
+                error=str(e),
+                query_source="dynamic",
+            )
+
+        # Send response to chat agent
+        await ctx.send_message(nl2sql_response.model_dump_json())
 
     def _parse_agent_response(self, response) -> NL2SQLResponse:
         """Parse the agent's response to extract structured data."""

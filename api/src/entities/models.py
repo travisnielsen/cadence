@@ -258,3 +258,97 @@ class NL2SQLResponse(BaseModel):
         default=None,
         description="Error message if the query failed"
     )
+
+
+# =============================================================================
+# Table Metadata Models (for dynamic query generation)
+# =============================================================================
+
+
+class TableColumn(BaseModel):
+    """A column definition from the tables index."""
+
+    name: str = Field(description="Column name")
+    description: str = Field(default="", description="Column description")
+
+
+class TableMetadata(BaseModel):
+    """
+    Table metadata retrieved from AI Search.
+
+    Used by the query_builder to understand table structure
+    when generating dynamic SQL queries.
+    """
+
+    id: str = Field(default="", description="Document ID from search index")
+    table: str = Field(description="Fully qualified table name (e.g., 'Sales.Orders')")
+    datasource: str = Field(default="", description="Database/datasource name")
+    description: str = Field(default="", description="Table description")
+    columns: list[TableColumn] = Field(
+        default_factory=list,
+        description="List of columns in the table"
+    )
+    score: float = Field(
+        default=0.0,
+        description="Search relevance score"
+    )
+
+
+# =============================================================================
+# Query Builder Models (for dynamic SQL generation)
+# =============================================================================
+
+
+class QueryBuilderRequest(BaseModel):
+    """Request to build a SQL query from table metadata."""
+
+    user_query: str = Field(description="The user's original question")
+    tables: list[TableMetadata] = Field(
+        description="Relevant tables to use for query generation"
+    )
+
+
+class QueryBuilderRequestMessage(BaseModel):
+    """
+    A wrapper for query builder requests.
+
+    This type is used by the workflow to distinguish query builder requests
+    from other message types.
+    """
+
+    request_json: str = Field(description="The JSON-encoded QueryBuilderRequest")
+
+
+class QueryBuilderResponse(BaseModel):
+    """Response from query builder."""
+
+    status: Literal["success", "error"] = Field(
+        description="Build result status"
+    )
+    completed_sql: str | None = Field(
+        default=None,
+        description="The generated SQL query (if success)"
+    )
+    reasoning: str | None = Field(
+        default=None,
+        description="Explanation of how the query was constructed"
+    )
+    tables_used: list[str] = Field(
+        default_factory=list,
+        description="List of tables used in the query"
+    )
+    error: str | None = Field(
+        default=None,
+        description="Error message if status is 'error'"
+    )
+
+
+class QueryBuilderResponseMessage(BaseModel):
+    """
+    A wrapper for query builder responses.
+
+    This type is used by the workflow to distinguish query builder responses
+    from other message types.
+    """
+
+    response_json: str = Field(description="The JSON-encoded QueryBuilderResponse")

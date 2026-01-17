@@ -49,7 +49,6 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Module-level clients - reused across requests
-# V2 AzureAIClient uses agent versioning with use_latest_version=True
 _chat_client: AzureAIClient | None = None
 _nl2sql_client: AzureAIClient | None = None
 _param_extractor_client: AzureAIClient | None = None
@@ -91,7 +90,6 @@ def _get_clients() -> tuple[AzureAIClient, AzureAIClient, AzureAIClient, AzureAI
     param_extractor_model = os.getenv("AZURE_AI_PARAM_EXTRACTOR_MODEL", default_model)
     query_builder_model = os.getenv("AZURE_AI_QUERY_BUILDER_MODEL", default_model)
     
-    # V2 AzureAIClient: use_latest_version=True handles agent versioning automatically
     _chat_client = AzureAIClient(
         project_endpoint=endpoint,
         credential=credential,

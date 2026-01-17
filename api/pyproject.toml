@@ -21,7 +21,6 @@ dependencies = [
 [project.optional-dependencies]
 observability = [
     "azure-monitor-opentelemetry>=1.0.0",
-    "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
 ]
 dev = [
     "pytest>=8.0.0",

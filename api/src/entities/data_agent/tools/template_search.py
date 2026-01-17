@@ -22,14 +22,15 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Confidence threshold for hybrid search (RRF) scores
-# The top result must meet this threshold to be considered a potential match
-DEFAULT_CONFIDENCE_THRESHOLD = float(os.getenv("QUERY_TEMPLATE_CONFIDENCE_THRESHOLD", "0.75"))
+# Confidence threshold for vector search (cosine similarity) scores
+# Cosine similarity ranges from 0.0 to 1.0, where 1.0 is identical
+# Good semantic matches typically score 0.80+, weak matches below 0.70
+DEFAULT_CONFIDENCE_THRESHOLD = float(os.getenv("QUERY_TEMPLATE_CONFIDENCE_THRESHOLD", "0.80"))
 
 # Minimum normalized score margin between top results to consider match unambiguous
 # Scores are normalized: normalized = score / top_score
 # If (1 - second_normalized) < this threshold, results are too similar (ambiguous)
-DEFAULT_AMBIGUITY_GAP_THRESHOLD = float(os.getenv("QUERY_TEMPLATE_AMBIGUITY_GAP", "0.10"))
+DEFAULT_AMBIGUITY_GAP_THRESHOLD = float(os.getenv("QUERY_TEMPLATE_AMBIGUITY_GAP", "0.05"))
 
 
 def _parse_parameters(params_json: str | list | None) -> list[ParameterDefinition]:
@@ -100,12 +101,12 @@ async def search_query_templates(user_question: str) -> dict[str, Any]:
     """
     Search for query templates that match the user's question intent.
 
-    This function searches the query_templates index using hybrid search (RRF)
-    to find SQL templates with parameterized tokens that can be filled in
-    based on the user's specific question.
+    This function searches the query_templates index using pure vector search
+    (cosine similarity) to find SQL templates with parameterized tokens that
+    can be filled in based on the user's specific question.
 
-    Hybrid search combines vector similarity and keyword matching using
-    Reciprocal Rank Fusion (RRF) for robust ranking.
+    Vector search provides cosine similarity scores (0.0 to 1.0) which are
+    more interpretable than hybrid RRF scores for confidence thresholding.
 
     Ambiguity detection uses normalized scores:
     - normalized = score / top_score
@@ -123,7 +124,7 @@ async def search_query_templates(user_question: str) -> dict[str, Any]:
         - has_high_confidence_match: Whether a template above threshold was found AND is unambiguous
         - is_ambiguous: Whether multiple templates have similar high scores
         - best_match: The best matching QueryTemplate object (if confidence is high and unambiguous)
-        - confidence_score: The search relevance score of the best match
+        - confidence_score: The cosine similarity score of the best match (0.0 to 1.0)
         - confidence_threshold: The threshold used for this template
         - ambiguity_gap: The normalized score margin between 1st and 2nd results
         - ambiguity_gap_threshold: The minimum margin required for unambiguous match
@@ -151,8 +152,8 @@ async def search_query_templates(user_question: str) -> dict[str, Any]:
             index_name="query_templates",
             vector_field="content_vector"
         ) as client:
-            # Use hybrid search (RRF) combining vector similarity and keyword matching
-            results = await client.hybrid_search(
+            # Use vector search for cosine similarity scores (0-1 range)
+            results = await client.vector_search(
                 query=user_question,
                 select=[
                     "id",

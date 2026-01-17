@@ -68,8 +68,6 @@ async def verify_thread_ownership(
     """
     Verify that the current user owns the specified thread.
 
-    Note: V2 API uses 'conversations' internally but we use 'thread' terminology.
-    We retrieve the thread and check if accessible.
     Returns the thread if ownership is verified.
     Raises HTTPException 403 if access is denied.
     """
@@ -77,10 +75,9 @@ async def verify_thread_ownership(
         # Get the OpenAI client from the project client
         openai_client = project_client.get_openai_client()
         
-        # Retrieve the thread (conversation in V2 API) - will fail if it doesn't exist
+        # Retrieve the thread - will fail if it doesn't exist
         thread = openai_client.conversations.retrieve(thread_id)
         
-        # V2 doesn't have the same metadata structure as V1
         # For now, we allow access if the thread exists
         # TODO: Implement proper ownership tracking via local storage
         metadata = getattr(thread, "metadata", {}) or {}
@@ -104,7 +101,6 @@ async def verify_thread_ownership(
 def extract_message_text(msg) -> str:
     """Extract text content from a message object."""
     content = ""
-    # V2 message structure may differ from V1
     if hasattr(msg, "content"):
         msg_content = msg.content
         if isinstance(msg_content, str):
@@ -134,7 +130,7 @@ async def get_thread_title(project_client, thread_id: str, metadata: dict) -> st
 
     try:
         openai_client = project_client.get_openai_client()
-        # List items in the thread (conversation in V2 API) to find first user message
+        # List items in the thread to find first user message
         items = openai_client.conversations.items.list(thread_id)
         for item in items:
             if hasattr(item, "role") and item.role == "user":

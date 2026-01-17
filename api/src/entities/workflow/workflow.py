@@ -13,12 +13,6 @@ The workflow:
 7. ChatAgentExecutor renders data results for the user
 8. For clarification: user provides more info, flow repeats from step 5
 
-Agent Management (V2 Responses API):
-- Uses AzureAIClient with use_latest_version=True
-- Agents are versioned by name - V2 automatically finds/creates latest version
-- No manual agent cleanup needed (versioned agents are immutable)
-- Conversations are stored in Foundry with conversation_id
-
 Workflow Per-Request:
 - The Agent Framework doesn't support concurrent workflow executions
 - We create a fresh workflow instance per request
@@ -45,19 +39,13 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Module-level clients - reused across requests
-# V2 AzureAIClient uses agent versioning with use_latest_version=True
 _chat_client: AzureAIClient | None = None
 _nl2sql_client: AzureAIClient | None = None
 _param_extractor_client: AzureAIClient | None = None
 
 
 def _get_clients() -> tuple[AzureAIClient, AzureAIClient, AzureAIClient]:
-    """
-    Get or create the agent clients (singleton pattern).
-    
-    V2 AzureAIClient uses agent versioning - with use_latest_version=True,
-    it automatically finds or creates the latest version of named agents.
-    """
+    """Get or create the agent clients (singleton pattern)."""
     global _chat_client, _nl2sql_client, _param_extractor_client
     
     if _chat_client is not None and _nl2sql_client is not None and _param_extractor_client is not None:
@@ -84,7 +72,6 @@ def _get_clients() -> tuple[AzureAIClient, AzureAIClient, AzureAIClient]:
     nl2sql_model = os.getenv("AZURE_AI_NL2SQL_MODEL", default_model)
     param_extractor_model = os.getenv("AZURE_AI_PARAM_EXTRACTOR_MODEL", default_model)
     
-    # V2 AzureAIClient: use_latest_version=True handles agent versioning automatically
     _chat_client = AzureAIClient(
         project_endpoint=endpoint,
         credential=credential,

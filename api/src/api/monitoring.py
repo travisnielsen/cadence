@@ -1,14 +1,12 @@
 """
-OpenTelemetry observability configuration for the Data Agent API.
+Application Insights observability configuration for the Data Agent API.
 
-This module provides telemetry configuration for monitoring agent performance,
-tracing requests, and collecting metrics.
+This module configures Azure Monitor/Application Insights for monitoring agent
+performance, tracing requests, and collecting metrics.
 
 Environment variables:
-- ENABLE_INSTRUMENTATION: Set to "true" to enable OpenTelemetry (default: false)
-- APPLICATIONINSIGHTS_CONNECTION_STRING: Azure Monitor connection string (optional)
-- OTEL_EXPORTER_OTLP_ENDPOINT: OTLP endpoint for Aspire Dashboard, Jaeger, etc.
-- ENABLE_CONSOLE_EXPORTERS: Set to "true" to enable console output (default: false)
+- ENABLE_INSTRUMENTATION: Set to "true" to enable tracing (default: false)
+- APPLICATIONINSIGHTS_CONNECTION_STRING: Azure Monitor connection string (required when enabled)
 - ENABLE_SENSITIVE_DATA: Set to "true" to log prompts/responses (default: false)
 """
 
@@ -25,29 +23,29 @@ def is_observability_enabled() -> bool:
 
 def configure_observability() -> None:
     """
-    Configure OpenTelemetry observability if enabled.
+    Configure Application Insights observability if enabled.
 
-    Supports two backends:
-    1. Azure Monitor (if APPLICATIONINSIGHTS_CONNECTION_STRING is set)
-    2. OTLP exporters (for Aspire Dashboard, Jaeger, etc.)
+    Requires APPLICATIONINSIGHTS_CONNECTION_STRING to be set.
     """
     if not is_observability_enabled():
         logger.info("Observability disabled (ENABLE_INSTRUMENTATION != true)")
         return
 
     try:
-        # Check if Azure Monitor is configured
         azure_monitor_connection = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
 
         if azure_monitor_connection:
             _configure_azure_monitor(azure_monitor_connection)
         else:
-            _configure_otlp_exporters()
+            logger.warning(
+                "ENABLE_INSTRUMENTATION=true but APPLICATIONINSIGHTS_CONNECTION_STRING not set. "
+                "Observability will not be configured."
+            )
 
     except ImportError as e:
-        logger.warning("OpenTelemetry packages not available: %s", e)
+        logger.warning("Azure Monitor packages not available: %s", e)
     except (RuntimeError, ValueError, OSError) as e:
-        logger.error("Failed to configure OpenTelemetry: %s", e)
+        logger.error("Failed to configure Azure Monitor: %s", e)
 
 
 def _configure_azure_monitor(connection_string: str) -> None:
@@ -90,23 +88,5 @@ def _configure_azure_monitor(connection_string: str) -> None:
     except ImportError:
         logger.warning(
             "azure-monitor-opentelemetry not installed. "
-            "Install with: pip install azure-monitor-opentelemetry"
+            "Install with: pip install 'data-agent-api[observability]'"
         )
-        # Fall back to OTLP exporters
-        _configure_otlp_exporters()
-
-
-def _configure_otlp_exporters() -> None:
-    """Configure OTLP exporters for local development (Aspire Dashboard, Jaeger, etc.)."""
-    from agent_framework.observability import configure_otel_providers
-
-    enable_sensitive = os.getenv("ENABLE_SENSITIVE_DATA", "false").lower() == "true"
-    
-    # Reads OTEL_EXPORTER_OTLP_ENDPOINT from environment
-    # For console exporters, set ENABLE_CONSOLE_EXPORTERS=true in environment
-    configure_otel_providers(enable_sensitive_data=enable_sensitive)
-    
-    # Suppress the noisy context detach error logs (they're harmless warnings)
-    logging.getLogger("opentelemetry.context").setLevel(logging.CRITICAL)
-
-    logger.info("OpenTelemetry configured with OTLP exporters")

@@ -306,6 +306,10 @@ class QueryBuilderRequest(BaseModel):
     tables: list[TableMetadata] = Field(
         description="Relevant tables to use for query generation"
     )
+    retry_count: int = Field(
+        default=0,
+        description="Number of retry attempts (used for validation retry flow)"
+    )
 
 
 class QueryBuilderRequestMessage(BaseModel):
@@ -328,6 +332,14 @@ class QueryBuilderResponse(BaseModel):
     completed_sql: str | None = Field(
         default=None,
         description="The generated SQL query (if success)"
+    )
+    user_query: str = Field(
+        default="",
+        description="The original user question (passed through for validation)"
+    )
+    retry_count: int = Field(
+        default=0,
+        description="Number of retry attempts (passed through from request)"
     )
     reasoning: str | None = Field(
         default=None,
@@ -352,3 +364,67 @@ class QueryBuilderResponseMessage(BaseModel):
     """
 
     response_json: str = Field(description="The JSON-encoded QueryBuilderResponse")
+
+
+# =============================================================================
+# Query Validator Models
+# =============================================================================
+
+
+class QueryValidationRequest(BaseModel):
+    """Request to validate a SQL query before execution."""
+
+    sql_query: str = Field(description="The SQL query to validate")
+    user_query: str = Field(description="The original user question (for context)")
+    tables_used: list[str] = Field(
+        default_factory=list,
+        description="Tables the query builder claims to use"
+    )
+    retry_count: int = Field(
+        default=0,
+        description="Number of times this query has been retried"
+    )
+
+
+class QueryValidationRequestMessage(BaseModel):
+    """
+    A wrapper for query validation requests.
+
+    This type is used by the workflow to distinguish validation requests
+    from other message types.
+    """
+
+    request_json: str = Field(description="The JSON-encoded QueryValidationRequest")
+
+
+class QueryValidationResponse(BaseModel):
+    """Response from query validation."""
+
+    is_valid: bool = Field(description="Whether SQL passed validation")
+    syntax_valid: bool = Field(description="Syntax check result")
+    allowlist_valid: bool = Field(description="Catalog/schema/table allowlist check")
+    statement_type: str = Field(description="Detected statement type (must be 'SELECT')")
+    is_single_statement: bool = Field(description="Whether only one statement present")
+    violations: list[str] = Field(
+        default_factory=list,
+        description="List of validation violations"
+    )
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Non-blocking warnings"
+    )
+    # Pass through fields for retry flow
+    sql_query: str = Field(default="", description="The SQL query that was validated")
+    user_query: str = Field(default="", description="The original user question")
+    retry_count: int = Field(default=0, description="Current retry count")
+
+
+class QueryValidationResponseMessage(BaseModel):
+    """
+    A wrapper for query validation responses.
+
+    This type is used by the workflow to distinguish validation responses
+    from other message types.
+    """
+
+    response_json: str = Field(description="The JSON-encoded QueryValidationResponse")

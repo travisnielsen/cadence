@@ -270,11 +270,13 @@ class QueryBuilderExecutor(Executor):
             request = QueryBuilderRequest.model_validate(request_data)
             tables = request.tables
             user_query = request.user_query
+            retry_count = request.retry_count
 
             logger.info(
-                "Building query from %d tables for: %s",
+                "Building query from %d tables for: %s (retry=%d)",
                 len(tables),
-                user_query[:100]
+                user_query[:100],
+                retry_count
             )
 
             # Get or create thread for the LLM call
@@ -316,12 +318,16 @@ class QueryBuilderExecutor(Executor):
                 query_response = QueryBuilderResponse(
                     status="success",
                     completed_sql=parsed.get("completed_sql"),
+                    user_query=user_query,
+                    retry_count=retry_count,
                     reasoning=parsed.get("reasoning"),
                     tables_used=parsed.get("tables_used", []),
                 )
             else:
                 query_response = QueryBuilderResponse(
                     status="error",
+                    user_query=user_query,
+                    retry_count=retry_count,
                     error=parsed.get("error", "Unknown error during query generation"),
                     tables_used=parsed.get("tables_used", []),
                 )

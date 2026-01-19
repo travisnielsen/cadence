@@ -131,13 +131,21 @@ def _extract_number_from_query(user_query: str, param_name: str) -> int | None:
     return None
 
 
-def _pre_extract_parameters(user_query: str, template: QueryTemplate) -> dict[str, Any]:
+class ExtractionResult:
+    """Result of parameter extraction with tracking for defaults used."""
+    
+    def __init__(self):
+        self.extracted: dict[str, Any] = {}
+        self.defaults_used: dict[str, Any] = {}
+
+
+def _pre_extract_parameters(user_query: str, template: QueryTemplate) -> ExtractionResult:
     """
     Deterministically extract parameters before calling LLM.
     
-    Returns dict of parameter name -> value for confident matches.
+    Returns ExtractionResult with extracted values and which ones used defaults.
     """
-    extracted: dict[str, Any] = {}
+    result = ExtractionResult()
     
     for param in template.parameters:
         # Try to match allowed_values
@@ -147,7 +155,7 @@ def _pre_extract_parameters(user_query: str, template: QueryTemplate) -> dict[st
                 param.validation.allowed_values
             )
             if match:
-                extracted[param.name] = match
+                result.extracted[param.name] = match
                 continue
         
         # Try to extract numbers for integer params
@@ -161,14 +169,15 @@ def _pre_extract_parameters(user_query: str, template: QueryTemplate) -> dict[st
                     continue
                 if max_val is not None and num > int(max_val):
                     continue
-                extracted[param.name] = num
+                result.extracted[param.name] = num
                 continue
         
         # Apply default if available
-        if param.default_value is not None and param.name not in extracted:
-            extracted[param.name] = param.default_value
+        if param.default_value is not None and param.name not in result.extracted:
+            result.extracted[param.name] = param.default_value
+            result.defaults_used[param.name] = param.default_value
     
-    return extracted
+    return result
 
 
 def _all_required_params_satisfied(extracted: dict[str, Any], template: QueryTemplate) -> bool:
@@ -442,12 +451,15 @@ class ParameterExtractorExecutor(Executor):
             # ================================================================
             # Step 1: Try deterministic fuzzy matching first (fast path)
             # ================================================================
-            extracted_params = _pre_extract_parameters(user_query, template)
+            extraction_result = _pre_extract_parameters(user_query, template)
+            extracted_params = extraction_result.extracted
+            defaults_used = extraction_result.defaults_used
             
             if extracted_params:
                 logger.info("Deterministic extraction found %d parameters:", len(extracted_params))
                 for param_name, param_value in extracted_params.items():
-                    logger.info("  Parameter '%s' -> '%s'", param_name, param_value)
+                    is_default = " (default)" if param_name in defaults_used else ""
+                    logger.info("  Parameter '%s' -> '%s'%s", param_name, param_value, is_default)
             
             if _all_required_params_satisfied(extracted_params, template):
                 # All required params found - skip LLM entirely!
@@ -462,6 +474,7 @@ class ParameterExtractorExecutor(Executor):
                     template_id=template.id,
                     template_json=template.model_dump_json(),
                     extracted_parameters=extracted_params,
+                    defaults_used=defaults_used,
                     parameter_definitions=template.parameters,
                 )
                 

@@ -32,6 +32,7 @@ interface NL2SQLResult {
   observations?: string;
   needs_clarification?: boolean;
   clarification?: ClarificationInfo;
+  defaults_used?: Record<string, string>;
 }
 
 /**
@@ -263,6 +264,14 @@ export const NL2SQLToolUI = makeAssistantToolUI<NL2SQLArgs, NL2SQLResult>({
             </span>
           )}
         </div>
+
+        {/* Defaults used note */}
+        {result.defaults_used && Object.keys(result.defaults_used).length > 0 && (
+          <div className="text-sm text-muted-foreground italic mb-3">
+            Using {Object.keys(result.defaults_used).length === 1 ? "default" : "defaults"}:{" "}
+            {Object.values(result.defaults_used).join(", ")}
+          </div>
+        )}
 
         {/* Data Table */}
         <DataTable columns={result.columns} rows={result.sql_response} />

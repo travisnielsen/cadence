@@ -69,6 +69,11 @@ class NL2SQLResponse(BaseModel):
         default=None,
         description="Error message if the query failed"
     )
+
+    defaults_used: dict[str, str] = Field(
+        default_factory=dict,
+        description="Parameters that used default values (name -> human-readable description)"
+    )
     
     # Clarification flow fields
     needs_clarification: bool = Field(

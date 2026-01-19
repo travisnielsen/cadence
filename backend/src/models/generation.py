@@ -62,6 +62,10 @@ class SQLDraft(BaseModel):
         default=None,
         description="Parameter name -> extracted value mapping"
     )
+    defaults_used: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Parameters that used default values (name -> default value)"
+    )
 
     # Clarification flow (status="needs_clarification")
     missing_parameters: list[MissingParameter] | None = Field(

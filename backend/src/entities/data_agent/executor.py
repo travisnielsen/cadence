@@ -9,7 +9,7 @@ at class definition time, which is incompatible with PEP 563 stringified annotat
 import json
 import logging
 from pathlib import Path
-from typing import Union
+from typing import Any, Union
 
 from agent_framework import (
     ChatAgent,
@@ -100,6 +100,37 @@ def _substitute_parameters(sql_template: str, params: dict) -> str:
         result = result.replace(token, str_value)
     
     return result
+
+
+def _format_defaults_for_display(defaults_used: dict[str, Any]) -> dict[str, str]:
+    """
+    Format defaults_used dict into human-readable descriptions.
+    
+    Args:
+        defaults_used: Dict of parameter name -> default value
+        
+    Returns:
+        Dict of parameter name -> human-readable description
+    """
+    if not defaults_used:
+        return {}
+    
+    descriptions: dict[str, str] = {}
+    for name, value in defaults_used.items():
+        # Format common parameter patterns
+        if name == "days":
+            descriptions[name] = f"last {value} days"
+        elif name == "from_date" and isinstance(value, str) and "GETDATE()" in value.upper():
+            descriptions[name] = "relative to current date"
+        elif name == "limit" or name == "top":
+            descriptions[name] = f"showing top {value} results"
+        elif name == "order" or name == "sort":
+            descriptions[name] = f"sorted {value}"
+        else:
+            # Generic format
+            descriptions[name] = str(value)
+    
+    return descriptions
 
 
 def _load_prompt() -> str:
@@ -472,6 +503,9 @@ class NL2SQLAgentExecutor(Executor):
                         query_source = "template" if sql_draft.template_id else "dynamic"
                         confidence = 0.85 if sql_draft.template_id else 0.7
 
+                        # Build human-readable defaults description
+                        defaults_description = _format_defaults_for_display(sql_draft.defaults_used)
+
                         nl2sql_response = NL2SQLResponse(
                             sql_query=completed_sql,
                             sql_response=sql_result.get("rows", []),
@@ -481,6 +515,7 @@ class NL2SQLAgentExecutor(Executor):
                             used_cached_query=bool(sql_draft.template_id),
                             query_source=query_source,
                             error=sql_result.get("error") if not sql_result.get("success") else None,
+                            defaults_used=defaults_description,
                         )
 
                         logger.info(

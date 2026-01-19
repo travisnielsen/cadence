@@ -507,6 +507,7 @@ class ChatAgentExecutor(Executor):
                     "observations": None,  # No LLM-generated insights
                     "needs_clarification": response.needs_clarification,
                     "clarification": response.clarification.model_dump() if response.clarification else None,
+                    "defaults_used": response.defaults_used,
                 }
             }
         }
@@ -567,7 +568,15 @@ Format this nicely with a markdown table and helpful context. If the data is emp
         if response.error:
             return f"**Error:** {response.error}"
 
-        lines = [f"**Query Results** ({response.row_count} rows)\n"]
+        lines = []
+        
+        # Add note about defaults used if any
+        if response.defaults_used:
+            defaults_note = self._format_defaults_note(response.defaults_used)
+            if defaults_note:
+                lines.append(f"*{defaults_note}*\n")
+        
+        lines.append(f"**Query Results** ({response.row_count} rows)\n")
 
         if response.columns and response.sql_response:
             lines.append("| " + " | ".join(response.columns) + " |")
@@ -581,3 +590,24 @@ Format this nicely with a markdown table and helpful context. If the data is emp
             lines.append(f"\n<details><summary>SQL Query</summary>\n\n```sql\n{response.sql_query}\n```\n</details>")
 
         return "\n".join(lines)
+
+    def _format_defaults_note(self, defaults_used: dict[str, str]) -> str:
+        """
+        Format a user-friendly note about default values that were applied.
+        
+        Args:
+            defaults_used: Dict of parameter name -> human-readable description
+            
+        Returns:
+            A note string like "Using default: last 30 days" or empty if none
+        """
+        if not defaults_used:
+            return ""
+        
+        # Build a natural language description from the values
+        descriptions = list(defaults_used.values())
+        
+        if len(descriptions) == 1:
+            return f"Using default: {descriptions[0]}"
+        else:
+            return f"Using defaults: {', '.join(descriptions)}"

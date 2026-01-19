@@ -17,6 +17,7 @@ from agent_framework import (
     Role,
     WorkflowContext,
     handler,
+    response_handler,
 )
 from agent_framework_azure_ai import AzureAIClient
 
@@ -26,6 +27,7 @@ AzureAIAgentClient = AzureAIClient
 # Support both DevUI (entities on path) and FastAPI (src on path) import patterns
 try:
     from models import (  # type: ignore[import-not-found]
+        ClarificationRequest,
         NL2SQLResponse,
         QueryTemplate,
         TableMetadata,
@@ -39,6 +41,7 @@ try:
     )
 except ImportError:
     from src.models import (
+        ClarificationRequest,
         NL2SQLResponse,
         QueryTemplate,
         TableMetadata,
@@ -62,6 +65,41 @@ NL2SQLOutputMessage = Union[str, ExtractionRequestMessage, QueryBuilderRequestMe
 
 # Key for storing pending clarification state
 CLARIFICATION_STATE_KEY = "pending_clarification"
+
+
+def _substitute_parameters(sql_template: str, params: dict) -> str:
+    """
+    Substitute parameter tokens in the SQL template.
+
+    Args:
+        sql_template: The SQL template with %{{param}}% tokens
+        params: Dictionary of parameter name -> value
+
+    Returns:
+        SQL string with tokens replaced by values
+    """
+    result = sql_template
+    for name, value in params.items():
+        token = f"%{{{{{name}}}}}%"
+        # Convert value to string, handling different types
+        if value is None:
+            str_value = "NULL"
+        elif isinstance(value, bool):
+            str_value = "1" if value else "0"
+        elif isinstance(value, (int, float)):
+            str_value = str(value)
+        elif isinstance(value, str):
+            # Don't quote SQL keywords like ASC/DESC
+            if value.upper() in ("ASC", "DESC", "NULL"):
+                str_value = value.upper()
+            else:
+                str_value = str(value)
+        else:
+            str_value = str(value)
+        
+        result = result.replace(token, str_value)
+    
+    return result
 
 
 def _load_prompt() -> str:
@@ -310,6 +348,23 @@ class NL2SQLAgentExecutor(Executor):
             if sql_draft.status == "success":
                 completed_sql = sql_draft.completed_sql
 
+                # If from param_extractor with no SQL, build it from template + extracted params
+                if not completed_sql and sql_draft.source == "template" and sql_draft.extracted_parameters:
+                    try:
+                        clarification_state = await ctx.get_shared_state(CLARIFICATION_STATE_KEY)
+                        template_data = clarification_state.get("template") if clarification_state else None
+                        if template_data:
+                            sql_template = template_data.get("sql_template")
+                            if sql_template:
+                                completed_sql = _substitute_parameters(
+                                    sql_template, 
+                                    sql_draft.extracted_parameters
+                                )
+                                sql_draft.completed_sql = completed_sql
+                                logger.info("Built SQL from template: %s", completed_sql[:200])
+                    except (KeyError, TypeError) as e:
+                        logger.error("Failed to get template for SQL substitution: %s", e)
+
                 if not completed_sql:
                     raise ValueError("SQL draft succeeded but no SQL was generated")
 
@@ -436,7 +491,9 @@ class NL2SQLAgentExecutor(Executor):
                         await ctx.send_message(nl2sql_response.model_dump_json())
 
                 elif sql_draft.source == "param_extractor" or (sql_draft.template_id and not sql_draft.params_validated):
-                    # Template-based: check if parameter validation is needed
+                    # Template-based: route to parameter validator
+                    # Note: SQL substitution already happened at the start of this handler
+                    
                     logger.info("Routing SQLDraft to parameter validator")
                     
                     # Forward the message to param_validator
@@ -496,39 +553,54 @@ class NL2SQLAgentExecutor(Executor):
                     await ctx.send_message(forward_msg, target_id="query_validator")
 
             elif sql_draft.status == "needs_clarification":
-                # Need clarification from user
-                clarification_prompt = sql_draft.clarification_prompt or \
-                    "I need more information to answer your question."
+                # Need clarification from user - use request_info to pause workflow
+                missing_params = sql_draft.missing_parameters or []
+                
+                # Get allowed values from the first missing parameter (most common case)
+                allowed_values: list[str] = []
+                param_name = ""
+                if missing_params:
+                    first_missing = missing_params[0]
+                    param_name = first_missing.name
+                    
+                    # Try to get allowed_values from parameter_definitions
+                    for param_def in sql_draft.parameter_definitions:
+                        if param_def.name == param_name and param_def.validation:
+                            if param_def.validation.allowed_values:
+                                allowed_values = param_def.validation.allowed_values
+                            break
+                
+                # Build a friendly clarification prompt
+                if allowed_values:
+                    clarification_prompt = f"Please choose a category: {', '.join(allowed_values)}"
+                else:
+                    clarification_prompt = sql_draft.clarification_prompt or \
+                        "I need a bit more information to answer your question."
 
-                # Store clarification state for the follow-up
-                clarification_state = {
-                    "original_question": sql_draft.user_query,
-                    "template_id": sql_draft.template_id,
-                    "missing_parameters": [
-                        mp.model_dump() for mp in (sql_draft.missing_parameters or [])
-                    ],
-                    "extracted_parameters": sql_draft.extracted_parameters,
-                }
+                # Get the template JSON from the SQLDraft (populated by param_extractor)
+                template_json = sql_draft.template_json or ""
+                if not template_json:
+                    logger.warning("No template_json in SQLDraft - clarification resumption may fail")
 
-                # Try to get the template from previous state
-                try:
-                    prev_state = await ctx.get_shared_state(CLARIFICATION_STATE_KEY)
-                    if prev_state and "template" in prev_state:
-                        clarification_state["template"] = prev_state["template"]
-                except KeyError:
-                    pass
-
-                await ctx.set_shared_state(CLARIFICATION_STATE_KEY, clarification_state)
-
-                # Return clarification request to user
-                nl2sql_response = NL2SQLResponse(
-                    sql_query="",
-                    error=clarification_prompt,
-                    confidence_score=0.5,  # Medium confidence - we found a template but need info
+                # Build clarification request for request_info
+                clarification_request = ClarificationRequest(
+                    parameter_name=param_name,
+                    prompt=clarification_prompt,
+                    allowed_values=allowed_values,
+                    original_question=sql_draft.user_query or "",
+                    template_id=sql_draft.template_id or "",
+                    template_json=template_json,
+                    extracted_parameters=sql_draft.extracted_parameters or {},
                 )
 
-                logger.info("Requesting clarification from user: %s", clarification_prompt)
-                await ctx.send_message(nl2sql_response.model_dump_json())
+                logger.info("Requesting clarification from user via request_info: %s", clarification_prompt)
+                
+                # This pauses the workflow and emits a RequestInfoEvent
+                # The workflow will resume when send_responses_streaming is called
+                await ctx.request_info(
+                    request_data=clarification_request,
+                    response_type=str,
+                )
 
             else:
                 # Error during extraction or parameter validation
@@ -625,6 +697,87 @@ class NL2SQLAgentExecutor(Executor):
 
         except Exception as e:
             logger.error("Error handling clarification: %s", e)
+            nl2sql_response = NL2SQLResponse(
+                sql_query="",
+                error=str(e)
+            )
+            await ctx.send_message(nl2sql_response.model_dump_json())
+
+    @response_handler
+    async def on_clarification_response(
+        self,
+        original_request: ClarificationRequest,
+        user_response: str,
+        ctx: WorkflowContext[NL2SQLOutputMessage],
+    ) -> None:
+        """
+        Handle clarification response from the user via request_info/send_responses_streaming.
+
+        This is called by Agent Framework when the user provides a response to a
+        ClarificationRequest that was emitted via ctx.request_info().
+
+        Args:
+            original_request: The ClarificationRequest we sent
+            user_response: The user's response (e.g., "Supermarket")
+            ctx: Workflow context for continuing the workflow
+        """
+        logger.info(
+            "Received clarification response: '%s' for parameter '%s'",
+            user_response[:50],
+            original_request.parameter_name
+        )
+
+        try:
+            # Reconstruct the template from the stored JSON
+            if not original_request.template_json:
+                logger.warning("No template in clarification request, treating as new question")
+                await self.handle_question(user_response, ctx)
+                return
+
+            template_data = json.loads(original_request.template_json)
+            template = QueryTemplate.model_validate(template_data)
+
+            # Combine original question with clarification for better extraction
+            enriched_query = f"{original_request.original_question} (Answer: {user_response})"
+
+            logger.info(
+                "Re-submitting with clarification. Original: '%s', User response: '%s'",
+                original_request.original_question[:50],
+                user_response[:50]
+            )
+
+            # Store clarification state for the extraction
+            await ctx.set_shared_state(
+                CLARIFICATION_STATE_KEY,
+                {
+                    "original_question": original_request.original_question,
+                    "template": template_data,
+                    "clarification_response": user_response,
+                }
+            )
+
+            # Build new extraction request with enriched query
+            extraction_request = ParameterExtractionRequest(
+                user_query=enriched_query,
+                template=template,
+            )
+
+            # Route to parameter extractor again
+            request_msg = ExtractionRequestMessage(
+                request_json=extraction_request.model_dump_json()
+            )
+            await ctx.send_message(request_msg, target_id="param_extractor")
+
+        except json.JSONDecodeError as e:
+            logger.error("Failed to parse template JSON: %s", e)
+            nl2sql_response = NL2SQLResponse(
+                sql_query="",
+                error="Failed to resume clarification flow - invalid template data"
+            )
+            await ctx.send_message(nl2sql_response.model_dump_json())
+
+        except Exception as e:
+            logger.error("Error handling clarification response: %s", e)
             nl2sql_response = NL2SQLResponse(
                 sql_query="",
                 error=str(e)

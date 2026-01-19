@@ -5,9 +5,10 @@ These models are used across multiple agents and the workflow.
 All models are re-exported here for backward compatibility.
 """
 
-from .execution import NL2SQLResponse
+from .execution import ClarificationInfo, NL2SQLResponse
 from .extraction import (
     ClarificationMessage,
+    ClarificationRequest,
     ExtractionRequestMessage,
     MissingParameter,
     ParameterExtractionRequest,
@@ -38,6 +39,7 @@ __all__ = [
     # Extraction (parameter extraction workflow)
     "MissingParameter",
     "ClarificationMessage",
+    "ClarificationRequest",
     "ExtractionRequestMessage",
     "ParameterExtractionRequest",
     # Generation (SQL construction and validation)
@@ -46,5 +48,6 @@ __all__ = [
     "QueryBuilderRequest",
     "QueryBuilderRequestMessage",
     # Execution (query results)
+    "ClarificationInfo",
     "NL2SQLResponse",
 ]

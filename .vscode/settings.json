@@ -1,6 +1,8 @@
 {
-    "python.defaultInterpreterPath": "${workspaceFolder}/api/.venv/bin/python",
+    "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python",
     "python.analysis.extraPaths": [
-        "${workspaceFolder}/api"
-    ]
+        "${workspaceFolder}/backend"
+    ],
+    "python.terminal.activateEnvironment": true,
+    "python.terminal.activateEnvInCurrentTerminal": true
 }

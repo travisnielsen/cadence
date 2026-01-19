@@ -243,6 +243,29 @@ class ChatAgentExecutor(Executor):
             await ctx.set_shared_state(FOUNDRY_CONVERSATION_ID_KEY, thread.service_thread_id)
             logger.info("Stored Foundry thread ID in shared state: %s", thread.service_thread_id)
 
+    async def _ensure_thread_exists(self, ctx: WorkflowContext[Any, Any]) -> AgentThread:
+        """
+        Ensure a Foundry thread is created/cached for this conversation.
+        
+        This should be called at the start of message handling to ensure
+        the thread object exists. The service_thread_id will be assigned
+        on the first actual LLM call (in param_extractor, query_builder, or triage).
+        
+        Note: We don't "prime" the thread here as that would add latency.
+        Instead, we just ensure the thread object exists and is cached.
+        The first executor to call agent.run() will assign the service_thread_id.
+        
+        Returns:
+            The AgentThread (may not have service_thread_id yet if no LLM call made)
+        """
+        thread, _ = await self._get_or_create_thread(ctx)
+        
+        # If we already have a thread ID (from previous LLM call), store it
+        if thread.service_thread_id:
+            await self._store_thread_id(ctx, thread)
+        
+        return thread
+
     async def _triage_message(self, user_text: str, ctx: WorkflowContext[Any, Any]) -> tuple[str | None, str]:
         """
         Triage the user message - check for pending clarification, then fast keyword check, then LLM fallback.
@@ -380,6 +403,10 @@ class ChatAgentExecutor(Executor):
         user_text = message.text or ""
         logger.info("ChatAgentExecutor received user message: %s", user_text[:100] if user_text else "(empty)")
 
+        # Ensure Foundry thread exists early so it's available for all downstream executors
+        # This is important for fast-path routing that skips LLM triage
+        await self._ensure_thread_exists(ctx)
+
         # Triage the message
         route_to, result = await self._triage_message(user_text, ctx)
         
@@ -415,6 +442,10 @@ class ChatAgentExecutor(Executor):
                 break
 
         logger.info("ChatAgentExecutor received user messages: %s", user_text[:100] if user_text else "(empty)")
+
+        # Ensure Foundry thread exists early so it's available for all downstream executors
+        # This is important for fast-path routing that skips LLM triage
+        await self._ensure_thread_exists(ctx)
 
         # Triage the message
         route_to, result = await self._triage_message(user_text, ctx)
@@ -474,6 +505,8 @@ class ChatAgentExecutor(Executor):
                     "query_source": response.query_source,
                     "error": response.error,
                     "observations": None,  # No LLM-generated insights
+                    "needs_clarification": response.needs_clarification,
+                    "clarification": response.clarification.model_dump() if response.clarification else None,
                 }
             }
         }
@@ -523,6 +556,14 @@ Format this nicely with a markdown table and helpful context. If the data is emp
 
     def _fallback_render(self, response: NL2SQLResponse) -> str:
         """Fallback rendering if the agent fails."""
+        # Handle clarification requests first (before error check)
+        if response.needs_clarification and response.clarification:
+            clarification = response.clarification
+            lines = [f"**{clarification.prompt}**\n"]
+            if clarification.allowed_values:
+                lines.append("Valid options: " + ", ".join(clarification.allowed_values))
+            return "\n".join(lines)
+        
         if response.error:
             return f"**Error:** {response.error}"
 

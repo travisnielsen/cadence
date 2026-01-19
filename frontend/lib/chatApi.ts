@@ -27,6 +27,16 @@ export interface StepData {
   is_parent?: boolean; // True for executor-level steps that contain child tool steps
 }
 
+/**
+ * Clarification data from the backend
+ */
+export interface ClarificationData {
+  request_id: string;
+  parameter_name: string;
+  prompt: string;
+  allowed_values: string[];
+}
+
 export interface StreamChunk {
   thread_id?: string; // Foundry thread ID (returned with done: true)
   content?: string;
@@ -37,6 +47,8 @@ export interface StreamChunk {
   is_parent?: boolean; // True for parent/executor steps
   tool_call?: ToolCallData; // Tool call data for generative UI
   steps_complete?: boolean; // Signal that all steps are done (sent before stream ends)
+  needs_clarification?: boolean; // True when workflow needs user clarification
+  clarification?: ClarificationData; // Clarification request data
   done?: boolean;
   error?: string;
 }
@@ -55,6 +67,8 @@ export interface StreamChunk {
  * @param accessToken - Optional access token for authentication
  * @param title - Optional title for new threads (truncated first message)
  * @param onStepsComplete - Called when all workflow steps are done (before stream ends)
+ * @param requestId - Optional request_id for clarification responses
+ * @param onClarification - Called when clarification is needed from user
  */
 export function streamChat(
   threadId: string | null,
@@ -67,7 +81,9 @@ export function streamChat(
   onStep?: (stepData: StepData) => void,
   accessToken?: string | null,
   title?: string | null,
-  onStepsComplete?: () => void
+  onStepsComplete?: () => void,
+  requestId?: string | null,
+  onClarification?: (clarification: ClarificationData) => void
 ): AbortController {
   const abortController = new AbortController();
 
@@ -79,6 +95,10 @@ export function streamChat(
   // For new threads, pass the title
   if (!threadId && title) {
     url += `&title=${encodeURIComponent(title)}`;
+  }
+  // For clarification responses, include request_id
+  if (requestId) {
+    url += `&request_id=${encodeURIComponent(requestId)}`;
   }
 
   // Build headers with optional auth
@@ -132,6 +152,10 @@ export function streamChat(
           }
           if (chunk.steps_complete && onStepsComplete) {
             onStepsComplete();
+          }
+          // Handle clarification requests from the backend
+          if (chunk.needs_clarification && chunk.clarification && onClarification) {
+            onClarification(chunk.clarification);
           }
           if (chunk.content) {
             onChunk(chunk.content);

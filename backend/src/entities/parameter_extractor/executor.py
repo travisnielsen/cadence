@@ -71,6 +71,121 @@ FOUNDRY_CONVERSATION_ID_KEY = "foundry_conversation_id"
 WORKFLOW_RUN_KWARGS_KEY = "_workflow_run_kwargs"
 
 
+# ============================================================================
+# Deterministic Fuzzy Matching (Step 1 - before LLM)
+# ============================================================================
+
+def _fuzzy_match_allowed_value(user_query: str, allowed_values: list[str]) -> str | None:
+    """
+    Try to match user query words to an allowed value.
+    
+    Returns the matched value or None if no confident match.
+    """
+    query_lower = user_query.lower()
+    
+    for allowed in allowed_values:
+        allowed_lower = allowed.lower()
+        
+        # Exact match (case-insensitive)
+        if allowed_lower in query_lower:
+            return allowed
+        
+        # Pluralization: "supermarkets" -> "Supermarket"
+        if allowed_lower + "s" in query_lower:
+            return allowed
+        
+        # Word stems: "Computer Store" matches "computers"
+        words = allowed_lower.split()
+        if words:
+            first_word = words[0]
+            if first_word + "s" in query_lower:
+                return allowed
+            # Also check without trailing 's' in query: "novelty" -> "Novelty Shop"
+            if first_word in query_lower:
+                return allowed
+    
+    return None
+
+
+def _extract_number_from_query(user_query: str, param_name: str) -> int | None:
+    """
+    Extract a number from the user query for count-type parameters.
+    
+    Handles patterns like "top 5", "first 10", "last 30 days".
+    """
+    query_lower = user_query.lower()
+    
+    # Common patterns for counts
+    patterns = [
+        r'top\s+(\d+)',
+        r'first\s+(\d+)',
+        r'last\s+(\d+)',
+        r'(\d+)\s+' + param_name.replace('_', r'\s*'),
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, query_lower)
+        if match:
+            return int(match.group(1))
+    
+    return None
+
+
+def _pre_extract_parameters(user_query: str, template: QueryTemplate) -> dict[str, Any]:
+    """
+    Deterministically extract parameters before calling LLM.
+    
+    Returns dict of parameter name -> value for confident matches.
+    """
+    extracted: dict[str, Any] = {}
+    
+    for param in template.parameters:
+        # Try to match allowed_values
+        if param.validation and param.validation.allowed_values:
+            match = _fuzzy_match_allowed_value(
+                user_query, 
+                param.validation.allowed_values
+            )
+            if match:
+                extracted[param.name] = match
+                continue
+        
+        # Try to extract numbers for integer params
+        if param.validation and param.validation.type == "integer":
+            num = _extract_number_from_query(user_query, param.name)
+            if num is not None:
+                # Validate against min/max (cast to int for comparison)
+                min_val = param.validation.min
+                max_val = param.validation.max
+                if min_val is not None and num < int(min_val):
+                    continue
+                if max_val is not None and num > int(max_val):
+                    continue
+                extracted[param.name] = num
+                continue
+        
+        # Apply default if available
+        if param.default_value is not None and param.name not in extracted:
+            extracted[param.name] = param.default_value
+    
+    return extracted
+
+
+def _all_required_params_satisfied(extracted: dict[str, Any], template: QueryTemplate) -> bool:
+    """Check if all required parameters are satisfied."""
+    for param in template.parameters:
+        if param.required:
+            if param.name not in extracted:
+                # Check if there's a default
+                if param.default_value is None:
+                    return False
+    return True
+
+
+# ============================================================================
+# Prompt Building and LLM Response Parsing
+# ============================================================================
+
 def _load_prompt() -> str:
     """Load prompt from prompt.md in this folder."""
     prompt_path = Path(__file__).parent / "prompt.md"
@@ -83,7 +198,7 @@ def _load_prompt() -> str:
 
 def _build_extraction_prompt(user_query: str, template: QueryTemplate) -> str:
     """
-    Build the prompt for the LLM to extract parameters.
+    Build a compact prompt for the LLM to extract parameters.
 
     Args:
         user_query: The user's original question
@@ -96,42 +211,32 @@ def _build_extraction_prompt(user_query: str, template: QueryTemplate) -> str:
     adjusted_date = datetime.now() - timedelta(days=12 * 365)
     adjusted_date_str = adjusted_date.strftime("%Y-%m-%d")
 
-    # Format parameters for the prompt
+    # Format parameters compactly - only include what's needed for extraction
     params_info = []
     for param in template.parameters:
         param_desc = {
             "name": param.name,
             "required": param.required,
             "ask_if_missing": param.ask_if_missing,
-            "default_value": param.default_value,
         }
+        if param.default_value is not None:
+            param_desc["default"] = param.default_value
         if param.validation:
-            param_desc["validation"] = param.validation.model_dump()
+            # Only include relevant validation fields
+            v = param.validation
+            if v.allowed_values:
+                param_desc["allowed_values"] = v.allowed_values
+            if v.min is not None:
+                param_desc["min"] = v.min
+            if v.max is not None:
+                param_desc["max"] = v.max
         params_info.append(param_desc)
 
-    prompt = f"""Extract parameters from the following user question to fill the SQL template.
+    prompt = f"""Question: {user_query}
+Reference date: {adjusted_date_str}
+Parameters: {json.dumps(params_info)}
 
-## Adjusted Reference Date
-**{adjusted_date_str}** - Use this date as "today" for any date-related parameters. The database contains historical data from approximately 12 years ago.
-
-## User Question
-{user_query}
-
-## SQL Template
-{template.sql_template}
-
-## Template Intent
-{template.intent}
-
-## Template Example Question
-{template.question}
-
-## Parameters to Extract
-{json.dumps(params_info, indent=2)}
-
-Analyze the user question and extract values for each parameter.
-Respond with a JSON object containing your extraction results.
-"""
+Extract parameter values. Respond with JSON only."""
     return prompt
 
 
@@ -334,6 +439,42 @@ class ParameterExtractorExecutor(Executor):
                 user_query[:100]
             )
 
+            # ================================================================
+            # Step 1: Try deterministic fuzzy matching first (fast path)
+            # ================================================================
+            extracted_params = _pre_extract_parameters(user_query, template)
+            
+            if extracted_params:
+                logger.info("Deterministic extraction found %d parameters:", len(extracted_params))
+                for param_name, param_value in extracted_params.items():
+                    logger.info("  Parameter '%s' -> '%s'", param_name, param_value)
+            
+            if _all_required_params_satisfied(extracted_params, template):
+                # All required params found - skip LLM entirely!
+                logger.info("All required parameters satisfied via deterministic matching - skipping LLM")
+                
+                sql_draft = SQLDraft(
+                    status="success",
+                    source="template",
+                    completed_sql=None,  # SQL substitution done by data_agent
+                    user_query=user_query,
+                    reasoning=template.reasoning,
+                    template_id=template.id,
+                    template_json=template.model_dump_json(),
+                    extracted_parameters=extracted_params,
+                    parameter_definitions=template.parameters,
+                )
+                
+                finish_step()
+                response_msg = SQLDraftMessage(source="param_extractor", response_json=sql_draft.model_dump_json())
+                await ctx.send_message(response_msg)
+                return
+
+            # ================================================================
+            # Step 2: Fall back to LLM for complex/ambiguous cases
+            # ================================================================
+            logger.info("Deterministic matching incomplete - falling back to LLM")
+
             # Get or create thread for the LLM call
             thread, is_new_thread = await self._get_or_create_thread(ctx)
 
@@ -346,6 +487,9 @@ class ParameterExtractorExecutor(Executor):
 
             # Build the extraction prompt
             extraction_prompt = _build_extraction_prompt(user_query, template)
+            
+            # Log the full prompt for debugging
+            logger.info("Extraction prompt:\n%s", extraction_prompt)
 
             # Run the LLM to extract parameters
             response = await self.agent.run(extraction_prompt, thread=thread, metadata=metadata)
@@ -366,22 +510,31 @@ class ParameterExtractorExecutor(Executor):
                     if response_text:
                         break
 
+            # Log the raw LLM response for debugging
+            logger.info("LLM response: %s", response_text[:500] if response_text else "(empty)")
+
             # Parse the LLM response
             parsed = _parse_llm_response(response_text)
+            logger.info("Parsed response: status=%s, params=%s", parsed.get("status"), parsed.get("extracted_parameters"))
 
             # Build the response based on LLM output
             if parsed.get("status") == "success":
-                # Substitute parameters into the SQL template
+                # Return extracted parameters - SQL substitution happens in data_agent
                 extracted_params = parsed.get("extracted_parameters", {})
-                completed_sql = _substitute_parameters(template.sql_template, extracted_params)
+                
+                # Log each extracted parameter
+                logger.info("Extracted %d parameters:", len(extracted_params))
+                for param_name, param_value in extracted_params.items():
+                    logger.info("  Parameter '%s' -> '%s'", param_name, param_value)
 
                 sql_draft = SQLDraft(
                     status="success",
                     source="template",
-                    completed_sql=completed_sql,
+                    completed_sql=None,  # SQL substitution done by data_agent
                     user_query=user_query,
                     reasoning=template.reasoning,
                     template_id=template.id,
+                    template_json=template.model_dump_json(),
                     extracted_parameters=extracted_params,
                     parameter_definitions=template.parameters,
                 )
@@ -402,6 +555,7 @@ class ParameterExtractorExecutor(Executor):
                     user_query=user_query,
                     reasoning=template.reasoning,
                     template_id=template.id,
+                    template_json=template.model_dump_json(),
                     extracted_parameters=parsed.get("extracted_parameters"),
                     parameter_definitions=template.parameters,
                     missing_parameters=missing,
@@ -415,6 +569,7 @@ class ParameterExtractorExecutor(Executor):
                     source="template",
                     user_query=user_query,
                     template_id=template.id,
+                    template_json=template.model_dump_json(),
                     parameter_definitions=template.parameters,
                     error=parsed.get("error", "Unknown error during parameter extraction"),
                 )

@@ -54,6 +54,10 @@ class SQLDraft(BaseModel):
         default=None,
         description="Template ID used (for re-submission on clarification)"
     )
+    template_json: str | None = Field(
+        default=None,
+        description="Full template JSON (for resumption after clarification)"
+    )
     extracted_parameters: dict[str, Any] | None = Field(
         default=None,
         description="Parameter name -> extracted value mapping"

@@ -13,10 +13,13 @@
             "default_policy": null,
             "confidence_weight": 0.4,
             "normalization": {
-                "lowercase": true,
+                "lowercase": false,
                 "strip": true
             },
-            "validation": null
+            "validation": {
+                "type": "string",
+                "allowed_values": ["Supermarket", "Novelty Shop", "Corporate", "Computer Store", "Gift Store"]
+            }
         }
     ],
     "allowed_tables": [

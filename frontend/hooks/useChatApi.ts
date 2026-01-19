@@ -17,7 +17,7 @@ import {
   type ExternalStoreThreadData,
 } from "@assistant-ui/react";
 import { useMsal, useIsAuthenticated } from "@azure/msal-react";
-import { streamChat, getThreadMessages, type ToolCallData, type StepData } from "@/lib/chatApi";
+import { streamChat, getThreadMessages, type ToolCallData, type StepData, type ClarificationData } from "@/lib/chatApi";
 import { useAccessToken } from "@/lib/useAccessToken";
 import {
   loadCachedThreads,
@@ -51,6 +51,15 @@ export function useChatApi() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  
+  // Pending clarification request state - stores request_id for HITL flow
+  const [pendingClarification, setPendingClarification] = useState<ClarificationData | null>(null);
+  const pendingClarificationRef = useRef<ClarificationData | null>(null);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    pendingClarificationRef.current = pendingClarification;
+  }, [pendingClarification]);
   
   // Ref to track current threadId for use in callbacks (avoids stale closure issues)
   const threadIdRef = useRef<string | null>(null);
@@ -417,8 +426,46 @@ export function useChatApi() {
             }
             return updated;
           });
+        },
+        // requestId - pass pending clarification request_id if this is a response
+        pendingClarificationRef.current?.request_id || null,
+        // onClarification - store clarification request for HITL flow
+        (clarification) => {
+          console.log("Received clarification request:", clarification);
+          setPendingClarification(clarification);
+          
+          // Update assistant message to show clarification UI via toolCall
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last.role === "assistant") {
+              // Convert clarification to a tool_call-like structure for UI rendering
+              updated[updated.length - 1] = {
+                ...last,
+                content: "", // Clear content - clarification UI renders via toolCall
+                toolCall: {
+                  tool_name: "nl2sql_query",
+                  tool_call_id: `clarification-${clarification.request_id}`,
+                  args: { question: "" },
+                  result: {
+                    needs_clarification: true,
+                    clarification: {
+                      prompt: clarification.prompt,
+                      allowed_values: clarification.allowed_values,
+                    },
+                  },
+                },
+              };
+            }
+            return updated;
+          });
         }
       );
+      
+      // Clear pending clarification after sending (it was used)
+      if (pendingClarificationRef.current) {
+        setPendingClarification(null);
+      }
     },
     [acquireToken, userId]
   );
@@ -601,6 +648,36 @@ export function useChatApi() {
               updated[updated.length - 1] = {
                 ...last,
                 stepsComplete: true,
+              };
+            }
+            return updated;
+          });
+        },
+        // No request_id for regeneration
+        null,
+        // onClarification for regeneration (same as regular send)
+        (clarification) => {
+          console.log("Received clarification request (reload):", clarification);
+          setPendingClarification(clarification);
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last.role === "assistant") {
+              updated[updated.length - 1] = {
+                ...last,
+                content: "",
+                toolCall: {
+                  tool_name: "nl2sql_query",
+                  tool_call_id: `clarification-${clarification.request_id}`,
+                  args: { question: "" },
+                  result: {
+                    needs_clarification: true,
+                    clarification: {
+                      prompt: clarification.prompt,
+                      allowed_values: clarification.allowed_values,
+                    },
+                  },
+                },
               };
             }
             return updated;

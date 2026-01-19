@@ -1,8 +1,8 @@
 "use client";
 
-import { makeAssistantToolUI } from "@assistant-ui/react";
+import { makeAssistantToolUI, useThreadRuntime } from "@assistant-ui/react";
 import { DatabaseIcon, ChevronDownIcon, ChevronUpIcon, LightbulbIcon } from "lucide-react";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -12,6 +12,12 @@ import remarkGfm from "remark-gfm";
  */
 interface NL2SQLArgs {
   question: string;
+}
+
+interface ClarificationInfo {
+  parameter_name: string;
+  prompt: string;
+  allowed_values: string[];
 }
 
 interface NL2SQLResult {
@@ -24,6 +30,8 @@ interface NL2SQLResult {
   query_source?: "template" | "cached" | "dynamic";
   error?: string;
   observations?: string;
+  needs_clarification?: boolean;
+  clarification?: ClarificationInfo;
 }
 
 /**
@@ -118,6 +126,48 @@ function SQLQuerySection({ query }: { query: string }) {
 }
 
 /**
+ * Clarification options component with clickable pills
+ */
+function ClarificationOptions({ prompt, allowedValues }: { prompt: string; allowedValues: string[] }) {
+  const threadRuntime = useThreadRuntime();
+  
+  const handleClick = useCallback((value: string) => {
+    threadRuntime.composer.setText(value);
+    threadRuntime.composer.send();
+  }, [threadRuntime]);
+
+  return (
+    <div className="rounded-lg border border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/30 p-4">
+      <div className="flex items-start gap-3">
+        <DatabaseIcon className="size-5 text-blue-500 mt-0.5" />
+        <div className="flex-1">
+          <p className="font-medium text-blue-700 dark:text-blue-300">
+            I need a bit more information
+          </p>
+          <p className="text-sm text-muted-foreground mt-1">{prompt}</p>
+          {allowedValues.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {allowedValues.map((value) => (
+                <button
+                  key={value}
+                  onClick={() => handleClick(value)}
+                  className="inline-block px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-700 rounded-full text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900 cursor-pointer transition-colors"
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground mt-3">
+            Click an option above or type your own
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * NL2SQL Tool UI Component
  *
  * Renders the results of an NL2SQL query with:
@@ -159,6 +209,14 @@ export const NL2SQLToolUI = makeAssistantToolUI<NL2SQLArgs, NL2SQLResult>({
     // No result yet
     if (!result) {
       return null;
+    }
+
+    // Clarification needed - friendly prompt with clickable options
+    if (result.needs_clarification && result.clarification) {
+      const { prompt, allowed_values } = result.clarification;
+      return (
+        <ClarificationOptions prompt={prompt} allowedValues={allowed_values} />
+      );
     }
 
     // Error in result

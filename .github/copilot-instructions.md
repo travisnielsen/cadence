@@ -5,12 +5,12 @@
 This is a **multi-agent NL2SQL application** using Microsoft Agent Framework (MAF) with a FastAPI backend and Next.js/assistant-ui frontend. Communication happens via SSE streaming, with thread management delegated to Microsoft Foundry.
 
 ### Agent Workflow (5-executor orchestration)
-1. **ChatAgent** (`api/src/entities/chat_agent/`) - Triages user messages: routes data questions to NL2SQL, handles general conversation directly
-2. **DataAgent** (`api/src/entities/data_agent/`) - Orchestrates query flow, searches templates via Azure AI Search, executes SQL via `execute_sql` tool
-3. **ParameterExtractor** (`api/src/entities/parameter_extractor/`) - Extracts parameter values from natural language to fill SQL template tokens
-4. **ParameterValidator** (`api/src/entities/parameter_validator/`) - Non-LLM validation of extracted parameters (type, range, regex, allowed values)
-5. **QueryValidator** (`api/src/entities/query_validator/`) - Validates SQL syntax, table allowlist, and security before execution
-6. **QueryBuilder** (`api/src/entities/query_builder/`) - Generates dynamic SQL from table metadata when no template matches
+1. **ChatAgent** (`backend/src/entities/chat_agent/`) - Triages user messages: routes data questions to NL2SQL, handles general conversation directly
+2. **DataAgent** (`backend/src/entities/data_agent/`) - Orchestrates query flow, searches templates via Azure AI Search, executes SQL via `execute_sql` tool
+3. **ParameterExtractor** (`backend/src/entities/parameter_extractor/`) - Extracts parameter values from natural language to fill SQL template tokens
+4. **ParameterValidator** (`backend/src/entities/parameter_validator/`) - Non-LLM validation of extracted parameters (type, range, regex, allowed values)
+5. **QueryValidator** (`backend/src/entities/query_validator/`) - Validates SQL syntax, table allowlist, and security before execution
+6. **QueryBuilder** (`backend/src/entities/query_builder/`) - Generates dynamic SQL from table metadata when no template matches
 
 ### Workflow Flow
 ```
@@ -24,7 +24,7 @@ User → ChatAgent → DataAgent → QueryBuilder → DataAgent → QueryValidat
      → DataAgent → execute_sql → ChatAgent → User
 ```
 
-The workflow is built in [api/src/entities/workflow/workflow.py](api/src/entities/workflow/workflow.py) and creates a fresh instance per request (MAF doesn't support concurrent workflow executions).
+The workflow is built in [backend/src/entities/workflow/workflow.py](backend/src/entities/workflow/workflow.py) and creates a fresh instance per request (MAF doesn't support concurrent workflow executions).
 
 ## Key Patterns
 
@@ -35,13 +35,13 @@ Each agent follows a consistent pattern in its folder:
 - `tools/` - AI function tools decorated with `@ai_function`
 
 ### Models Structure
-Shared models are in `api/src/models/` with functional grouping:
+Shared models are in `backend/src/models/` with functional grouping:
 - `schema.py` - AI Search index models (`QueryTemplate`, `ParameterDefinition`, `TableMetadata`)
 - `extraction.py` - Parameter extraction workflow (`ParameterExtractionRequest`, `MissingParameter`)
 - `generation.py` - SQL generation (`SQLDraft`, `SQLDraftMessage`, `QueryBuilderRequest`)
 - `execution.py` - Query results (`NL2SQLResponse`)
 
-All models are re-exported from `api/src/models/__init__.py` for backward compatibility.
+All models are re-exported from `backend/src/models/__init__.py` for backward compatibility.
 
 ### Dual Import Pattern
 Agents support both DevUI and FastAPI contexts:
@@ -62,7 +62,7 @@ The `SQLDraft` model carries SQL through the validation pipeline. The `SQLDraftM
 DataAgent routes based on these flags to prevent infinite loops.
 
 ### Query Templates
-SQL queries are parameterized templates stored in `data/query_templates/` and indexed in Azure AI Search. Parameters use `%{{name}}%` token syntax with validation rules. See `api/src/models/schema.py` for `QueryTemplate` and `ParameterDefinition` schemas.
+SQL queries are parameterized templates stored in `data/query_templates/` and indexed in Azure AI Search. Parameters use `%{{name}}%` token syntax with validation rules. See `backend/src/models/schema.py` for `QueryTemplate` and `ParameterDefinition` schemas.
 
 ### SSE Streaming & Step Events
 Step events provide real-time progress to the UI. Emit from tools using:
@@ -86,13 +86,13 @@ pnpm dev              # Runs both UI and API concurrently
 # Frontend only  
 pnpm dev:ui           # Next.js with Turbopack
 
-# DevUI for agent testing (from api folder)
+# DevUI for agent testing (from backend folder)
 devui ./src/entities  # Test agents in isolation
 ```
 
 ## Environment Configuration
 
-API requires `.env` in `api/` folder with:
+API requires `.env` in `backend/` folder with:
 - `AZURE_AI_PROJECT_ENDPOINT` - Foundry project endpoint (required)
 - `AZURE_AI_MODEL_DEPLOYMENT_NAME` - Default model deployment
 - `AZURE_SEARCH_ENDPOINT` - AI Search for query templates
@@ -110,7 +110,7 @@ API requires `.env` in `api/` folder with:
 ## API Structure
 
 ```
-api/src/
+backend/src/
 ├── api/                    # FastAPI application
 │   ├── main.py            # App entrypoint
 │   ├── middleware/        # Auth middleware
@@ -142,7 +142,7 @@ Tests use `pytest` with `pytest-asyncio`. Key test scenarios to cover:
 4. **Parameter Validation** - Invalid parameter types, out-of-range values, regex failures
 5. **Query Validation** - Disallowed tables, SQL injection patterns, non-SELECT statements
 
-Run tests: `cd api && pytest`
+Run tests: `cd backend && pytest`
 
 ## Adding New Capabilities
 

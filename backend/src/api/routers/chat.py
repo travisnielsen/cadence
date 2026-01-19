@@ -26,6 +26,7 @@ from agent_framework import (
     WorkflowRunState,
     ExecutorInvokedEvent,
     ExecutorCompletedEvent,
+    RequestInfoEvent,
 )
 
 if TYPE_CHECKING:
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
 from src.api.models import ChatRequest
 from src.api.dependencies import get_optional_user_id
 from src.api.step_events import set_step_queue, clear_step_queue, set_request_user_id
+from src.api.workflow_cache import store_paused_workflow, get_paused_workflow
 
 logger = logging.getLogger(__name__)
 
@@ -297,6 +299,50 @@ async def generate_workflow_streaming_response(
                         logger.info("Workflow completed")
                         workflow_done = True
                         continue
+                    elif event.state == WorkflowRunState.IDLE_WITH_PENDING_REQUESTS:
+                        # Workflow is paused waiting for human input
+                        logger.info("Workflow paused waiting for user response")
+                        # Don't mark as done yet - we need to send the pending request first
+
+                elif isinstance(event, RequestInfoEvent):
+                    # Workflow is requesting clarification from the user
+                    # This is emitted when ctx.request_info() is called
+                    logger.info("Received RequestInfoEvent with request_id: %s", event.request_id)
+                    
+                    # Import here to avoid circular dependency
+                    try:
+                        from models import ClarificationRequest  # type: ignore[import-not-found]
+                    except ImportError:
+                        from src.models import ClarificationRequest
+                    
+                    if isinstance(event.data, ClarificationRequest):
+                        # Store the paused workflow for later resumption
+                        store_paused_workflow(event.request_id, workflow)
+                        logger.info("Stored paused workflow for request_id=%s", event.request_id)
+                        
+                        # Build the clarification response for the frontend
+                        clarification_data = {
+                            "needs_clarification": True,
+                            "clarification": {
+                                "request_id": event.request_id,
+                                "parameter_name": event.data.parameter_name,
+                                "prompt": event.data.prompt,
+                                "allowed_values": event.data.allowed_values,
+                            },
+                            "done": False,
+                        }
+                        yield f"data: {json.dumps(clarification_data)}\n\n"
+                        logger.info("Sent clarification request to frontend: %s", event.data.prompt)
+                        output_received = True
+                        
+                        # Emit steps_complete signal
+                        yield f"data: {json.dumps({'steps_complete': True, 'done': False})}\n\n"
+                        logger.info("Emitted steps_complete signal")
+                        
+                        # Mark workflow as done - it's now paused
+                        # The frontend will call back with send_responses when user responds
+                        workflow_done = True
+                        continue
                 
                 # Request next workflow event
                 next_event_task = asyncio.ensure_future(workflow_iter.__anext__())
@@ -343,6 +389,144 @@ async def generate_workflow_streaming_response(
         clear_step_queue()
         
         # End the workflow span and detach context
+        workflow_span.end()
+        otel_context.detach(context_token)
+
+
+async def generate_clarification_response_stream(
+    workflow: "Workflow",
+    message: str,
+    request_id: str,
+    thread_id: str | None = None,
+    user_id: str | None = None,
+) -> AsyncGenerator[str, None]:
+    """
+    Stream response for a clarification continuation using send_responses_streaming.
+
+    This is called when the user responds to a clarification request.
+    The workflow resumes from where it left off, using the saved template context.
+
+    Args:
+        workflow: The Workflow instance
+        message: User's clarification response
+        request_id: The request_id from the original RequestInfoEvent
+        thread_id: Foundry thread ID
+        user_id: User ID for context
+    """
+    # Create a parent span for the clarification response
+    workflow_span = tracer.start_span(
+        "workflow.clarification_response",
+        attributes={
+            "workflow.message": message[:100],
+            "workflow.request_id": request_id,
+            "workflow.thread_id": thread_id or "unknown",
+            "workflow.user_id": user_id or "anonymous",
+        }
+    )
+    context_token = otel_context.attach(trace.set_span_in_context(workflow_span))
+
+    # Set up step event queue for tool-level progress
+    step_queue: asyncio.Queue = asyncio.Queue()
+    set_step_queue(step_queue)
+    logger.info("Step queue created for clarification response")
+    
+    # Set user_id in context
+    set_request_user_id(user_id)
+
+    try:
+        logger.info("Sending clarification response for request_id=%s: %s", request_id, message[:100])
+
+        # Send the user's response back to the workflow
+        # The key is the request_id, the value is the user's response
+        responses = {request_id: message}
+
+        output_received = False
+        foundry_thread_id = thread_id
+
+        async for event in workflow.send_responses_streaming(responses):
+            logger.info("Received workflow event from clarification: %s", type(event).__name__)
+
+            if isinstance(event, WorkflowOutputEvent):
+                # This is the final rendered response
+                output_data = event.data
+                if isinstance(output_data, str):
+                    try:
+                        parsed = json.loads(output_data)
+                        output_text = parsed.get("text", "")
+                        foundry_thread_id = parsed.get("thread_id") or foundry_thread_id
+                        
+                        tool_call = parsed.get("tool_call")
+                        if tool_call:
+                            yield f"data: {json.dumps({'tool_call': tool_call, 'done': False})}\n\n"
+                            logger.info("Emitted tool_call from clarification: %s", tool_call.get("tool_name"))
+                            output_received = True
+                        elif output_text:
+                            chunk_size = 50
+                            for i in range(0, len(output_text), chunk_size):
+                                chunk = output_text[i:i + chunk_size]
+                                yield f"data: {json.dumps({'content': chunk, 'done': False})}\n\n"
+                                await asyncio.sleep(0.01)
+                            output_received = True
+                        
+                        yield f"data: {json.dumps({'steps_complete': True, 'done': False})}\n\n"
+                        
+                    except json.JSONDecodeError:
+                        output_text = output_data
+                        chunk_size = 50
+                        for i in range(0, len(output_text), chunk_size):
+                            chunk = output_text[i:i + chunk_size]
+                            yield f"data: {json.dumps({'content': chunk, 'done': False})}\n\n"
+                            await asyncio.sleep(0.01)
+                        output_received = True
+
+            elif isinstance(event, WorkflowStatusEvent):
+                if event.state == WorkflowRunState.IDLE:
+                    logger.info("Workflow completed after clarification")
+
+            elif isinstance(event, RequestInfoEvent):
+                # Another clarification request (e.g., multiple missing parameters)
+                logger.info("Received another RequestInfoEvent with request_id: %s", event.request_id)
+                
+                try:
+                    from models import ClarificationRequest  # type: ignore[import-not-found]
+                except ImportError:
+                    from src.models import ClarificationRequest
+                
+                if isinstance(event.data, ClarificationRequest):
+                    # Store the paused workflow for the follow-up clarification
+                    store_paused_workflow(event.request_id, workflow)
+                    logger.info("Stored paused workflow for follow-up request_id=%s", event.request_id)
+                    
+                    clarification_data = {
+                        "needs_clarification": True,
+                        "clarification": {
+                            "request_id": event.request_id,
+                            "parameter_name": event.data.parameter_name,
+                            "prompt": event.data.prompt,
+                            "allowed_values": event.data.allowed_values,
+                        },
+                        "done": False,
+                    }
+                    yield f"data: {json.dumps(clarification_data)}\n\n"
+                    logger.info("Sent follow-up clarification: %s", event.data.prompt)
+                    output_received = True
+                    yield f"data: {json.dumps({'steps_complete': True, 'done': False})}\n\n"
+
+        if not output_received:
+            yield f"data: {json.dumps({'content': 'No response generated', 'done': False})}\n\n"
+
+        yield f"data: {json.dumps({'done': True, 'thread_id': foundry_thread_id})}\n\n"
+        
+        workflow_span.set_status(trace.StatusCode.OK)
+
+    except (ValueError, RuntimeError, OSError, TypeError) as e:
+        logger.error("Clarification workflow error: %s", e, exc_info=True)
+        yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
+        
+        workflow_span.set_status(trace.StatusCode.ERROR, str(e))
+        workflow_span.record_exception(e)
+    finally:
+        clear_step_queue()
         workflow_span.end()
         otel_context.detach(context_token)
 
@@ -439,6 +623,7 @@ async def generate_streaming_response(
 async def chat_stream(
     message: str = Query(..., description="User message"),
     thread_id: str | None = Query(None, description="Foundry thread ID (omit for new thread)"),
+    request_id: str | None = Query(None, description="Request ID for clarification response (from previous clarification request)"),
     title: str | None = Query(None, description="Thread title (for new threads only)"),
     user_id: str | None = Depends(get_optional_user_id),
 ):
@@ -454,20 +639,43 @@ async def chat_stream(
     - Omit thread_id for new thread - Foundry will create one
     - Include thread_id to continue existing thread
     - Response includes thread_id for use in subsequent requests
+    
+    Clarification flow:
+    - If request_id is provided, this is a response to a clarification request
+    - The workflow will resume from where it left off using send_responses_streaming
     """
     # Import here to avoid circular imports
     from src.entities.workflow import create_workflow_instance
-    
-    # Create a fresh workflow instance for this request
-    # The Agent Framework doesn't support concurrent workflow executions
-    workflow, _, _ = create_workflow_instance()
 
-    # Use workflow streaming for executor-level progress events
-    return StreamingResponse(
-        generate_workflow_streaming_response(workflow, message, thread_id, user_id, title),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
-    )
+    if request_id:
+        # This is a clarification response - retrieve the paused workflow
+        logger.info("Processing clarification response for request_id=%s with message=%s", request_id, message[:50])
+        
+        paused_workflow = get_paused_workflow(request_id)
+        if paused_workflow is None:
+            # Workflow expired or not found - return error
+            logger.error("No paused workflow found for request_id=%s", request_id)
+            async def error_stream():
+                yield f"data: {json.dumps({'error': 'Clarification request expired. Please try your question again.', 'done': True})}\n\n"
+            return StreamingResponse(
+                error_stream(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+            )
+        
+        return StreamingResponse(
+            generate_clarification_response_stream(paused_workflow, message, request_id, thread_id, user_id),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        )
+    else:
+        # Normal flow - create fresh workflow and use run_stream
+        workflow, _, _ = create_workflow_instance()
+        return StreamingResponse(
+            generate_workflow_streaming_response(workflow, message, thread_id, user_id, title),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        )
 
 
 @router.post("")

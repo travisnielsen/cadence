@@ -8,6 +8,17 @@ after SQL execution.
 from pydantic import BaseModel, Field
 
 
+class ClarificationInfo(BaseModel):
+    """Information about a parameter that needs clarification."""
+    
+    parameter_name: str = Field(description="Name of the missing parameter")
+    prompt: str = Field(description="User-friendly prompt asking for the value")
+    allowed_values: list[str] = Field(
+        default_factory=list,
+        description="Valid options the user can choose from"
+    )
+
+
 class NL2SQLResponse(BaseModel):
     """
     Structured response from NL2SQL agent.
@@ -57,4 +68,15 @@ class NL2SQLResponse(BaseModel):
     error: str | None = Field(
         default=None,
         description="Error message if the query failed"
+    )
+    
+    # Clarification flow fields
+    needs_clarification: bool = Field(
+        default=False,
+        description="Whether the agent needs more information from the user"
+    )
+    
+    clarification: ClarificationInfo | None = Field(
+        default=None,
+        description="Details about what information is needed from the user"
     )

@@ -5,9 +5,42 @@ These models support extracting parameters from user queries
 and handling clarification requests.
 """
 
+from dataclasses import dataclass, field
 from pydantic import BaseModel, Field
 
 from .schema import QueryTemplate
+
+
+@dataclass
+class ClarificationRequest:
+    """
+    Request for clarification sent via ctx.request_info().
+    
+    This is a dataclass (not Pydantic) for compatibility with Agent Framework's
+    request_info/response_handler pattern. The workflow will pause when this
+    is emitted, and resume when a response is provided via send_responses_streaming.
+    """
+    
+    parameter_name: str
+    """The name of the parameter that needs clarification."""
+    
+    prompt: str
+    """Human-readable prompt explaining what's needed."""
+    
+    allowed_values: list[str] = field(default_factory=list)
+    """Valid values the user can choose from."""
+    
+    original_question: str = ""
+    """The user's original question for context."""
+    
+    template_id: str = ""
+    """ID of the template being used."""
+    
+    template_json: str = ""
+    """JSON-serialized template for resuming extraction."""
+    
+    extracted_parameters: dict = field(default_factory=dict)
+    """Parameters already extracted from the query."""
 
 
 class MissingParameter(BaseModel):

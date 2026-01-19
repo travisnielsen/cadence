@@ -2,19 +2,21 @@
 
 # Run the FastAPI backend server
 
-cd "$(dirname "$0")/../api" || exit 1
+cd "$(dirname "$0")/../backend" || exit 1
 
-# Activate virtual environment if it exists
-if [ -d ".venv" ]; then
-    source .venv/bin/activate
+# Check for virtual environment
+if [ ! -d ".venv" ]; then
+    echo "Error: Virtual environment not found. Run setup first:"
+    echo "  npm run setup:api"
+    exit 1
 fi
 
 # Check for .env file
 if [ ! -f ".env" ]; then
     echo "Warning: .env file not found. Copy .env.example to .env and configure it."
-    echo "  cp api/.env.example api/.env"
+    echo "  cp backend/.env.example backend/.env"
     exit 1
 fi
 
 echo "Starting FastAPI server on http://localhost:8000..."
-python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+.venv/bin/python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload

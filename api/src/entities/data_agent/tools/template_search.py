@@ -18,7 +18,7 @@ try:
     from models import QueryTemplate, ParameterDefinition  # type: ignore[import-not-found]
 except ImportError:
     from src.entities.shared.search_client import AzureSearchClient
-    from src.entities.models import QueryTemplate, ParameterDefinition
+    from src.models import QueryTemplate, ParameterDefinition
 
 logger = logging.getLogger(__name__)
 

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 _step_queue_var: ContextVar[Optional[asyncio.Queue]] = ContextVar("step_queue", default=None)
 
 # Track step start times for duration calculation
-_step_start_times: ContextVar[dict[str, float]] = ContextVar("step_start_times", default=None)
+_step_start_times: ContextVar[Optional[dict[str, float]]] = ContextVar("step_start_times", default=None)
 
 # Context variable to hold the current user_id for this request
 # This allows executors to access the authenticated user when creating threads

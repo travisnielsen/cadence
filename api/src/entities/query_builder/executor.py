@@ -32,17 +32,17 @@ try:
     from models import (  # type: ignore[import-not-found]
         TableMetadata,
         QueryBuilderRequest,
-        QueryBuilderResponse,
+        SQLDraft,
+        SQLDraftMessage,
         QueryBuilderRequestMessage,
-        QueryBuilderResponseMessage,
     )
 except ImportError:
-    from src.entities.models import (
+    from src.models import (
         TableMetadata,
         QueryBuilderRequest,
-        QueryBuilderResponse,
+        SQLDraft,
+        SQLDraftMessage,
         QueryBuilderRequestMessage,
-        QueryBuilderResponseMessage,
     )
 
 logger = logging.getLogger(__name__)
@@ -239,7 +239,7 @@ class QueryBuilderExecutor(Executor):
     async def handle_query_build_request(
         self,
         request_msg: QueryBuilderRequestMessage,
-        ctx: WorkflowContext[QueryBuilderResponseMessage]
+        ctx: WorkflowContext[SQLDraftMessage]
     ) -> None:
         """
         Handle a query build request.
@@ -315,8 +315,9 @@ class QueryBuilderExecutor(Executor):
 
             # Build the response based on LLM output
             if parsed.get("status") == "success":
-                query_response = QueryBuilderResponse(
+                sql_draft = SQLDraft(
                     status="success",
+                    source="dynamic",
                     completed_sql=parsed.get("completed_sql"),
                     user_query=user_query,
                     retry_count=retry_count,
@@ -324,25 +325,27 @@ class QueryBuilderExecutor(Executor):
                     tables_used=parsed.get("tables_used", []),
                 )
             else:
-                query_response = QueryBuilderResponse(
+                sql_draft = SQLDraft(
                     status="error",
+                    source="dynamic",
                     user_query=user_query,
                     retry_count=retry_count,
                     error=parsed.get("error", "Unknown error during query generation"),
                     tables_used=parsed.get("tables_used", []),
                 )
 
-            logger.info("Query generation completed with status: %s", query_response.status)
+            logger.info("Query generation completed with status: %s", sql_draft.status)
 
         except Exception as e:
             logger.error("Query generation error: %s", e)
-            query_response = QueryBuilderResponse(
+            sql_draft = SQLDraft(
                 status="error",
+                source="dynamic",
                 error=str(e),
             )
 
         finish_step()
 
         # Send the response back to NL2SQL executor using typed wrapper
-        response_msg = QueryBuilderResponseMessage(response_json=query_response.model_dump_json())
+        response_msg = SQLDraftMessage(source="query_builder", response_json=sql_draft.model_dump_json())
         await ctx.send_message(response_msg)

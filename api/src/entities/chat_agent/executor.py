@@ -30,7 +30,7 @@ from typing_extensions import Never
 try:
     from models import NL2SQLResponse, ClarificationMessage  # type: ignore[import-not-found]
 except ImportError:
-    from src.entities.models import NL2SQLResponse, ClarificationMessage
+    from src.models import NL2SQLResponse, ClarificationMessage
 
 logger = logging.getLogger(__name__)
 

@@ -17,7 +17,7 @@ try:
     from models import TableMetadata, TableColumn  # type: ignore[import-not-found]
 except ImportError:
     from src.entities.shared.search_client import AzureSearchClient
-    from src.entities.models import TableMetadata, TableColumn
+    from src.models import TableMetadata, TableColumn
 
 logger = logging.getLogger(__name__)
 

@@ -39,12 +39,14 @@ try:
     from chat_agent.executor import ChatAgentExecutor  # type: ignore[import-not-found]
     from data_agent.executor import NL2SQLAgentExecutor  # type: ignore[import-not-found]
     from parameter_extractor.executor import ParameterExtractorExecutor  # type: ignore[import-not-found]
+    from parameter_validator.executor import ParameterValidatorExecutor  # type: ignore[import-not-found]
     from query_builder.executor import QueryBuilderExecutor  # type: ignore[import-not-found]
     from query_validator.executor import QueryValidatorExecutor  # type: ignore[import-not-found]
 except ImportError:
     from src.entities.chat_agent.executor import ChatAgentExecutor
     from src.entities.data_agent.executor import NL2SQLAgentExecutor
     from src.entities.parameter_extractor.executor import ParameterExtractorExecutor
+    from src.entities.parameter_validator.executor import ParameterValidatorExecutor
     from src.entities.query_builder.executor import QueryBuilderExecutor
     from src.entities.query_validator.executor import QueryValidatorExecutor
 
@@ -140,20 +142,24 @@ def create_workflow_instance():
     chat_executor = ChatAgentExecutor(chat_client)
     nl2sql_executor = NL2SQLAgentExecutor(nl2sql_client)
     param_extractor_executor = ParameterExtractorExecutor(param_extractor_client)
+    param_validator_executor = ParameterValidatorExecutor()
     query_builder_executor = QueryBuilderExecutor(query_builder_client)
     query_validator_executor = QueryValidatorExecutor()
 
     # Build fresh workflow with all edges
     # Chat <-> NL2SQL: For routing questions and receiving responses
     # NL2SQL <-> ParamExtractor: For parameter extraction workflow (template-based)
+    # NL2SQL <-> ParamValidator: For parameter validation (no LLM, pure validation)
     # NL2SQL <-> QueryBuilder: For dynamic query generation (no template match)
-    # NL2SQL <-> QueryValidator: For validating dynamic queries before execution
+    # NL2SQL <-> QueryValidator: For validating queries before execution
     workflow = (
         WorkflowBuilder()
         .add_edge(chat_executor, nl2sql_executor)
         .add_edge(nl2sql_executor, chat_executor)
         .add_edge(nl2sql_executor, param_extractor_executor)
         .add_edge(param_extractor_executor, nl2sql_executor)
+        .add_edge(nl2sql_executor, param_validator_executor)
+        .add_edge(param_validator_executor, nl2sql_executor)
         .add_edge(nl2sql_executor, query_builder_executor)
         .add_edge(query_builder_executor, nl2sql_executor)
         .add_edge(nl2sql_executor, query_validator_executor)

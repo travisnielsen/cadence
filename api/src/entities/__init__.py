@@ -16,6 +16,6 @@ Usage with DevUI:
 try:
     from models import NL2SQLResponse
 except ImportError:
-    from src.entities.models import NL2SQLResponse
+    from src.models import NL2SQLResponse
 
 __all__ = ["NL2SQLResponse"]

@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.entities.workflow import get_workflow
 
-from src.api.auth import azure_scheme, azure_ad_settings, AzureADAuthMiddleware
+from src.api.middleware import azure_scheme, azure_ad_settings, AzureADAuthMiddleware
 from src.api.monitoring import configure_observability, is_observability_enabled
 from src.api.routers import chat_router, threads_router
 

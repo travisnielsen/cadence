@@ -23,17 +23,13 @@ from agent_framework import (
 # Support both DevUI (entities on path) and FastAPI (src on path) import patterns
 try:
     from models import (  # type: ignore[import-not-found]
-        QueryValidationRequest,
-        QueryValidationResponse,
-        QueryValidationRequestMessage,
-        QueryValidationResponseMessage,
+        SQLDraft,
+        SQLDraftMessage,
     )
 except ImportError:
-    from src.entities.models import (
-        QueryValidationRequest,
-        QueryValidationResponse,
-        QueryValidationRequestMessage,
-        QueryValidationResponseMessage,
+    from src.models import (
+        SQLDraft,
+        SQLDraftMessage,
     )
 
 logger = logging.getLogger(__name__)
@@ -240,9 +236,10 @@ class QueryValidatorExecutor(Executor):
     Executor that validates SQL queries before execution.
 
     This executor:
-    1. Receives SQL queries from the data_agent (originating from query_builder)
+    1. Receives SQLDraftMessage from the data_agent (after param_validator)
     2. Validates syntax, allowlist, statement type, and security
-    3. Returns validation result to data_agent
+    3. Sets query_validated=True and populates query_violations/query_warnings
+    4. Returns SQLDraftMessage back to data_agent
     """
 
     def __init__(self, executor_id: str = "query_validator"):
@@ -258,14 +255,14 @@ class QueryValidatorExecutor(Executor):
     @handler
     async def handle_validation_request(
         self,
-        request_msg: QueryValidationRequestMessage,
-        ctx: WorkflowContext[QueryValidationResponseMessage]
+        request_msg: SQLDraftMessage,
+        ctx: WorkflowContext[SQLDraftMessage]
     ) -> None:
         """
         Handle a query validation request.
 
         Args:
-            request_msg: Wrapped JSON string containing QueryValidationRequest
+            request_msg: Wrapped JSON string containing SQLDraft
             ctx: Workflow context for sending the response
         """
         logger.info("QueryValidatorExecutor received validation request")
@@ -285,17 +282,15 @@ class QueryValidatorExecutor(Executor):
                 emit_step_end_fn(step_name)
 
         try:
-            # Parse the request
-            request_data = json.loads(request_msg.request_json)
-            request = QueryValidationRequest.model_validate(request_data)
-            sql_query = request.sql_query
-            user_query = request.user_query
-            retry_count = request.retry_count
+            # Parse the SQLDraft from the message
+            draft_data = json.loads(request_msg.response_json)
+            draft = SQLDraft.model_validate(draft_data)
+            sql_query = draft.completed_sql or ""
+            _ = draft.user_query  # Available for logging if needed
 
             logger.info(
-                "Validating query (retry=%d): %s",
-                retry_count,
-                sql_query[:200]
+                "Validating query: %s",
+                sql_query[:200] if sql_query else "(empty)"
             )
 
             all_violations: list[str] = []
@@ -327,18 +322,10 @@ class QueryValidatorExecutor(Executor):
                 and security_valid
             )
 
-            validation_response = QueryValidationResponse(
-                is_valid=is_valid,
-                syntax_valid=syntax_valid,
-                allowlist_valid=allowlist_valid,
-                statement_type=statement_type,
-                is_single_statement=is_single_statement,
-                violations=all_violations,
-                warnings=all_warnings,
-                sql_query=sql_query,
-                user_query=user_query,
-                retry_count=retry_count,
-            )
+            # Update the draft with validation results
+            draft.query_validated = True
+            draft.query_violations = all_violations
+            draft.query_warnings = all_warnings
 
             logger.info(
                 "Validation complete: valid=%s, violations=%d, warnings=%d",
@@ -349,23 +336,26 @@ class QueryValidatorExecutor(Executor):
 
         except Exception as e:
             logger.error("Validation error: %s", e)
-            validation_response = QueryValidationResponse(
-                is_valid=False,
-                syntax_valid=False,
-                allowlist_valid=False,
-                statement_type="UNKNOWN",
-                is_single_statement=False,
-                violations=[f"Validation error: {str(e)}"],
-                warnings=[],
-                sql_query=request.sql_query if 'request' in locals() else "",
-                user_query=request.user_query if 'request' in locals() else "",
-                retry_count=request.retry_count if 'request' in locals() else 0,
-            )
+            # Parse the draft to preserve data, mark as validated with error
+            try:
+                draft_data = json.loads(request_msg.response_json)
+                draft = SQLDraft.model_validate(draft_data)
+            except Exception:
+                # If we can't parse, create minimal draft with dynamic source as fallback
+                draft = SQLDraft(
+                    status="error",
+                    source="dynamic",
+                    user_query="",
+                )
+            draft.query_validated = True
+            draft.query_violations = [f"Validation error: {str(e)}"]
+            draft.query_warnings = []
 
         finish_step()
 
-        # Send the response back
-        response_msg = QueryValidationResponseMessage(
-            response_json=validation_response.model_dump_json()
+        # Send the updated draft back
+        response_msg = SQLDraftMessage(
+            source="query_validator",
+            response_json=draft.model_dump_json()
         )
         await ctx.send_message(response_msg)

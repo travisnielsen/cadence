@@ -30,37 +30,25 @@ try:
         QueryTemplate,
         TableMetadata,
         ParameterExtractionRequest,
-        ParameterExtractionResponse,
+        SQLDraft,
+        SQLDraftMessage,
         ClarificationMessage,
         ExtractionRequestMessage,
-        ExtractionResponseMessage,
         QueryBuilderRequest,
-        QueryBuilderResponse,
         QueryBuilderRequestMessage,
-        QueryBuilderResponseMessage,
-        QueryValidationRequest,
-        QueryValidationResponse,
-        QueryValidationRequestMessage,
-        QueryValidationResponseMessage,
     )
 except ImportError:
-    from src.entities.models import (
+    from src.models import (
         NL2SQLResponse,
         QueryTemplate,
         TableMetadata,
         ParameterExtractionRequest,
-        ParameterExtractionResponse,
+        SQLDraft,
+        SQLDraftMessage,
         ClarificationMessage,
         ExtractionRequestMessage,
-        ExtractionResponseMessage,
         QueryBuilderRequest,
-        QueryBuilderResponse,
         QueryBuilderRequestMessage,
-        QueryBuilderResponseMessage,
-        QueryValidationRequest,
-        QueryValidationResponse,
-        QueryValidationRequestMessage,
-        QueryValidationResponseMessage,
     )
 
 from .tools import execute_sql, search_query_templates, search_tables
@@ -69,8 +57,8 @@ logger = logging.getLogger(__name__)
 
 # Type alias for NL2SQL output messages
 # NL2SQL sends str (JSON) to chat, ExtractionRequestMessage to param_extractor,
-# QueryBuilderRequestMessage to query_builder, and QueryValidationRequestMessage to query_validator
-NL2SQLOutputMessage = Union[str, ExtractionRequestMessage, QueryBuilderRequestMessage, QueryValidationRequestMessage]
+# QueryBuilderRequestMessage to query_builder, and SQLDraftMessage to query_validator/param_validator
+NL2SQLOutputMessage = Union[str, ExtractionRequestMessage, QueryBuilderRequestMessage, SQLDraftMessage]
 
 # Key for storing pending clarification state
 CLARIFICATION_STATE_KEY = "pending_clarification"
@@ -287,77 +275,239 @@ class NL2SQLAgentExecutor(Executor):
             await ctx.send_message(nl2sql_response.model_dump_json())
 
     @handler
-    async def handle_extraction_response(
+    async def handle_sql_draft(
         self,
-        extraction_response_msg: ExtractionResponseMessage,
+        sql_draft_msg: SQLDraftMessage,
         ctx: WorkflowContext[NL2SQLOutputMessage]
     ) -> None:
         """
-        Handle the response from ParameterExtractor.
+        Handle SQLDraft from ParameterExtractor, QueryBuilder, ParameterValidator, or QueryValidator.
 
-        This is called after the ParameterExtractor has processed the template
-        and either extracted parameters or requested clarification.
+        This is called after:
+        1. ParameterExtractor has extracted parameters and built SQL (source="param_extractor")
+        2. QueryBuilder has generated dynamic SQL (source="query_builder")
+        3. ParameterValidator has validated parameter values (source="param_validator", params_validated=True)
+        4. QueryValidator has validated the SQL query (source="query_validator", query_validated=True)
+
+        Routing logic:
+        - If query_validated=True: execute SQL or handle violations
+        - If params_validated=False and source="param_extractor": route to param_validator
+        - If params_validated=True and not query_validated: route to query_validator
+        - If source="query_builder" and not query_validated: route to query_validator
+        - If error/needs_clarification: handle appropriately
 
         Args:
-            extraction_response_msg: Wrapped JSON string containing ParameterExtractionResponse
+            sql_draft_msg: Wrapped JSON string containing SQLDraft
             ctx: Workflow context for sending the response
         """
-        logger.info("NL2SQLAgentExecutor received extraction response")
+        logger.info("NL2SQLAgentExecutor received SQLDraft from source=%s", sql_draft_msg.source)
 
         try:
-            # Parse the extraction response
-            response_data = json.loads(extraction_response_msg.response_json)
-            extraction_response = ParameterExtractionResponse.model_validate(response_data)
+            # Parse the SQLDraft
+            draft_data = json.loads(sql_draft_msg.response_json)
+            sql_draft = SQLDraft.model_validate(draft_data)
 
-            if extraction_response.status == "success":
-                # Parameters extracted successfully - execute the SQL
-                completed_sql = extraction_response.completed_sql
+            if sql_draft.status == "success":
+                completed_sql = sql_draft.completed_sql
 
                 if not completed_sql:
-                    raise ValueError("Extraction succeeded but no SQL was generated")
+                    raise ValueError("SQL draft succeeded but no SQL was generated")
 
-                logger.info("Executing extracted SQL: %s", completed_sql[:200])
+                # Check if query has been validated
+                if sql_draft.query_validated:
+                    # Query has been validated - check for violations and execute
+                    if sql_draft.query_violations:
+                        # Validation failed - check retry count
+                        retry_count = sql_draft.retry_count
+                        violations = sql_draft.query_violations
 
-                # Execute the SQL query
-                # Note: AIFunction wrapper is awaitable but type checker doesn't understand it
-                sql_result = await execute_sql(completed_sql)  # type: ignore[misc]
+                        logger.warning(
+                            "Query validation failed (retry=%d): %s",
+                            retry_count,
+                            violations
+                        )
 
-                # Clear clarification state since we succeeded
-                try:
-                    await ctx.set_shared_state(CLARIFICATION_STATE_KEY, None)
-                except Exception:
-                    pass
+                        if retry_count < 1:
+                            # Allow one retry - re-submit to query_builder with validation feedback
+                            logger.info("Retrying query generation with validation feedback")
 
-                # Build successful response
-                nl2sql_response = NL2SQLResponse(
-                    sql_query=completed_sql,
-                    sql_response=sql_result.get("rows", []),
-                    columns=sql_result.get("columns", []),
-                    row_count=sql_result.get("row_count", 0),
-                    confidence_score=1.0,  # High confidence since we used a template
-                    used_cached_query=True,  # Template-based is similar to cached
-                    query_source="template",  # Query derived from query_templates
-                    error=sql_result.get("error") if not sql_result.get("success") else None,
-                )
+                            # Get stored state for table metadata
+                            tables: list[TableMetadata] = []
+                            try:
+                                clarification_state = await ctx.get_shared_state(CLARIFICATION_STATE_KEY)
+                                tables_data = clarification_state.get("tables", [])
+                                if tables_data:
+                                    tables = [TableMetadata.model_validate(t) for t in tables_data]
+                            except (KeyError, TypeError):
+                                pass
 
-                logger.info(
-                    "NL2SQL completed via template: rows=%d",
-                    nl2sql_response.row_count
-                )
+                            # Search for tables if we don't have them
+                            if not tables:
+                                table_search_result = await search_tables(sql_draft.user_query)  # type: ignore[misc]
+                                if table_search_result.get("has_matches") and table_search_result.get("tables"):
+                                    tables = [TableMetadata.model_validate(t) for t in table_search_result["tables"]]
+                                else:
+                                    violation_list = "; ".join(violations)
+                                    nl2sql_response = NL2SQLResponse(
+                                        sql_query="",
+                                        error=f"Query validation failed: {violation_list}. Unable to retry - no table metadata available.",
+                                        query_source="dynamic",
+                                    )
+                                    await ctx.send_message(nl2sql_response.model_dump_json())
+                                    return
 
-            elif extraction_response.status == "needs_clarification":
+                            # Enrich the user query with validation feedback
+                            violation_list = "; ".join(violations)
+                            enriched_query = (
+                                f"{sql_draft.user_query}\n\n"
+                                f"[IMPORTANT: Your previous query was rejected for validation errors: {violation_list}. "
+                                f"Please generate a corrected SQL query that addresses these issues.]"
+                            )
+
+                            query_request = QueryBuilderRequest(
+                                user_query=enriched_query,
+                                tables=tables,
+                                retry_count=retry_count + 1,
+                            )
+
+                            await ctx.set_shared_state(
+                                CLARIFICATION_STATE_KEY,
+                                {
+                                    "original_question": sql_draft.user_query,
+                                    "dynamic_query": True,
+                                    "tables": [t.model_dump() for t in tables],
+                                    "retry_count": retry_count + 1,
+                                    "validation_violations": violations,
+                                }
+                            )
+
+                            request_msg = QueryBuilderRequestMessage(
+                                request_json=query_request.model_dump_json()
+                            )
+                            await ctx.send_message(request_msg, target_id="query_builder")
+                        else:
+                            # Max retries exceeded
+                            violation_summary = "; ".join(violations)
+                            error_message = (
+                                f"I was unable to generate a valid query for your request. "
+                                f"Validation issues: {violation_summary}. "
+                                f"Please try rephrasing your question or be more specific about what data you need."
+                            )
+
+                            nl2sql_response = NL2SQLResponse(
+                                sql_query="",
+                                error=error_message,
+                                query_source="dynamic",
+                            )
+
+                            logger.error("Query validation failed after retry: %s", violation_summary)
+                            await ctx.send_message(nl2sql_response.model_dump_json())
+                    else:
+                        # Query is valid - execute the SQL
+                        logger.info("Validation passed. Executing SQL: %s", completed_sql[:200])
+
+                        sql_result = await execute_sql(completed_sql)  # type: ignore[misc]
+
+                        # Clear clarification state
+                        try:
+                            await ctx.set_shared_state(CLARIFICATION_STATE_KEY, None)
+                        except Exception:
+                            pass
+
+                        query_source = "template" if sql_draft.template_id else "dynamic"
+                        confidence = 0.85 if sql_draft.template_id else 0.7
+
+                        nl2sql_response = NL2SQLResponse(
+                            sql_query=completed_sql,
+                            sql_response=sql_result.get("rows", []),
+                            columns=sql_result.get("columns", []),
+                            row_count=sql_result.get("row_count", 0),
+                            confidence_score=confidence,
+                            used_cached_query=bool(sql_draft.template_id),
+                            query_source=query_source,
+                            error=sql_result.get("error") if not sql_result.get("success") else None,
+                        )
+
+                        logger.info(
+                            "NL2SQL completed: source=%s, rows=%d",
+                            query_source,
+                            nl2sql_response.row_count
+                        )
+                        await ctx.send_message(nl2sql_response.model_dump_json())
+
+                elif sql_draft.source == "param_extractor" or (sql_draft.template_id and not sql_draft.params_validated):
+                    # Template-based: check if parameter validation is needed
+                    logger.info("Routing SQLDraft to parameter validator")
+                    
+                    # Forward the message to param_validator
+                    forward_msg = SQLDraftMessage(
+                        source="data_agent",
+                        response_json=sql_draft.model_dump_json()
+                    )
+                    await ctx.send_message(forward_msg, target_id="param_validator")
+
+                elif sql_draft.params_validated or sql_draft.source in ("query_builder", "param_validator"):
+                    # Parameters validated or dynamic query - route to query_validator
+                    logger.info("Routing SQLDraft to query validator: %s", completed_sql[:200])
+
+                    # Store state for potential retry
+                    if sql_draft.template_id:
+                        await ctx.set_shared_state(
+                            CLARIFICATION_STATE_KEY,
+                            {
+                                "original_question": sql_draft.user_query,
+                                "template_id": sql_draft.template_id,
+                                "template_based": True,
+                            }
+                        )
+                    else:
+                        existing_tables = []
+                        try:
+                            existing_state = await ctx.get_shared_state(CLARIFICATION_STATE_KEY)
+                            if existing_state and "tables" in existing_state:
+                                existing_tables = existing_state["tables"]
+                        except (KeyError, TypeError):
+                            pass
+
+                        await ctx.set_shared_state(
+                            CLARIFICATION_STATE_KEY,
+                            {
+                                "original_question": sql_draft.user_query,
+                                "dynamic_query": True,
+                                "tables": existing_tables,
+                                "tables_used": sql_draft.tables_used,
+                            }
+                        )
+
+                    # Forward to query_validator
+                    forward_msg = SQLDraftMessage(
+                        source="data_agent",
+                        response_json=sql_draft.model_dump_json()
+                    )
+                    await ctx.send_message(forward_msg, target_id="query_validator")
+
+                else:
+                    # Unknown source - route to query_validator as fallback
+                    logger.warning("Unknown SQLDraft source=%s, routing to query_validator", sql_draft.source)
+                    forward_msg = SQLDraftMessage(
+                        source="data_agent",
+                        response_json=sql_draft.model_dump_json()
+                    )
+                    await ctx.send_message(forward_msg, target_id="query_validator")
+
+            elif sql_draft.status == "needs_clarification":
                 # Need clarification from user
-                clarification_prompt = extraction_response.clarification_prompt or \
+                clarification_prompt = sql_draft.clarification_prompt or \
                     "I need more information to answer your question."
 
                 # Store clarification state for the follow-up
                 clarification_state = {
-                    "original_question": extraction_response.original_query,
-                    "template_id": extraction_response.template_id,
+                    "original_question": sql_draft.user_query,
+                    "template_id": sql_draft.template_id,
                     "missing_parameters": [
-                        mp.model_dump() for mp in (extraction_response.missing_parameters or [])
+                        mp.model_dump() for mp in (sql_draft.missing_parameters or [])
                     ],
-                    "extracted_parameters": extraction_response.extracted_parameters,
+                    "extracted_parameters": sql_draft.extracted_parameters,
                 }
 
                 # Try to get the template from previous state
@@ -378,25 +528,33 @@ class NL2SQLAgentExecutor(Executor):
                 )
 
                 logger.info("Requesting clarification from user: %s", clarification_prompt)
+                await ctx.send_message(nl2sql_response.model_dump_json())
 
             else:
-                # Error during extraction
+                # Error during extraction or parameter validation
+                error_msg = sql_draft.error or "Unknown error during SQL generation"
+                
+                # Check if this is a parameter validation error
+                if sql_draft.parameter_violations:
+                    violation_summary = "; ".join(sql_draft.parameter_violations)
+                    error_msg = f"Parameter validation failed: {violation_summary}"
+                
                 nl2sql_response = NL2SQLResponse(
                     sql_query="",
-                    error=extraction_response.error or "Unknown error during parameter extraction",
+                    error=error_msg,
+                    query_source="template" if sql_draft.source == "template" else "dynamic",
                 )
 
-                logger.error("Extraction failed: %s", extraction_response.error)
+                logger.error("SQLDraft failed: %s", error_msg)
+                await ctx.send_message(nl2sql_response.model_dump_json())
 
         except Exception as e:
-            logger.error("Error handling extraction response: %s", e)
+            logger.error("Error handling SQLDraft: %s", e)
             nl2sql_response = NL2SQLResponse(
                 sql_query="",
                 error=str(e)
             )
-
-        # Send response to chat agent
-        await ctx.send_message(nl2sql_response.model_dump_json())
+            await ctx.send_message(nl2sql_response.model_dump_json())
 
     @handler
     async def handle_clarification(
@@ -470,252 +628,6 @@ class NL2SQLAgentExecutor(Executor):
             nl2sql_response = NL2SQLResponse(
                 sql_query="",
                 error=str(e)
-            )
-            await ctx.send_message(nl2sql_response.model_dump_json())
-
-    @handler
-    async def handle_query_builder_response(
-        self,
-        query_builder_response_msg: QueryBuilderResponseMessage,
-        ctx: WorkflowContext[NL2SQLOutputMessage]
-    ) -> None:
-        """
-        Handle the response from QueryBuilder.
-
-        This is called after the QueryBuilder has generated a dynamic SQL query
-        based on table metadata. The query is then routed to the QueryValidator
-        for validation before execution.
-
-        Args:
-            query_builder_response_msg: Wrapped JSON string containing QueryBuilderResponse
-            ctx: Workflow context for sending the response
-        """
-        logger.info("NL2SQLAgentExecutor received query builder response")
-
-        try:
-            # Parse the query builder response
-            response_data = json.loads(query_builder_response_msg.response_json)
-            query_response = QueryBuilderResponse.model_validate(response_data)
-
-            if query_response.status == "success":
-                # Query generated successfully - route to query_validator for validation
-                completed_sql = query_response.completed_sql
-
-                if not completed_sql:
-                    raise ValueError("Query generation succeeded but no SQL was generated")
-
-                logger.info("Routing dynamically generated SQL to validator: %s", completed_sql[:200])
-
-                # Preserve tables from the original state for potential retry
-                existing_tables = []
-                try:
-                    existing_state = await ctx.get_shared_state(CLARIFICATION_STATE_KEY)
-                    if existing_state and "tables" in existing_state:
-                        existing_tables = existing_state["tables"]
-                except (KeyError, TypeError):
-                    pass
-
-                # Store state for potential retry - preserve table metadata
-                await ctx.set_shared_state(
-                    CLARIFICATION_STATE_KEY,
-                    {
-                        "original_question": query_response.user_query,
-                        "dynamic_query": True,
-                        "tables": existing_tables,  # Preserve full table metadata for retry
-                        "query_builder_response": query_response.model_dump(),
-                    }
-                )
-
-                # Build validation request and route to query_validator
-                validation_request = QueryValidationRequest(
-                    sql_query=completed_sql,
-                    user_query=query_response.user_query,
-                    retry_count=query_response.retry_count,
-                )
-
-                request_msg = QueryValidationRequestMessage(
-                    request_json=validation_request.model_dump_json()
-                )
-                await ctx.send_message(request_msg, target_id="query_validator")
-
-            else:
-                # Error during query generation
-                nl2sql_response = NL2SQLResponse(
-                    sql_query="",
-                    error=query_response.error or "Unknown error during query generation",
-                    query_source="dynamic",
-                )
-
-                logger.error("Query generation failed: %s", query_response.error)
-                await ctx.send_message(nl2sql_response.model_dump_json())
-
-        except Exception as e:
-            logger.error("Error handling query builder response: %s", e)
-            nl2sql_response = NL2SQLResponse(
-                sql_query="",
-                error=str(e),
-                query_source="dynamic",
-            )
-            await ctx.send_message(nl2sql_response.model_dump_json())
-
-    @handler
-    async def handle_validation_response(
-        self,
-        validation_response_msg: QueryValidationResponseMessage,
-        ctx: WorkflowContext[NL2SQLOutputMessage]
-    ) -> None:
-        """
-        Handle the response from QueryValidator.
-
-        This is called after the QueryValidator has validated a dynamically
-        generated SQL query. If valid, execute the query. If invalid, retry
-        once with the query_builder or return an error.
-
-        Args:
-            validation_response_msg: Wrapped JSON string containing QueryValidationResponse
-            ctx: Workflow context for sending the response
-        """
-        logger.info("NL2SQLAgentExecutor received validation response")
-
-        try:
-            # Parse the validation response
-            response_data = json.loads(validation_response_msg.response_json)
-            validation_response = QueryValidationResponse.model_validate(response_data)
-
-            if validation_response.is_valid:
-                # Query is valid - execute the SQL
-                completed_sql = validation_response.sql_query
-
-                logger.info("Validation passed. Executing SQL: %s", completed_sql[:200])
-
-                # Execute the SQL query
-                sql_result = await execute_sql(completed_sql)  # type: ignore[misc]
-
-                # Clear clarification state since we succeeded
-                try:
-                    await ctx.set_shared_state(CLARIFICATION_STATE_KEY, None)
-                except Exception:
-                    pass
-
-                # Build successful response with query_source="dynamic"
-                nl2sql_response = NL2SQLResponse(
-                    sql_query=completed_sql,
-                    sql_response=sql_result.get("rows", []),
-                    columns=sql_result.get("columns", []),
-                    row_count=sql_result.get("row_count", 0),
-                    confidence_score=0.7,  # Lower confidence for dynamic queries
-                    used_cached_query=False,  # Not from a template
-                    query_source="dynamic",  # Mark as dynamically generated
-                    error=sql_result.get("error") if not sql_result.get("success") else None,
-                )
-
-                logger.info(
-                    "NL2SQL completed via dynamic query generation (validated): rows=%d",
-                    nl2sql_response.row_count
-                )
-                await ctx.send_message(nl2sql_response.model_dump_json())
-
-            else:
-                # Query validation failed
-                retry_count = validation_response.retry_count
-                violations = validation_response.violations
-                user_query = validation_response.user_query
-
-                logger.warning(
-                    "Query validation failed (retry=%d): %s",
-                    retry_count,
-                    violations
-                )
-
-                if retry_count < 1:
-                    # Allow one retry - re-submit to query_builder with validation feedback
-                    logger.info("Retrying query generation with validation feedback")
-
-                    # Get stored state for table metadata (full TableMetadata objects)
-                    tables: list[TableMetadata] = []
-                    try:
-                        clarification_state = await ctx.get_shared_state(CLARIFICATION_STATE_KEY)
-                        # The full table metadata is stored in 'tables' key from initial search
-                        tables_data = clarification_state.get("tables", [])
-                        if tables_data:
-                            tables = [TableMetadata.model_validate(t) for t in tables_data]
-                    except (KeyError, TypeError):
-                        pass
-
-                    # Enrich the user query with validation feedback
-                    violation_list = "; ".join(violations) if violations else "Unknown validation error"
-                    enriched_query = (
-                        f"{user_query}\n\n"
-                        f"[IMPORTANT: Your previous query was rejected for validation errors: {violation_list}. "
-                        f"Please generate a corrected SQL query that addresses these issues.]"
-                    )
-
-                    # Search for tables again if we don't have them from stored state
-                    if not tables:
-                        table_search_result = await search_tables(user_query)  # type: ignore[misc]
-                        if table_search_result.get("has_matches") and table_search_result.get("tables"):
-                            tables = [TableMetadata.model_validate(t) for t in table_search_result["tables"]]
-                        else:
-                            # No tables found - return error
-                            nl2sql_response = NL2SQLResponse(
-                                sql_query="",
-                                error=f"Query validation failed: {violation_list}. Unable to retry - no table metadata available.",
-                                query_source="dynamic",
-                            )
-                            await ctx.send_message(nl2sql_response.model_dump_json())
-                            return
-
-                    # Build query builder request with feedback
-                    query_request = QueryBuilderRequest(
-                        user_query=enriched_query,
-                        tables=tables,
-                        retry_count=retry_count + 1,
-                    )
-
-                    # Update stored state with retry info (preserve tables for potential future retries)
-                    await ctx.set_shared_state(
-                        CLARIFICATION_STATE_KEY,
-                        {
-                            "original_question": user_query,
-                            "dynamic_query": True,
-                            "tables": [t.model_dump() for t in tables],
-                            "retry_count": retry_count + 1,
-                            "validation_violations": violations,
-                        }
-                    )
-
-                    request_msg = QueryBuilderRequestMessage(
-                        request_json=query_request.model_dump_json()
-                    )
-                    await ctx.send_message(request_msg, target_id="query_builder")
-
-                else:
-                    # Max retries exceeded - return error to user
-                    violation_summary = "; ".join(violations) if violations else "Unknown validation error"
-                    error_message = (
-                        f"I was unable to generate a valid query for your request. "
-                        f"Validation issues: {violation_summary}. "
-                        f"Please try rephrasing your question or be more specific about what data you need."
-                    )
-
-                    nl2sql_response = NL2SQLResponse(
-                        sql_query="",
-                        error=error_message,
-                        query_source="dynamic",
-                    )
-
-                    logger.error(
-                        "Query validation failed after retry: %s",
-                        violation_summary
-                    )
-                    await ctx.send_message(nl2sql_response.model_dump_json())
-
-        except Exception as e:
-            logger.error("Error handling validation response: %s", e)
-            nl2sql_response = NL2SQLResponse(
-                sql_query="",
-                error=str(e),
-                query_source="dynamic",
             )
             await ctx.send_message(nl2sql_response.model_dump_json())
 

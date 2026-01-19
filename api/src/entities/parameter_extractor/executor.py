@@ -33,19 +33,19 @@ try:
     from models import (  # type: ignore[import-not-found]
         QueryTemplate,
         ParameterExtractionRequest,
-        ParameterExtractionResponse,
+        SQLDraft,
+        SQLDraftMessage,
         MissingParameter,
         ExtractionRequestMessage,
-        ExtractionResponseMessage,
     )
 except ImportError:
-    from src.entities.models import (
+    from src.models import (
         QueryTemplate,
         ParameterExtractionRequest,
-        ParameterExtractionResponse,
+        SQLDraft,
+        SQLDraftMessage,
         MissingParameter,
         ExtractionRequestMessage,
-        ExtractionResponseMessage,
     )
 
 logger = logging.getLogger(__name__)
@@ -296,7 +296,7 @@ class ParameterExtractorExecutor(Executor):
     async def handle_extraction_request(
         self,
         request_msg: ExtractionRequestMessage,
-        ctx: WorkflowContext[ExtractionResponseMessage]
+        ctx: WorkflowContext[SQLDraftMessage]
     ) -> None:
         """
         Handle a parameter extraction request.
@@ -375,12 +375,15 @@ class ParameterExtractorExecutor(Executor):
                 extracted_params = parsed.get("extracted_parameters", {})
                 completed_sql = _substitute_parameters(template.sql_template, extracted_params)
 
-                extraction_response = ParameterExtractionResponse(
+                sql_draft = SQLDraft(
                     status="success",
+                    source="template",
                     completed_sql=completed_sql,
-                    extracted_parameters=extracted_params,
-                    original_query=user_query,
+                    user_query=user_query,
+                    reasoning=template.reasoning,
                     template_id=template.id,
+                    extracted_parameters=extracted_params,
+                    parameter_definitions=template.parameters,
                 )
 
             elif parsed.get("status") == "needs_clarification":
@@ -393,35 +396,41 @@ class ParameterExtractorExecutor(Executor):
                         validation_hint=mp.get("validation_hint", ""),
                     ))
 
-                extraction_response = ParameterExtractionResponse(
+                sql_draft = SQLDraft(
                     status="needs_clarification",
+                    source="template",
+                    user_query=user_query,
+                    reasoning=template.reasoning,
+                    template_id=template.id,
+                    extracted_parameters=parsed.get("extracted_parameters"),
+                    parameter_definitions=template.parameters,
                     missing_parameters=missing,
                     clarification_prompt=parsed.get("clarification_prompt"),
-                    extracted_parameters=parsed.get("extracted_parameters"),
-                    original_query=user_query,
-                    template_id=template.id,
                 )
 
             else:
                 # Error case
-                extraction_response = ParameterExtractionResponse(
+                sql_draft = SQLDraft(
                     status="error",
-                    error=parsed.get("error", "Unknown error during parameter extraction"),
-                    original_query=user_query,
+                    source="template",
+                    user_query=user_query,
                     template_id=template.id,
+                    parameter_definitions=template.parameters,
+                    error=parsed.get("error", "Unknown error during parameter extraction"),
                 )
 
-            logger.info("Parameter extraction completed with status: %s", extraction_response.status)
+            logger.info("Parameter extraction completed with status: %s", sql_draft.status)
 
         except Exception as e:
             logger.error("Parameter extraction error: %s", e)
-            extraction_response = ParameterExtractionResponse(
+            sql_draft = SQLDraft(
                 status="error",
+                source="template",
                 error=str(e),
             )
 
         finish_step()
 
         # Send the response back to NL2SQL executor using typed wrapper
-        response_msg = ExtractionResponseMessage(response_json=extraction_response.model_dump_json())
+        response_msg = SQLDraftMessage(source="param_extractor", response_json=sql_draft.model_dump_json())
         await ctx.send_message(response_msg)

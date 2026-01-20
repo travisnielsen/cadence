@@ -41,8 +41,8 @@ jobs:
               --registry ${{ env.REGISTRY }} \
               --image ${{ env.IMAGE_NAME }}:${{ github.sha }} \
               --image ${{ env.IMAGE_NAME }}:latest \
-              --file ./api/Dockerfile \
-              ./api
+              --file ./backend/Dockerfile \
+              ./backend
 
       - name: Deploy to Azure Container Apps
         uses: azure/cli@v2

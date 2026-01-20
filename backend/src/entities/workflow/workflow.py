@@ -171,6 +171,51 @@ def create_workflow_instance():
     return workflow, chat_executor, chat_client
 
 
+def create_nl2sql_workflow():
+    """
+    Create a simplified NL2SQL workflow without ChatAgent.
+    
+    This workflow is invoked by the ConversationOrchestrator for data queries.
+    It starts at NL2SQLAgentExecutor (DataAgent) and handles:
+    - Template search and matching
+    - Parameter extraction (via ParameterExtractor)
+    - Parameter validation (via ParameterValidator)
+    - Query validation (via QueryValidator)
+    - Dynamic query generation (via QueryBuilder)
+    - SQL execution
+    
+    Returns:
+        Tuple of (workflow, nl2sql_executor, nl2sql_client)
+    """
+    _, nl2sql_client, param_extractor_client, query_builder_client = _get_clients()
+    
+    # Create fresh executors for this request
+    nl2sql_executor = NL2SQLAgentExecutor(nl2sql_client)
+    param_extractor_executor = ParameterExtractorExecutor(param_extractor_client)
+    param_validator_executor = ParameterValidatorExecutor()
+    query_builder_executor = QueryBuilderExecutor(query_builder_client)
+    query_validator_executor = QueryValidatorExecutor()
+
+    # Build workflow starting at NL2SQL executor
+    # No ChatAgent - the ConversationOrchestrator handles that role externally
+    workflow = (
+        WorkflowBuilder()
+        .add_edge(nl2sql_executor, param_extractor_executor)
+        .add_edge(param_extractor_executor, nl2sql_executor)
+        .add_edge(nl2sql_executor, param_validator_executor)
+        .add_edge(param_validator_executor, nl2sql_executor)
+        .add_edge(nl2sql_executor, query_builder_executor)
+        .add_edge(query_builder_executor, nl2sql_executor)
+        .add_edge(nl2sql_executor, query_validator_executor)
+        .add_edge(query_validator_executor, nl2sql_executor)
+        .set_start_executor(nl2sql_executor)
+        .build()
+    )
+    
+    logger.info("Created NL2SQL workflow (no ChatAgent)")
+    return workflow, nl2sql_executor, nl2sql_client
+
+
 def _create_workflow():
     """
     Create the data agent workflow (for DevUI and initial setup).

@@ -11,6 +11,7 @@ from .extraction import (
     ClarificationRequest,
     ExtractionRequestMessage,
     MissingParameter,
+    NL2SQLRequest,
     ParameterExtractionRequest,
 )
 from .generation import (
@@ -42,6 +43,7 @@ __all__ = [
     "ClarificationRequest",
     "ExtractionRequestMessage",
     "ParameterExtractionRequest",
+    "NL2SQLRequest",
     # Generation (SQL construction and validation)
     "SQLDraft",
     "SQLDraftMessage",

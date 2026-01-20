@@ -539,18 +539,54 @@ class ParameterExtractorExecutor(Executor):
                 logger.info("Extracted %d parameters:", len(extracted_params))
                 for param_name, param_value in extracted_params.items():
                     logger.info("  Parameter '%s' -> '%s'", param_name, param_value)
-
-                sql_draft = SQLDraft(
-                    status="success",
-                    source="template",
-                    completed_sql=None,  # SQL substitution done by data_agent
-                    user_query=user_query,
-                    reasoning=template.reasoning,
-                    template_id=template.id,
-                    template_json=template.model_dump_json(),
-                    extracted_parameters=extracted_params,
-                    parameter_definitions=template.parameters,
-                )
+                
+                # Safety check: verify required ask_if_missing params were actually extracted
+                missing_required = []
+                for param in template.parameters:
+                    if param.required and param.ask_if_missing:
+                        if param.name not in extracted_params or not extracted_params.get(param.name):
+                            # Required param with ask_if_missing was not extracted
+                            allowed_values = []
+                            if param.validation and hasattr(param.validation, 'allowed_values'):
+                                allowed_values = param.validation.allowed_values or []
+                            
+                            missing_required.append(MissingParameter(
+                                name=param.name,
+                                description=f"Please provide a value for '{param.name}'",
+                                validation_hint=f"Allowed values: {', '.join(allowed_values)}" if allowed_values else "",
+                            ))
+                            logger.warning(
+                                "LLM returned success but required param '%s' (ask_if_missing=true) was not extracted",
+                                param.name
+                            )
+                
+                if missing_required:
+                    # Convert to needs_clarification
+                    logger.info("Converting success to needs_clarification due to %d missing required params", len(missing_required))
+                    sql_draft = SQLDraft(
+                        status="needs_clarification",
+                        source="template",
+                        user_query=user_query,
+                        reasoning=template.reasoning,
+                        template_id=template.id,
+                        template_json=template.model_dump_json(),
+                        extracted_parameters=extracted_params,
+                        parameter_definitions=template.parameters,
+                        missing_parameters=missing_required,
+                        clarification_prompt=f"Please provide a value for: {missing_required[0].name}",
+                    )
+                else:
+                    sql_draft = SQLDraft(
+                        status="success",
+                        source="template",
+                        completed_sql=None,  # SQL substitution done by data_agent
+                        user_query=user_query,
+                        reasoning=template.reasoning,
+                        template_id=template.id,
+                        template_json=template.model_dump_json(),
+                        extracted_parameters=extracted_params,
+                        parameter_definitions=template.parameters,
+                    )
 
             elif parsed.get("status") == "needs_clarification":
                 # Build missing parameters list
@@ -576,16 +612,79 @@ class ParameterExtractorExecutor(Executor):
                 )
 
             else:
-                # Error case
-                sql_draft = SQLDraft(
-                    status="error",
-                    source="template",
-                    user_query=user_query,
-                    template_id=template.id,
-                    template_json=template.model_dump_json(),
-                    parameter_definitions=template.parameters,
-                    error=parsed.get("error", "Unknown error during parameter extraction"),
-                )
+                # Error case - check if we should ask for clarification instead
+                error_msg = parsed.get("error", "Unknown error during parameter extraction")
+                
+                # Check if error is about invalid value for a parameter with ask_if_missing=true
+                # Also check if any required parameter with ask_if_missing wasn't extracted
+                should_clarify = False
+                clarify_param = None
+                
+                for param in template.parameters:
+                    if param.required and param.ask_if_missing:
+                        # Check if this param name (or a substring) appears in error message
+                        # e.g., "category_name" should match "No matching category found"
+                        param_name_parts = param.name.lower().replace("_", " ").split()
+                        error_lower = error_msg.lower()
+                        
+                        # Match if any significant part of param name is in error
+                        matches_error = any(part in error_lower for part in param_name_parts if len(part) > 2)
+                        
+                        # Or if the parameter simply wasn't extracted
+                        not_extracted = param.name not in parsed.get("extracted_parameters", {})
+                        
+                        if matches_error or not_extracted:
+                            should_clarify = True
+                            clarify_param = param
+                            logger.info(
+                                "Error mentions param '%s' or param not extracted (matches_error=%s, not_extracted=%s)",
+                                param.name, matches_error, not_extracted
+                            )
+                            break
+                
+                if should_clarify and clarify_param:
+                    # Convert error to clarification request
+                    logger.info(
+                        "Converting error to clarification for parameter '%s' (ask_if_missing=true)",
+                        clarify_param.name
+                    )
+                    
+                    # Get allowed values
+                    allowed_values = []
+                    if clarify_param.validation and hasattr(clarify_param.validation, 'allowed_values'):
+                        allowed_values = clarify_param.validation.allowed_values or []
+                    
+                    missing = [MissingParameter(
+                        name=clarify_param.name,
+                        description=f"Please select a valid value for '{clarify_param.name}'",
+                        validation_hint=f"Allowed values: {', '.join(allowed_values)}" if allowed_values else "",
+                    )]
+                    
+                    clarification_prompt = f"Please choose from: {', '.join(allowed_values)}" if allowed_values else f"Please provide a value for '{clarify_param.name}'"
+                    
+                    sql_draft = SQLDraft(
+                        status="needs_clarification",
+                        source="template",
+                        user_query=user_query,
+                        reasoning=template.reasoning,
+                        template_id=template.id,
+                        template_json=template.model_dump_json(),
+                        extracted_parameters=parsed.get("extracted_parameters", {}),
+                        parameter_definitions=template.parameters,
+                        missing_parameters=missing,
+                        clarification_prompt=clarification_prompt,
+                    )
+                else:
+                    # Regular error - no clarification possible
+                    sql_draft = SQLDraft(
+                        status="error",
+                        source="template",
+                        user_query=user_query,
+                        template_id=template.id,
+                        template_json=template.model_dump_json(),
+                        parameter_definitions=template.parameters,
+                        error=error_msg,
+                    )
 
             logger.info("Parameter extraction completed with status: %s", sql_draft.status)
 

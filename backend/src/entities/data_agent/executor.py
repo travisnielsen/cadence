@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 from typing import Any, Union
 
+from pydantic import ValidationError
 from agent_framework import (
     ChatAgent,
     Executor,
@@ -28,6 +29,7 @@ AzureAIAgentClient = AzureAIClient
 try:
     from models import (  # type: ignore[import-not-found]
         ClarificationRequest,
+        NL2SQLRequest,
         NL2SQLResponse,
         QueryTemplate,
         TableMetadata,
@@ -42,6 +44,7 @@ try:
 except ImportError:
     from src.models import (
         ClarificationRequest,
+        NL2SQLRequest,
         NL2SQLResponse,
         QueryTemplate,
         TableMetadata,
@@ -178,7 +181,29 @@ class NL2SQLAgentExecutor(Executor):
         )
 
         super().__init__(id=executor_id)
+        
+        # Track if we're acting as the workflow entry point (for orchestrator pattern)
+        # When True, final responses use yield_output instead of send_message
+        self._is_entry_point = False
+        
         logger.info("NL2SQLAgentExecutor initialized with tools: ['search_query_templates', 'execute_sql']")
+
+    async def _send_final_response(
+        self, 
+        response: NL2SQLResponse, 
+        ctx: WorkflowContext[NL2SQLOutputMessage]
+    ) -> None:
+        """
+        Send the final NL2SQL response.
+        
+        Uses yield_output when acting as entry point (orchestrator pattern),
+        otherwise uses send_message (v1 workflow with ChatAgent).
+        """
+        response_json = response.model_dump_json()
+        if self._is_entry_point:
+            await ctx.yield_output(response_json)
+        else:
+            await ctx.send_message(response_json)
 
     @handler
     async def handle_question(
@@ -269,7 +294,7 @@ class NL2SQLAgentExecutor(Executor):
                         error=error_message,
                         confidence_score=confidence_score,
                     )
-                    await ctx.send_message(nl2sql_response.model_dump_json())
+                    await self._send_final_response(nl2sql_response, ctx)
 
                 else:
                     # Low confidence - no good template match found
@@ -333,7 +358,7 @@ class NL2SQLAgentExecutor(Executor):
                             error=error_message,
                             confidence_score=confidence_score,
                         )
-                        await ctx.send_message(nl2sql_response.model_dump_json())
+                        await self._send_final_response(nl2sql_response, ctx)
 
         except Exception as e:
             logger.error("NL2SQL execution error: %s", e)
@@ -341,7 +366,108 @@ class NL2SQLAgentExecutor(Executor):
                 sql_query="",
                 error=str(e)
             )
-            await ctx.send_message(nl2sql_response.model_dump_json())
+            await self._send_final_response(nl2sql_response, ctx)
+
+    @handler
+    async def handle_nl2sql_request(
+        self,
+        request: NL2SQLRequest,
+        ctx: WorkflowContext[NL2SQLOutputMessage]
+    ) -> None:
+        """
+        Handle an NL2SQLRequest from the ConversationOrchestrator.
+        
+        This handler supports both new queries and refinements.
+        For refinements, it uses the provided template and applies parameter overrides.
+        
+        Args:
+            request: The NL2SQL request with optional refinement context
+            ctx: Workflow context for sending the response
+        """
+        # Mark as entry point - final responses should use yield_output
+        self._is_entry_point = True
+        
+        logger.info(
+            "NL2SQLAgentExecutor handling NL2SQLRequest: is_refinement=%s, query=%s",
+            request.is_refinement,
+            request.user_query[:100]
+        )
+        
+        try:
+            if request.is_refinement and request.previous_template_json:
+                # Refinement: use the previous template with overrides
+                await self._handle_refinement(request, ctx)
+            else:
+                # New query: delegate to existing handler
+                await self.handle_question(request.user_query, ctx)
+                
+        except Exception as e:
+            logger.error("NL2SQL request error: %s", e)
+            nl2sql_response = NL2SQLResponse(
+                sql_query="",
+                error=str(e)
+            )
+            await self._send_final_response(nl2sql_response, ctx)
+
+    async def _handle_refinement(
+        self,
+        request: NL2SQLRequest,
+        ctx: WorkflowContext[NL2SQLOutputMessage]
+    ) -> None:
+        """
+        Handle a refinement request using the previous template.
+        
+        Merges base_params with param_overrides and routes to parameter extraction.
+        """
+        try:
+            template_data = json.loads(request.previous_template_json or "{}")
+            template = QueryTemplate.model_validate(template_data)
+        except (json.JSONDecodeError, ValidationError) as e:
+            logger.error("Failed to parse previous template: %s", e)
+            # Fall back to treating as a new question
+            await self.handle_question(request.user_query, ctx)
+            return
+        
+        # Merge base params with overrides
+        merged_params = dict(request.base_params or {})
+        if request.param_overrides:
+            merged_params.update(request.param_overrides)
+            logger.info("Applied param overrides: %s", request.param_overrides)
+        
+        # Store clarification state with the merged context
+        await ctx.set_shared_state(
+            CLARIFICATION_STATE_KEY,
+            {
+                "original_question": request.user_query,
+                "template": template.model_dump(),
+                "is_refinement": True,
+                "base_params": request.base_params,
+                "param_overrides": request.param_overrides,
+            }
+        )
+        
+        # Build extraction request with the enriched query
+        # Include the param overrides hint for the extractor
+        enriched_query = request.user_query
+        if request.param_overrides:
+            override_hints = ", ".join(f"{k}={v}" for k, v in request.param_overrides.items())
+            enriched_query = f"{request.user_query} (Use these values: {override_hints})"
+        
+        extraction_request = ParameterExtractionRequest(
+            user_query=enriched_query,
+            template=template,
+        )
+        
+        logger.info(
+            "Routing refinement to param_extractor: template=%s, merged_params=%s",
+            template.intent,
+            merged_params
+        )
+        
+        request_msg = ExtractionRequestMessage(
+            request_json=extraction_request.model_dump_json()
+        )
+        await ctx.send_message(request_msg, target_id="param_extractor")
 
     @handler
     async def handle_sql_draft(
@@ -439,7 +565,7 @@ class NL2SQLAgentExecutor(Executor):
                                         error=f"Query validation failed: {violation_list}. Unable to retry - no table metadata available.",
                                         query_source="dynamic",
                                     )
-                                    await ctx.send_message(nl2sql_response.model_dump_json())
+                                    await self._send_final_response(nl2sql_response, ctx)
                                     return
 
                             # Enrich the user query with validation feedback
@@ -487,7 +613,7 @@ class NL2SQLAgentExecutor(Executor):
                             )
 
                             logger.error("Query validation failed after retry: %s", violation_summary)
-                            await ctx.send_message(nl2sql_response.model_dump_json())
+                            await self._send_final_response(nl2sql_response, ctx)
                     else:
                         # Query is valid - execute the SQL
                         logger.info("Validation passed. Executing SQL: %s", completed_sql[:200])
@@ -523,7 +649,7 @@ class NL2SQLAgentExecutor(Executor):
                             query_source,
                             nl2sql_response.row_count
                         )
-                        await ctx.send_message(nl2sql_response.model_dump_json())
+                        await self._send_final_response(nl2sql_response, ctx)
 
                 elif sql_draft.source == "param_extractor" or (sql_draft.template_id and not sql_draft.params_validated):
                     # Template-based: route to parameter validator
@@ -653,7 +779,7 @@ class NL2SQLAgentExecutor(Executor):
                 )
 
                 logger.error("SQLDraft failed: %s", error_msg)
-                await ctx.send_message(nl2sql_response.model_dump_json())
+                await self._send_final_response(nl2sql_response, ctx)
 
         except Exception as e:
             logger.error("Error handling SQLDraft: %s", e)
@@ -661,7 +787,7 @@ class NL2SQLAgentExecutor(Executor):
                 sql_query="",
                 error=str(e)
             )
-            await ctx.send_message(nl2sql_response.model_dump_json())
+            await self._send_final_response(nl2sql_response, ctx)
 
     @handler
     async def handle_clarification(
@@ -736,7 +862,7 @@ class NL2SQLAgentExecutor(Executor):
                 sql_query="",
                 error=str(e)
             )
-            await ctx.send_message(nl2sql_response.model_dump_json())
+            await self._send_final_response(nl2sql_response, ctx)
 
     @response_handler
     async def on_clarification_response(
@@ -809,7 +935,7 @@ class NL2SQLAgentExecutor(Executor):
                 sql_query="",
                 error="Failed to resume clarification flow - invalid template data"
             )
-            await ctx.send_message(nl2sql_response.model_dump_json())
+            await self._send_final_response(nl2sql_response, ctx)
 
         except Exception as e:
             logger.error("Error handling clarification response: %s", e)
@@ -817,7 +943,7 @@ class NL2SQLAgentExecutor(Executor):
                 sql_query="",
                 error=str(e)
             )
-            await ctx.send_message(nl2sql_response.model_dump_json())
+            await self._send_final_response(nl2sql_response, ctx)
 
     def _parse_agent_response(self, response) -> NL2SQLResponse:
         """Parse the agent's response to extract structured data."""

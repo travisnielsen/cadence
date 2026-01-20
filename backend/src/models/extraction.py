@@ -84,3 +84,34 @@ class ParameterExtractionRequest(BaseModel):
 
     user_query: str = Field(description="The user's original question")
     template: QueryTemplate = Field(description="The matched query template")
+
+
+class NL2SQLRequest(BaseModel):
+    """
+    Request to execute an NL2SQL query.
+    
+    This model supports both new queries and refinements of previous queries.
+    For refinements, the previous_template and base_params provide context.
+    """
+
+    user_query: str = Field(description="The user's question or refinement request")
+    
+    is_refinement: bool = Field(
+        default=False,
+        description="Whether this is a refinement of a previous query"
+    )
+    
+    previous_template_json: str | None = Field(
+        default=None,
+        description="JSON-serialized template from previous query (for refinements)"
+    )
+    
+    base_params: dict | None = Field(
+        default=None,
+        description="Parameters from the previous query to use as base (for refinements)"
+    )
+    
+    param_overrides: dict | None = Field(
+        default=None,
+        description="Specific parameter overrides extracted from the refinement request"
+    )

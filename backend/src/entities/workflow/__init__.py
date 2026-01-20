@@ -1,32 +1,35 @@
 """
-Data Agent Workflow - Orchestrates Chat and NL2SQL agents.
+NL2SQL Workflow - For processing data queries.
 
-This module exports 'workflow' for DevUI auto-discovery.
+This module exports the NL2SQL workflow for DevUI auto-discovery.
+
+The ConversationOrchestrator (in orchestrator/) handles user-facing chat,
+intent classification, and refinements. It invokes this workflow for
+data query processing.
 
 The workflow:
-1. ChatAgentExecutor receives user messages
-2. Forwards to NL2SQLAgentExecutor for data queries
-3. NL2SQLAgentExecutor returns structured results
-4. ChatAgentExecutor renders results for the user
+1. NL2SQLController receives data questions
+2. Routes to ParameterExtractor or QueryBuilder as needed
+3. Validates and executes SQL
+4. Returns structured results
 
 Usage with DevUI:
     devui ./src/entities
 """
 
-from .workflow import workflow, chat_executor, chat_client, create_workflow_instance, create_nl2sql_workflow
-from .builder import build_data_agent_workflow
+from .workflow import workflow, nl2sql_controller, nl2sql_client, create_nl2sql_workflow
 
 
 def get_workflow():
     """
-    Get the data agent workflow.
+    Get the NL2SQL workflow.
 
     Returns:
-        Tuple of (workflow, chat_executor, chat_client)
+        Tuple of (workflow, nl2sql_controller, nl2sql_client)
     """
-    return workflow, chat_executor, chat_client
+    return workflow, nl2sql_controller, nl2sql_client
 
 
 # Export for programmatic access and DevUI discovery
-__all__ = ["workflow", "chat_executor", "chat_client", "get_workflow", "build_data_agent_workflow", "create_workflow_instance", "create_nl2sql_workflow"]
+__all__ = ["workflow", "nl2sql_controller", "nl2sql_client", "get_workflow", "create_nl2sql_workflow"]
 

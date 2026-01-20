@@ -2,9 +2,13 @@
 Entities package for DevUI auto-discovery.
 
 Each subdirectory represents a discoverable entity:
-- chat_agent/: User-facing agent that renders data results
-- data_agent/: NL2SQL agent for database queries
-- workflow/: Orchestrated workflow combining chat and data agents
+- orchestrator/: ConversationOrchestrator for chat sessions and intent classification
+- nl2sql_controller/: NL2SQL controller for database queries
+- parameter_extractor/: Extracts parameters from user queries
+- parameter_validator/: Validates extracted parameter values
+- query_builder/: Generates dynamic SQL from table metadata
+- query_validator/: Validates SQL queries before execution
+- workflow/: NL2SQL workflow combining the query processing components
 
 Shared models are available at the package level.
 

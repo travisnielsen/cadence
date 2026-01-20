@@ -4,10 +4,10 @@ FastAPI server with Microsoft Agent Framework and SSE streaming.
 This module handles application setup, lifespan management, and middleware configuration.
 Route handlers are organized in the routers/ package.
 
-The API uses a workflow-based agent architecture:
-- ChatAgentExecutor: Handles user-facing chat interactions
-- NL2SQLAgentExecutor: Processes data queries and returns structured results
-- The workflow orchestrates communication between these agents
+The API uses a hybrid architecture:
+- ConversationOrchestrator: Manages chat sessions, intent classification, and refinements
+- NL2SQL Workflow: Processes data queries via NL2SQLController
+- The orchestrator invokes the workflow for data questions
 """
 
 import logging
@@ -17,8 +17,6 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from src.entities.workflow import get_workflow
 
 from src.api.middleware import azure_scheme, azure_ad_settings, AzureADAuthMiddleware
 from src.api.monitoring import configure_observability, is_observability_enabled
@@ -51,19 +49,12 @@ async def lifespan(application: FastAPI):
     """
     Application lifespan handler.
 
-    Initializes the agent workflow on startup and cleans up on shutdown.
+    Initializes application state on startup and cleans up on shutdown.
+    The ConversationOrchestrator and NL2SQL workflow are created per-session
+    by the chat router, not at startup.
     """
-    # Startup: Initialize agent workflow from entities
-    workflow, chat_executor, chat_client = get_workflow()
-
-    application.state.workflow = workflow
-    application.state.chat_executor = chat_executor
-    application.state.chat_client = chat_client
-
-    # Expose the workflow as an agent for compatibility with chat router
-    application.state.agent = workflow.as_agent(name="DataExplorerAgent")
-
-    logger.info("Data Agent Workflow initialized (Chat <-> NL2SQL)")
+    # Startup logging
+    logger.info("Enterprise Data Agent API starting")
 
     # Log observability status
     if is_observability_enabled():

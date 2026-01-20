@@ -8,12 +8,6 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 /**
- * Use v2 orchestrator endpoint (supports conversational refinements).
- * Set NEXT_PUBLIC_USE_ORCHESTRATOR=true to enable.
- */
-const USE_ORCHESTRATOR = process.env.NEXT_PUBLIC_USE_ORCHESTRATOR === "true";
-
-/**
  * Tool call data from the backend (e.g., NL2SQL results)
  */
 export interface ToolCallData {
@@ -93,9 +87,8 @@ export function streamChat(
 ): AbortController {
   const abortController = new AbortController();
 
-  // Build URL - use v2 orchestrator endpoint if enabled
-  const streamEndpoint = USE_ORCHESTRATOR ? "/api/chat/stream/v2" : "/api/chat/stream";
-  let url = `${API_BASE_URL}${streamEndpoint}?message=${encodeURIComponent(message)}`;
+  // Build URL for chat streaming endpoint
+  let url = `${API_BASE_URL}/api/chat/stream?message=${encodeURIComponent(message)}`;
   if (threadId) {
     url += `&thread_id=${encodeURIComponent(threadId)}`;
   }

@@ -115,3 +115,24 @@ class NL2SQLRequest(BaseModel):
         default=None,
         description="Specific parameter overrides extracted from the refinement request"
     )
+    
+    # Dynamic query refinement context
+    previous_sql: str | None = Field(
+        default=None,
+        description="The previous SQL query (for dynamic refinements)"
+    )
+    
+    previous_tables: list[str] | None = Field(
+        default=None,
+        description="Table names used in the previous query (for logging)"
+    )
+    
+    previous_tables_json: str | None = Field(
+        default=None,
+        description="JSON of TableMetadata objects from previous query (for refinements)"
+    )
+    
+    previous_question: str | None = Field(
+        default=None,
+        description="The original question from the previous query (for dynamic refinements)"
+    )

@@ -24,7 +24,7 @@ class NL2SQLResponse(BaseModel):
     Structured response from NL2SQL agent.
 
     Contains the SQL query, results, and metadata about the execution.
-    Used by the workflow to pass data from data_agent to chat_agent.
+    Used by the workflow to pass data from nl2sql_controller to orchestrator.
     """
 
     sql_query: str = Field(
@@ -84,4 +84,31 @@ class NL2SQLResponse(BaseModel):
     clarification: ClarificationInfo | None = Field(
         default=None,
         description="Details about what information is needed from the user"
+    )
+    
+    # Context tracking for refinements
+    template_json: str | None = Field(
+        default=None,
+        description="JSON of the template used (for refinement context)"
+    )
+    
+    extracted_params: dict = Field(
+        default_factory=dict,
+        description="Parameters that were extracted from the query"
+    )
+    
+    # Dynamic query context (for dynamic refinements)
+    tables_used: list[str] = Field(
+        default_factory=list,
+        description="Table names used in dynamic query (for logging)"
+    )
+    
+    tables_metadata_json: str | None = Field(
+        default=None,
+        description="JSON of TableMetadata objects used (for refinement context)"
+    )
+    
+    original_question: str = Field(
+        default="",
+        description="The original user question (for refinement context)"
     )

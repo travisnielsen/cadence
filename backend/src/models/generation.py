@@ -82,6 +82,11 @@ class SQLDraft(BaseModel):
         default_factory=list,
         description="Tables used in the query (for validation)"
     )
+    
+    tables_metadata_json: str | None = Field(
+        default=None,
+        description="JSON of full TableMetadata objects (for refinement context)"
+    )
 
     # Parameter validation fields
     params_validated: bool = Field(

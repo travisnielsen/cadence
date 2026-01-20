@@ -166,7 +166,7 @@ class QueryBuilderExecutor(Executor):
     Executor that generates SQL queries from table metadata.
 
     This executor:
-    1. Receives user query + table metadata from NL2SQLAgentExecutor
+    1. Receives user query + table metadata from NL2SQLController
     2. Uses LLM to analyze the query and generate SQL
     3. Returns the generated SQL query or an error
     """
@@ -312,6 +312,9 @@ class QueryBuilderExecutor(Executor):
 
             # Parse the LLM response
             parsed = _parse_llm_response(response_text)
+            
+            # Serialize tables for refinement context
+            tables_metadata_json = json.dumps([t.model_dump() for t in tables])
 
             # Build the response based on LLM output
             if parsed.get("status") == "success":
@@ -323,6 +326,7 @@ class QueryBuilderExecutor(Executor):
                     retry_count=retry_count,
                     reasoning=parsed.get("reasoning"),
                     tables_used=parsed.get("tables_used", []),
+                    tables_metadata_json=tables_metadata_json,
                 )
             else:
                 sql_draft = SQLDraft(
@@ -332,6 +336,7 @@ class QueryBuilderExecutor(Executor):
                     retry_count=retry_count,
                     error=parsed.get("error", "Unknown error during query generation"),
                     tables_used=parsed.get("tables_used", []),
+                    tables_metadata_json=tables_metadata_json,
                 )
 
             logger.info("Query generation completed with status: %s", sql_draft.status)

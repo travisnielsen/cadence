@@ -1,15 +1,15 @@
 """
-Data Agent - NL2SQL agent for database exploration.
+NL2SQL Controller - Orchestrates NL2SQL query processing.
 
 This module exports 'agent' for DevUI auto-discovery.
 
-The agent:
+The controller:
 1. Searches for cached queries matching user questions
 2. Executes SQL against the Wide World Importers database
 3. Returns structured results
 
 Usage with DevUI:
-    devui ./src/entities/data_agent
+    devui ./src/entities/nl2sql_controller
 """
 
 from .agent import agent, load_prompt

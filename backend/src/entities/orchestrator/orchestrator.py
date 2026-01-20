@@ -28,10 +28,18 @@ class ConversationContext:
     """
     Tracks the context of the current conversation for refinements.
     """
+    # Template-based query context
     last_template_json: str | None = None
     last_params: dict = field(default_factory=dict)
     last_defaults_used: dict = field(default_factory=dict)
     last_query: str = ""
+    
+    # Dynamic query context
+    last_sql: str | None = None
+    last_tables: list = field(default_factory=list)  # Table names for logging
+    last_tables_json: str | None = None  # Full TableMetadata JSON for reuse
+    last_question: str = ""
+    query_source: str = ""  # "template" or "dynamic"
 
 
 @dataclass
@@ -120,12 +128,13 @@ class ConversationOrchestrator:
         
         # Build classification prompt with context
         context_info = ""
-        if self.context.last_template_json:
+        if self.context.query_source == "template" and self.context.last_template_json:
+            # Template-based query context
             try:
                 template_data = json.loads(self.context.last_template_json)
                 param_names = [p.get("name") for p in template_data.get("parameters", [])]
                 context_info = f"""
-Previous query context:
+Previous query context (TEMPLATE-BASED):
 - Question: {self.context.last_query}
 - Parameters used: {json.dumps(self.context.last_params)}
 - Available parameters to modify: {param_names}
@@ -133,6 +142,14 @@ Previous query context:
 """
             except json.JSONDecodeError:
                 pass
+        elif self.context.query_source == "dynamic" and self.context.last_sql:
+            # Dynamic query context
+            context_info = f"""
+Previous query context (DYNAMIC):
+- Original question: {self.context.last_question}
+- Tables used: {self.context.last_tables}
+- SQL executed: {self.context.last_sql[:500]}...
+"""
         
         classification_prompt = f"""Classify this user message and respond with JSON only.
 
@@ -145,13 +162,13 @@ Respond with ONE of these JSON formats:
 1. For a NEW data question (asking about business data like sales, orders, customers, products):
 {{"intent": "data_query", "query": "<the question>"}}
 
-2. For a REFINEMENT of the previous query (e.g., "show me for 90 days", "what about last month", "make it 20"):
-{{"intent": "refinement", "query": "<original question with new value>", "param_overrides": {{"param_name": "new_value"}}}}
+2. For a REFINEMENT of the previous query (e.g., "show me for 90 days", "what about last month", "make it 20", "filter by X"):
+{{"intent": "refinement", "query": "<describe what the user wants changed>"}}
 
 3. For general CONVERSATION (greetings, jokes, help, off-topic):
 {{"intent": "conversation"}}
 
-Important: A refinement ONLY applies if there was a previous query and the user is asking to modify a parameter.
+Important: A refinement ONLY applies if there was a previous query and the user is asking to modify it.
 
 JSON response:"""
 
@@ -213,21 +230,34 @@ JSON response:"""
         """
         Build an NL2SQL request based on the classification.
         
-        For refinements, includes the previous template and base params.
+        For refinements, includes the previous template/query context.
         """
-        if classification.intent == "refinement" and self.context.last_template_json:
-            return NL2SQLRequest(
-                user_query=classification.query,
-                is_refinement=True,
-                previous_template_json=self.context.last_template_json,
-                base_params=self.context.last_params,
-                param_overrides=classification.param_overrides,
-            )
-        else:
-            return NL2SQLRequest(
-                user_query=classification.query,
-                is_refinement=False,
-            )
+        if classification.intent == "refinement":
+            if self.context.query_source == "template" and self.context.last_template_json:
+                # Template-based refinement
+                return NL2SQLRequest(
+                    user_query=classification.query,
+                    is_refinement=True,
+                    previous_template_json=self.context.last_template_json,
+                    base_params=self.context.last_params,
+                    param_overrides=classification.param_overrides,
+                )
+            elif self.context.query_source == "dynamic" and self.context.last_sql:
+                # Dynamic query refinement - pass full table metadata
+                return NL2SQLRequest(
+                    user_query=classification.query,
+                    is_refinement=True,
+                    previous_sql=self.context.last_sql,
+                    previous_tables=self.context.last_tables,
+                    previous_tables_json=self.context.last_tables_json,
+                    previous_question=self.context.last_question,
+                )
+        
+        # New query
+        return NL2SQLRequest(
+            user_query=classification.query,
+            is_refinement=False,
+        )
 
     def update_context(
         self, 
@@ -244,11 +274,36 @@ JSON response:"""
             params: The parameters that were used
         """
         if not response.error and response.sql_query:
-            self.context.last_template_json = template_json
-            self.context.last_params = params
-            self.context.last_defaults_used = response.defaults_used
-            self.context.last_query = response.sql_query
-            logger.info("Updated conversation context for potential refinement")
+            # Track query source for refinement handling
+            self.context.query_source = response.query_source
+            
+            if response.query_source == "template" and template_json:
+                # Template-based query context
+                self.context.last_template_json = template_json
+                self.context.last_params = params
+                self.context.last_defaults_used = response.defaults_used
+                self.context.last_query = response.sql_query
+                # Clear dynamic context
+                self.context.last_sql = None
+                self.context.last_tables = []
+                self.context.last_tables_json = None
+                self.context.last_question = ""
+            else:
+                # Dynamic query context
+                self.context.last_sql = response.sql_query
+                self.context.last_tables = response.tables_used
+                self.context.last_tables_json = response.tables_metadata_json
+                self.context.last_question = response.original_question
+                # Clear template context
+                self.context.last_template_json = None
+                self.context.last_params = {}
+                self.context.last_defaults_used = {}
+                self.context.last_query = response.sql_query
+            
+            logger.info(
+                "Updated conversation context for %s query refinement",
+                self.context.query_source
+            )
 
     def render_response(self, response: NL2SQLResponse) -> dict:
         """

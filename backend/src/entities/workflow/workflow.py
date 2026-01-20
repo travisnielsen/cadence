@@ -1,25 +1,24 @@
 """
-Data Agent Workflow - Orchestrates Chat, NL2SQL, Parameter Extractor, and Query Builder agents.
+NL2SQL Workflow - Orchestrates query processing with NL2SQL Controller.
 
-This module exports 'workflow' for DevUI auto-discovery.
+This module provides the workflow for processing data queries.
+The ConversationOrchestrator (in orchestrator/orchestrator.py) handles
+user-facing chat, intent classification, and refinements - then invokes
+this workflow for data query processing.
 
 The workflow:
-1. ChatAgentExecutor receives user messages and triages them
-2. For data questions: routes to NL2SQLAgentExecutor
-3. NL2SQLAgentExecutor searches query templates to understand intent
-4. If high confidence match: routes to ParameterExtractorExecutor
-5. ParameterExtractorExecutor extracts parameters and builds SQL
-6. If no template match: searches tables and routes to QueryBuilderExecutor
-7. QueryBuilderExecutor generates dynamic SQL from table metadata
-8. NL2SQLAgentExecutor executes SQL and returns results
-9. ChatAgentExecutor renders data results for the user
-10. For clarification: user provides more info, flow repeats
+1. NL2SQLController receives data questions from ConversationOrchestrator
+2. Searches query templates to understand intent
+3. If high confidence match: routes to ParameterExtractorExecutor
+4. ParameterExtractorExecutor extracts parameters and builds SQL
+5. If no template match: searches tables and routes to QueryBuilderExecutor
+6. QueryBuilderExecutor generates dynamic SQL from table metadata
+7. NL2SQLController validates and executes SQL, returns results
 
 Agent Management (V2 Responses API):
 - Uses AzureAIClient with use_latest_version=True
 - Agents are versioned by name - V2 automatically finds/creates latest version
 - No manual agent cleanup needed (versioned agents are immutable)
-- Conversations are stored in Foundry with conversation_id
 
 Workflow Per-Request:
 - The Agent Framework doesn't support concurrent workflow executions
@@ -36,15 +35,13 @@ from azure.identity.aio import DefaultAzureCredential
 
 # Support both DevUI (entities on path) and FastAPI (src on path) import patterns
 try:
-    from chat_agent.executor import ChatAgentExecutor  # type: ignore[import-not-found]
-    from data_agent.executor import NL2SQLAgentExecutor  # type: ignore[import-not-found]
+    from nl2sql_controller.executor import NL2SQLController  # type: ignore[import-not-found]
     from parameter_extractor.executor import ParameterExtractorExecutor  # type: ignore[import-not-found]
     from parameter_validator.executor import ParameterValidatorExecutor  # type: ignore[import-not-found]
     from query_builder.executor import QueryBuilderExecutor  # type: ignore[import-not-found]
     from query_validator.executor import QueryValidatorExecutor  # type: ignore[import-not-found]
 except ImportError:
-    from src.entities.chat_agent.executor import ChatAgentExecutor
-    from src.entities.data_agent.executor import NL2SQLAgentExecutor
+    from src.entities.nl2sql_controller.executor import NL2SQLController
     from src.entities.parameter_extractor.executor import ParameterExtractorExecutor
     from src.entities.parameter_validator.executor import ParameterValidatorExecutor
     from src.entities.query_builder.executor import QueryBuilderExecutor
@@ -53,24 +50,24 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Module-level clients - reused across requests
-_chat_client: AzureAIClient | None = None
 _nl2sql_client: AzureAIClient | None = None
 _param_extractor_client: AzureAIClient | None = None
 _query_builder_client: AzureAIClient | None = None
 
 
-def _get_clients() -> tuple[AzureAIClient, AzureAIClient, AzureAIClient, AzureAIClient]:
+def _get_clients() -> tuple[AzureAIClient, AzureAIClient, AzureAIClient]:
     """
     Get or create the agent clients (singleton pattern).
     
     V2 AzureAIClient uses agent versioning - with use_latest_version=True,
     it automatically finds or creates the latest version of named agents.
     """
-    global _chat_client, _nl2sql_client, _param_extractor_client, _query_builder_client
+    global _nl2sql_client, _param_extractor_client, _query_builder_client
     
-    if (_chat_client is not None and _nl2sql_client is not None 
-        and _param_extractor_client is not None and _query_builder_client is not None):
-        return _chat_client, _nl2sql_client, _param_extractor_client, _query_builder_client
+    if (_nl2sql_client is not None 
+        and _param_extractor_client is not None 
+        and _query_builder_client is not None):
+        return _nl2sql_client, _param_extractor_client, _query_builder_client
     
     # Get Azure AI Foundry endpoint from environment
     endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT", "")
@@ -80,25 +77,21 @@ def _get_clients() -> tuple[AzureAIClient, AzureAIClient, AzureAIClient, AzureAI
             "Set it to your Azure AI Foundry project endpoint."
         )
 
-    # Create credential with optional managed identity
+    # Create credential with managed identity support
     client_id = os.getenv("AZURE_CLIENT_ID")
     if client_id:
         credential = DefaultAzureCredential(managed_identity_client_id=client_id)
     else:
         credential = DefaultAzureCredential()
     
-    # Model deployments
-    default_model = os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME")
-    chat_model = os.getenv("AZURE_AI_CHAT_MODEL", default_model)
-    nl2sql_model = os.getenv("AZURE_AI_NL2SQL_MODEL", default_model)
-    param_extractor_model = os.getenv("AZURE_AI_PARAM_EXTRACTOR_MODEL", default_model)
-    query_builder_model = os.getenv("AZURE_AI_QUERY_BUILDER_MODEL", default_model)
+    # Get model deployment names (with fallback to default)
+    nl2sql_model = os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME", "gpt-4o")
+    param_extractor_model = os.getenv("PARAM_EXTRACTOR_MODEL_DEPLOYMENT_NAME", nl2sql_model)
+    query_builder_model = os.getenv("QUERY_BUILDER_MODEL_DEPLOYMENT_NAME", nl2sql_model)
     
-    _chat_client = AzureAIClient(
-        project_endpoint=endpoint,
-        credential=credential,
-        model_deployment_name=chat_model,
-        use_latest_version=True,
+    logger.info(
+        "Creating agent clients: NL2SQL=%s, ParamExtractor=%s, QueryBuilder=%s",
+        nl2sql_model, param_extractor_model, query_builder_model
     )
     
     _nl2sql_client = AzureAIClient(
@@ -122,61 +115,15 @@ def _get_clients() -> tuple[AzureAIClient, AzureAIClient, AzureAIClient, AzureAI
         use_latest_version=True,
     )
     
-    return _chat_client, _nl2sql_client, _param_extractor_client, _query_builder_client
-
-
-def create_workflow_instance():
-    """
-    Create a fresh workflow instance for a single request.
-    
-    The Agent Framework doesn't support concurrent workflow executions,
-    so we create a new workflow per request. The agent clients are reused
-    (they cache agent IDs globally).
-    
-    Returns:
-        Tuple of (workflow, chat_executor, chat_client)
-    """
-    chat_client, nl2sql_client, param_extractor_client, query_builder_client = _get_clients()
-    
-    # Create fresh executors for this request
-    chat_executor = ChatAgentExecutor(chat_client)
-    nl2sql_executor = NL2SQLAgentExecutor(nl2sql_client)
-    param_extractor_executor = ParameterExtractorExecutor(param_extractor_client)
-    param_validator_executor = ParameterValidatorExecutor()
-    query_builder_executor = QueryBuilderExecutor(query_builder_client)
-    query_validator_executor = QueryValidatorExecutor()
-
-    # Build fresh workflow with all edges
-    # Chat <-> NL2SQL: For routing questions and receiving responses
-    # NL2SQL <-> ParamExtractor: For parameter extraction workflow (template-based)
-    # NL2SQL <-> ParamValidator: For parameter validation (no LLM, pure validation)
-    # NL2SQL <-> QueryBuilder: For dynamic query generation (no template match)
-    # NL2SQL <-> QueryValidator: For validating queries before execution
-    workflow = (
-        WorkflowBuilder()
-        .add_edge(chat_executor, nl2sql_executor)
-        .add_edge(nl2sql_executor, chat_executor)
-        .add_edge(nl2sql_executor, param_extractor_executor)
-        .add_edge(param_extractor_executor, nl2sql_executor)
-        .add_edge(nl2sql_executor, param_validator_executor)
-        .add_edge(param_validator_executor, nl2sql_executor)
-        .add_edge(nl2sql_executor, query_builder_executor)
-        .add_edge(query_builder_executor, nl2sql_executor)
-        .add_edge(nl2sql_executor, query_validator_executor)
-        .add_edge(query_validator_executor, nl2sql_executor)
-        .set_start_executor(chat_executor)
-        .build()
-    )
-
-    return workflow, chat_executor, chat_client
+    return _nl2sql_client, _param_extractor_client, _query_builder_client
 
 
 def create_nl2sql_workflow():
     """
-    Create a simplified NL2SQL workflow without ChatAgent.
+    Create the NL2SQL workflow for processing data queries.
     
     This workflow is invoked by the ConversationOrchestrator for data queries.
-    It starts at NL2SQLAgentExecutor (DataAgent) and handles:
+    It starts at NL2SQLController and handles:
     - Template search and matching
     - Parameter extraction (via ParameterExtractor)
     - Parameter validation (via ParameterValidator)
@@ -185,46 +132,36 @@ def create_nl2sql_workflow():
     - SQL execution
     
     Returns:
-        Tuple of (workflow, nl2sql_executor, nl2sql_client)
+        Tuple of (workflow, nl2sql_controller, nl2sql_client)
     """
-    _, nl2sql_client, param_extractor_client, query_builder_client = _get_clients()
+    nl2sql_client, param_extractor_client, query_builder_client = _get_clients()
     
     # Create fresh executors for this request
-    nl2sql_executor = NL2SQLAgentExecutor(nl2sql_client)
+    nl2sql_controller = NL2SQLController(nl2sql_client)
     param_extractor_executor = ParameterExtractorExecutor(param_extractor_client)
     param_validator_executor = ParameterValidatorExecutor()
     query_builder_executor = QueryBuilderExecutor(query_builder_client)
     query_validator_executor = QueryValidatorExecutor()
 
-    # Build workflow starting at NL2SQL executor
-    # No ChatAgent - the ConversationOrchestrator handles that role externally
+    # Build workflow starting at NL2SQL controller
+    # ConversationOrchestrator handles user-facing chat externally
     workflow = (
         WorkflowBuilder()
-        .add_edge(nl2sql_executor, param_extractor_executor)
-        .add_edge(param_extractor_executor, nl2sql_executor)
-        .add_edge(nl2sql_executor, param_validator_executor)
-        .add_edge(param_validator_executor, nl2sql_executor)
-        .add_edge(nl2sql_executor, query_builder_executor)
-        .add_edge(query_builder_executor, nl2sql_executor)
-        .add_edge(nl2sql_executor, query_validator_executor)
-        .add_edge(query_validator_executor, nl2sql_executor)
-        .set_start_executor(nl2sql_executor)
+        .add_edge(nl2sql_controller, param_extractor_executor)
+        .add_edge(param_extractor_executor, nl2sql_controller)
+        .add_edge(nl2sql_controller, param_validator_executor)
+        .add_edge(param_validator_executor, nl2sql_controller)
+        .add_edge(nl2sql_controller, query_builder_executor)
+        .add_edge(query_builder_executor, nl2sql_controller)
+        .add_edge(nl2sql_controller, query_validator_executor)
+        .add_edge(query_validator_executor, nl2sql_controller)
+        .set_start_executor(nl2sql_controller)
         .build()
     )
     
-    logger.info("Created NL2SQL workflow (no ChatAgent)")
-    return workflow, nl2sql_executor, nl2sql_client
-
-
-def _create_workflow():
-    """
-    Create the data agent workflow (for DevUI and initial setup).
-
-    Returns:
-        Tuple of (workflow, chat_executor, chat_client)
-    """
-    return create_workflow_instance()
+    logger.info("Created NL2SQL workflow")
+    return workflow, nl2sql_controller, nl2sql_client
 
 
 # Create workflow at module level for DevUI discovery
-workflow, chat_executor, chat_client = _create_workflow()
+workflow, nl2sql_controller, nl2sql_client = create_nl2sql_workflow()

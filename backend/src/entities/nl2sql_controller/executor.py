@@ -146,11 +146,11 @@ def _load_prompt() -> str:
     return prompt_path.read_text(encoding="utf-8")
 
 
-class NL2SQLAgentExecutor(Executor):
+class NL2SQLController(Executor):
     """
-    Executor that handles NL2SQL data queries with template-based query generation.
+    Controller that orchestrates NL2SQL query processing.
 
-    This executor orchestrates a multi-step workflow:
+    This controller orchestrates a multi-step workflow:
     1. Search query_templates index to understand user intent
     2. If high confidence match: route to ParameterExtractor for SQL generation
     3. Execute the generated SQL and return results
@@ -186,7 +186,7 @@ class NL2SQLAgentExecutor(Executor):
         # When True, final responses use yield_output instead of send_message
         self._is_entry_point = False
         
-        logger.info("NL2SQLAgentExecutor initialized with tools: ['search_query_templates', 'execute_sql']")
+        logger.info("NL2SQLController initialized with tools: ['search_query_templates', 'execute_sql']")
 
     async def _send_final_response(
         self, 
@@ -223,7 +223,7 @@ class NL2SQLAgentExecutor(Executor):
             question: The user's natural language question
             ctx: Workflow context for sending the response (as JSON string)
         """
-        logger.info("NL2SQLAgentExecutor processing question: %s", question[:100])
+        logger.info("NL2SQLController processing question: %s", question[:100])
 
         try:
             # Step 1: Search for query templates
@@ -378,7 +378,7 @@ class NL2SQLAgentExecutor(Executor):
         Handle an NL2SQLRequest from the ConversationOrchestrator.
         
         This handler supports both new queries and refinements.
-        For refinements, it uses the provided template and applies parameter overrides.
+        For refinements, it uses the provided template or previous SQL context.
         
         Args:
             request: The NL2SQL request with optional refinement context
@@ -388,15 +388,18 @@ class NL2SQLAgentExecutor(Executor):
         self._is_entry_point = True
         
         logger.info(
-            "NL2SQLAgentExecutor handling NL2SQLRequest: is_refinement=%s, query=%s",
+            "NL2SQLController handling NL2SQLRequest: is_refinement=%s, query=%s",
             request.is_refinement,
             request.user_query[:100]
         )
         
         try:
             if request.is_refinement and request.previous_template_json:
-                # Refinement: use the previous template with overrides
+                # Template-based refinement: use the previous template with overrides
                 await self._handle_refinement(request, ctx)
+            elif request.is_refinement and request.previous_sql:
+                # Dynamic refinement: use the previous SQL as context
+                await self._handle_dynamic_refinement(request, ctx)
             else:
                 # New query: delegate to existing handler
                 await self.handle_question(request.user_query, ctx)
@@ -469,6 +472,84 @@ class NL2SQLAgentExecutor(Executor):
         )
         await ctx.send_message(request_msg, target_id="param_extractor")
 
+    async def _handle_dynamic_refinement(
+        self,
+        request: NL2SQLRequest,
+        ctx: WorkflowContext[NL2SQLOutputMessage]
+    ) -> None:
+        """
+        Handle a refinement request for a dynamic (non-template) query.
+        
+        Re-uses table metadata from the previous query if available.
+        """
+        logger.info(
+            "Handling dynamic refinement: previous_question=%s, tables=%s",
+            request.previous_question,
+            request.previous_tables
+        )
+        
+        # Try to re-use table metadata from previous query
+        tables: list[TableMetadata] = []
+        
+        if request.previous_tables_json:
+            # Re-use the full table metadata from the previous query
+            try:
+                tables_data = json.loads(request.previous_tables_json)
+                tables = [TableMetadata.model_validate(t) for t in tables_data]
+                logger.info("Re-using %d tables from previous query context", len(tables))
+            except (json.JSONDecodeError, ValidationError) as e:
+                logger.warning("Failed to parse previous tables JSON: %s", e)
+        
+        if not tables:
+            # Fall back to searching based on the new query
+            logger.info("No cached table metadata, searching for tables")
+            table_search = await search_tables(request.user_query)  # type: ignore[misc]
+            if table_search.get("has_matches") and table_search.get("tables"):
+                tables = [TableMetadata.model_validate(t) for t in table_search["tables"]]
+        
+        if not tables:
+            nl2sql_response = NL2SQLResponse(
+                sql_query="",
+                error="Unable to refine query - no table metadata available.",
+                query_source="dynamic",
+            )
+            await self._send_final_response(nl2sql_response, ctx)
+            return
+        
+        # Build an enriched query that includes the refinement context
+        enriched_query = (
+            f"Modify this previous query based on the user's request.\n\n"
+            f"Previous question: {request.previous_question}\n"
+            f"Previous SQL: {request.previous_sql}\n\n"
+            f"User's refinement request: {request.user_query}\n\n"
+            f"Generate a new SQL query that applies the user's requested changes to the previous query."
+        )
+        
+        # Route to QueryBuilder
+        query_request = QueryBuilderRequest(
+            user_query=enriched_query,
+            tables=tables,
+            retry_count=0,
+        )
+        
+        # Store context for potential follow-up (with full metadata for chained refinements)
+        await ctx.set_shared_state(
+            CLARIFICATION_STATE_KEY,
+            {
+                "original_question": request.user_query,
+                "dynamic_query": True,
+                "tables": [t.model_dump() for t in tables],
+                "is_refinement": True,
+                "previous_sql": request.previous_sql,
+                "previous_question": request.previous_question,
+            }
+        )
+        
+        request_msg = QueryBuilderRequestMessage(
+            request_json=query_request.model_dump_json()
+        )
+        await ctx.send_message(request_msg, target_id="query_builder")
+
     @handler
     async def handle_sql_draft(
         self,
@@ -495,7 +576,7 @@ class NL2SQLAgentExecutor(Executor):
             sql_draft_msg: Wrapped JSON string containing SQLDraft
             ctx: Workflow context for sending the response
         """
-        logger.info("NL2SQLAgentExecutor received SQLDraft from source=%s", sql_draft_msg.source)
+        logger.info("NL2SQLController received SQLDraft from source=%s", sql_draft_msg.source)
 
         try:
             # Parse the SQLDraft
@@ -642,6 +723,13 @@ class NL2SQLAgentExecutor(Executor):
                             query_source=query_source,
                             error=sql_result.get("error") if not sql_result.get("success") else None,
                             defaults_used=defaults_description,
+                            # Context tracking for template refinements
+                            template_json=sql_draft.template_json,
+                            extracted_params=sql_draft.extracted_parameters or {},
+                            # Context tracking for dynamic refinements
+                            tables_used=sql_draft.tables_used,
+                            tables_metadata_json=sql_draft.tables_metadata_json,
+                            original_question=sql_draft.user_query,
                         )
 
                         logger.info(
@@ -659,7 +747,7 @@ class NL2SQLAgentExecutor(Executor):
                     
                     # Forward the message to param_validator
                     forward_msg = SQLDraftMessage(
-                        source="data_agent",
+                        source="nl2sql_controller",
                         response_json=sql_draft.model_dump_json()
                     )
                     await ctx.send_message(forward_msg, target_id="param_validator")
@@ -699,7 +787,7 @@ class NL2SQLAgentExecutor(Executor):
 
                     # Forward to query_validator
                     forward_msg = SQLDraftMessage(
-                        source="data_agent",
+                        source="nl2sql_controller",
                         response_json=sql_draft.model_dump_json()
                     )
                     await ctx.send_message(forward_msg, target_id="query_validator")
@@ -708,7 +796,7 @@ class NL2SQLAgentExecutor(Executor):
                     # Unknown source - route to query_validator as fallback
                     logger.warning("Unknown SQLDraft source=%s, routing to query_validator", sql_draft.source)
                     forward_msg = SQLDraftMessage(
-                        source="data_agent",
+                        source="nl2sql_controller",
                         response_json=sql_draft.model_dump_json()
                     )
                     await ctx.send_message(forward_msg, target_id="query_validator")
@@ -806,7 +894,7 @@ class NL2SQLAgentExecutor(Executor):
             ctx: Workflow context for sending the response
         """
         clarification = clarification_msg.clarification_text
-        logger.info("NL2SQLAgentExecutor received clarification: %s", clarification[:100])
+        logger.info("NL2SQLController received clarification: %s", clarification[:100])
 
         try:
             # Get the stored clarification state

@@ -336,7 +336,7 @@ class ParameterExtractorExecutor(Executor):
     Executor that extracts parameter values from user queries.
 
     This executor:
-    1. Receives user query + query template from NL2SQLAgentExecutor
+    1. Receives user query + query template from NL2SQLController
     2. Uses LLM to analyze the query and extract parameter values
     3. Validates extracted values against parameter definitions
     4. Returns completed SQL or clarification request
@@ -468,7 +468,7 @@ class ParameterExtractorExecutor(Executor):
                 sql_draft = SQLDraft(
                     status="success",
                     source="template",
-                    completed_sql=None,  # SQL substitution done by data_agent
+                    completed_sql=None,  # SQL substitution done by nl2sql_controller
                     user_query=user_query,
                     reasoning=template.reasoning,
                     template_id=template.id,
@@ -532,7 +532,7 @@ class ParameterExtractorExecutor(Executor):
 
             # Build the response based on LLM output
             if parsed.get("status") == "success":
-                # Return extracted parameters - SQL substitution happens in data_agent
+                # Return extracted parameters - SQL substitution happens in nl2sql_controller
                 extracted_params = parsed.get("extracted_parameters", {})
                 
                 # Log each extracted parameter
@@ -579,7 +579,7 @@ class ParameterExtractorExecutor(Executor):
                     sql_draft = SQLDraft(
                         status="success",
                         source="template",
-                        completed_sql=None,  # SQL substitution done by data_agent
+                        completed_sql=None,  # SQL substitution done by nl2sql_controller
                         user_query=user_query,
                         reasoning=template.reasoning,
                         template_id=template.id,

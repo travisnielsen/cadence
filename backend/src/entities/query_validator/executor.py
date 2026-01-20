@@ -236,10 +236,10 @@ class QueryValidatorExecutor(Executor):
     Executor that validates SQL queries before execution.
 
     This executor:
-    1. Receives SQLDraftMessage from the data_agent (after param_validator)
+    1. Receives SQLDraftMessage from the nl2sql_controller (after param_validator)
     2. Validates syntax, allowlist, statement type, and security
     3. Sets query_validated=True and populates query_violations/query_warnings
-    4. Returns SQLDraftMessage back to data_agent
+    4. Returns SQLDraftMessage back to nl2sql_controller
     """
 
     def __init__(self, executor_id: str = "query_validator"):

@@ -188,7 +188,7 @@ source .venv/bin/activate
 devui ./src/entities
 ```
 
-DevUI auto-discovers agents and workflows in the `entities` directory, providing an interactive interface for testing individual agents (`data_agent`, `chat_agent`) or the full `workflow`.
+DevUI auto-discovers agents and workflows in the `entities` directory, providing an interactive interface for testing individual components (`nl2sql_controller`, `orchestrator`, `parameter_extractor`) or the full `workflow`.
 
 ### Telemetry
 

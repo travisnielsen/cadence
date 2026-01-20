@@ -11,7 +11,7 @@ from threading import Lock
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.entities.chat_agent.orchestrator import ConversationOrchestrator
+    from src.entities.orchestrator import ConversationOrchestrator
 
 logger = logging.getLogger(__name__)
 

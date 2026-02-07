@@ -36,7 +36,7 @@ locals {
 
 # Resource Group
 resource "azurerm_resource_group" "shared_rg" {
-  name     = "dataagent-${local.identifier}"
+  name     = "cadence-${local.identifier}"
   location = var.region
   tags     = local.tags
 }

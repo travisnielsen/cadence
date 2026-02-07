@@ -226,7 +226,7 @@ resource "azurerm_cosmosdb_sql_role_assignment" "foundry_project" {
   account_name        = module.ai_cosmosdb.name
   # Built-in Data Contributor role: 00000000-0000-0000-0000-000000000002
   role_definition_id  = "${module.ai_cosmosdb.resource_id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
-  principal_id        = module.ai_foundry.ai_foundry_project_system_identity_principal_id["dataagent"]
+  principal_id        = module.ai_foundry.ai_foundry_project_system_identity_principal_id["cadence"]
   scope               = module.ai_cosmosdb.resource_id
 }
 
@@ -298,7 +298,7 @@ module "ai_foundry" {
 
   # AI Projects configuration
   ai_projects = {
-    dataagent = {
+    cadence = {
       name                       = "dataexplorer"
       display_name               = "Data Exploration"
       description                = "Data exploration agents and related resources"
@@ -489,7 +489,7 @@ resource "azapi_resource" "ai_model_deployment_gpt41_mini" {
 
 # resource "azapi_resource" "ai_foundry_appinsights_connection" {
 #   name      = module.application_insights.name
-#   parent_id = module.ai_foundry.ai_foundry_project_id["dataagent"]
+#   parent_id = module.ai_foundry.ai_foundry_project_id["cadence"]
 #   type      = "Microsoft.CognitiveServices/accounts/projects/connections@2025-04-01-preview"
 #   body = {
 #     properties = {
@@ -947,7 +947,7 @@ locals {
   # The endpoint property gives us the hub URL directly
   # Format: https://<hub-name>-<random>.services.ai.azure.com/
   ai_hub_endpoint     = data.azapi_resource.ai_foundry_hub.output.properties.endpoint
-  ai_project_name     = module.ai_foundry.ai_foundry_project_name["dataagent"]
+  ai_project_name     = module.ai_foundry.ai_foundry_project_name["cadence"]
   ai_project_endpoint = "${trimsuffix(local.ai_hub_endpoint, "/")}/api/projects/${local.ai_project_name}"
 }
 
@@ -983,7 +983,7 @@ resource "azurerm_role_assignment" "api_cognitive_services_user" {
 
 # Grant API identity access to AI Foundry project
 resource "azurerm_role_assignment" "api_ai_foundry_project" {
-  scope                = module.ai_foundry.ai_foundry_project_id["dataagent"]
+  scope                = module.ai_foundry.ai_foundry_project_id["cadence"]
   role_definition_name = "Azure AI Developer"
   principal_id         = azurerm_user_assigned_identity.api_identity.principal_id
 }
@@ -1058,7 +1058,7 @@ resource "azurerm_container_app" "api" {
 
     container {
       name   = "api"
-      image  = "${module.container_registry.resource.login_server}/dataagent-api:latest"
+      image  = "${module.container_registry.resource.login_server}/cadence-api:latest"
       cpu    = 1.0
       memory = "2Gi"
 

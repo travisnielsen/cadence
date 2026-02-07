@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
-  IMAGE_NAME: dataagent-api
+  IMAGE_NAME: cadence-api
   CONTAINER_APP_NAME: ${{ vars.AZURE_CONTAINER_APP_NAME }}
   RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
 

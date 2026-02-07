@@ -1,7 +1,7 @@
 # Create an Entra ID application for the client app (React / Next.js)
 # and configure necessary API permissions.
 param (
-    [string]$appName = "dataagent",
+    [string]$appName = "cadence",
     [string]$redirectUri = "http://localhost:3000"
 )
 # Create the application

@@ -1,4 +1,4 @@
-# Copilot Instructions for Enterprise Data Agent
+# Copilot Instructions for Cadence
 
 ## Architecture Overview
 

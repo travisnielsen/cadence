@@ -19,7 +19,7 @@ const CACHE_VERSION = "v1";
  * Get the localStorage key for a user's thread cache
  */
 function getCacheKey(userId: string): string {
-  return `dataagent_threads_${CACHE_VERSION}_${userId}`;
+  return `cadence_threads_${CACHE_VERSION}_${userId}`;
 }
 
 /**

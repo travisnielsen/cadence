@@ -231,10 +231,10 @@ To enable continueous deployment, use the following script template to create th
 
 ```bash
 # Create app registration
-az ad app create --display-name "github-actions-dataagent"
+az ad app create --display-name "github-actions-cadence"
 
 # Get the app ID
-APP_ID=$(az ad app list --display-name "github-actions-dataagent" --query "[0].appId" -o tsv)
+APP_ID=$(az ad app list --display-name "github-actions-cadence" --query "[0].appId" -o tsv)
 
 # Create service principal
 az ad sp create --id $APP_ID
@@ -245,7 +245,7 @@ az ad app federated-credential create \
   --parameters '{
     "name": "github-main-branch",
     "issuer": "https://token.actions.githubusercontent.com",
-    "subject": "repo:travisnielsen/dataagent:ref:refs/heads/main",
+    "subject": "repo:travisnielsen/cadence:ref:refs/heads/main",
     "audiences": ["api://AzureADTokenExchange"]
   }'
 
@@ -333,14 +333,14 @@ From the `backend/` directory, build the Docker image:
 cd backend
 
 # Build the image
-docker build -t dataagent-api .
+docker build -t cadence-api .
 ```
 
 To test the container locally before pushing:
 
 ```bash
 # Run with environment variables from .env file
-docker run -p 8000:8000 --env-file .env dataagent-api
+docker run -p 8000:8000 --env-file .env cadence-api
 ```
 
 The API will be available at `http://localhost:8000`. Verify it's running by checking the health endpoint: `http://localhost:8000/health`
@@ -365,7 +365,7 @@ terraform output container_registry_login_server
 cd backend
 
 # Build in Azure and push to ACR (replace <acr_name> with your registry name)
-az acr build --registry <acr_name> --image dataagent-api:latest --platform linux/amd64 .
+az acr build --registry <acr_name> --image cadence-api:latest --platform linux/amd64 .
 ```
 
 ### Example
@@ -373,11 +373,11 @@ az acr build --registry <acr_name> --image dataagent-api:latest --platform linux
 ```bash
 # Full example with actual registry name
 cd backend
-az acr build --registry ay2q3pacr --image dataagent-api:latest --platform linux/amd64 .
+az acr build --registry ay2q3pacr --image cadence-api:latest --platform linux/amd64 .
 ```
 
 After the image is updated and you are using the `latest` tag, you can update the Container App by running:
 
 ```bash
-az containerapp update --name [container_app_name] --resource-group [resource_group_name] --image [container_registry_name].azurecr.io/dataagent-api:latest
+az containerapp update --name [container_app_name] --resource-group [resource_group_name] --image [container_registry_name].azurecr.io/cadence-api:latest
 ```

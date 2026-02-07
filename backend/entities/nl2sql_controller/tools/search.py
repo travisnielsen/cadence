@@ -6,13 +6,13 @@ import logging
 import os
 from typing import Any
 
-from agent_framework import ai_function
+from agent_framework import tool
 
 # Support both DevUI and FastAPI import patterns
 try:
     from shared.search_client import AzureSearchClient  # type: ignore[import-not-found]
 except ImportError:
-    from src.entities.shared.search_client import AzureSearchClient
+    from entities.shared.search_client import AzureSearchClient
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 CONFIDENCE_THRESHOLD = float(os.getenv("QUERY_CONFIDENCE_THRESHOLD", "0.75"))
 
 
-@ai_function
+@tool
 async def search_cached_queries(user_question: str) -> dict[str, Any]:
     """
     Search for pre-tested SQL queries that match the user's question.
@@ -44,7 +44,7 @@ async def search_cached_queries(user_question: str) -> dict[str, Any]:
     step_name = "Searching cached queries..."
     emit_step_end_fn = None
     try:
-        from src.api.step_events import emit_step_start, emit_step_end
+        from api.step_events import emit_step_start, emit_step_end
         emit_step_start(step_name)
         emit_step_end_fn = emit_step_end
     except ImportError:

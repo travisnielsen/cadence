@@ -25,7 +25,7 @@ from agent_framework_azure_ai import AzureAIClient
 # Type alias for V2 client
 AzureAIAgentClient = AzureAIClient
 
-# Support both DevUI (entities on path) and FastAPI (src on path) import patterns
+# Support both DevUI (entities on path) and FastAPI (backend on path) import patterns
 try:
     from models import (  # type: ignore[import-not-found]
         ClarificationRequest,
@@ -42,7 +42,7 @@ try:
         QueryBuilderRequestMessage,
     )
 except ImportError:
-    from src.models import (
+    from models import (
         ClarificationRequest,
         NL2SQLRequest,
         NL2SQLResponse,

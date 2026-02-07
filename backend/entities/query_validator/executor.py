@@ -20,14 +20,14 @@ from agent_framework import (
     handler,
 )
 
-# Support both DevUI (entities on path) and FastAPI (src on path) import patterns
+# Support both DevUI (entities on path) and FastAPI (backend on path) import patterns
 try:
     from models import (  # type: ignore[import-not-found]
         SQLDraft,
         SQLDraftMessage,
     )
 except ImportError:
-    from src.models import (
+    from models import (
         SQLDraft,
         SQLDraftMessage,
     )
@@ -271,7 +271,7 @@ class QueryValidatorExecutor(Executor):
         step_name = "Validating query"
         emit_step_end_fn = None
         try:
-            from src.api.step_events import emit_step_start, emit_step_end
+            from api.step_events import emit_step_start, emit_step_end
             emit_step_start(step_name)
             emit_step_end_fn = emit_step_end
         except ImportError:

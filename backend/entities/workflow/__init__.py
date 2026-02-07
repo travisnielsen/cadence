@@ -14,7 +14,7 @@ The workflow:
 4. Returns structured results
 
 Usage with DevUI:
-    devui ./src/entities
+    devui ./entities
 """
 
 from .workflow import workflow, nl2sql_controller, nl2sql_client, create_nl2sql_workflow

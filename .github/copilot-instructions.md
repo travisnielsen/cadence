@@ -5,12 +5,12 @@
 This is a **multi-agent NL2SQL application** using Microsoft Agent Framework (MAF) with a FastAPI backend and Next.js/assistant-ui frontend. Communication happens via SSE streaming, with thread management delegated to Microsoft Foundry.
 
 ### Architecture Components
-1. **ConversationOrchestrator** (`backend/src/entities/orchestrator/`) - Manages chat sessions, classifies intent (data query vs conversation), handles refinements, invokes NL2SQL workflow
-2. **NL2SQLController** (`backend/src/entities/nl2sql_controller/`) - Orchestrates query flow, searches templates via Azure AI Search, executes SQL via `execute_sql` tool
-3. **ParameterExtractor** (`backend/src/entities/parameter_extractor/`) - Extracts parameter values from natural language to fill SQL template tokens
-4. **ParameterValidator** (`backend/src/entities/parameter_validator/`) - Non-LLM validation of extracted parameters (type, range, regex, allowed values)
-5. **QueryValidator** (`backend/src/entities/query_validator/`) - Validates SQL syntax, table allowlist, and security before execution
-6. **QueryBuilder** (`backend/src/entities/query_builder/`) - Generates dynamic SQL from table metadata when no template matches
+1. **ConversationOrchestrator** (`backend/entities/orchestrator/`) - Manages chat sessions, classifies intent (data query vs conversation), handles refinements, invokes NL2SQL workflow
+2. **NL2SQLController** (`backend/entities/nl2sql_controller/`) - Orchestrates query flow, searches templates via Azure AI Search, executes SQL via `execute_sql` tool
+3. **ParameterExtractor** (`backend/entities/parameter_extractor/`) - Extracts parameter values from natural language to fill SQL template tokens
+4. **ParameterValidator** (`backend/entities/parameter_validator/`) - Non-LLM validation of extracted parameters (type, range, regex, allowed values)
+5. **QueryValidator** (`backend/entities/query_validator/`) - Validates SQL syntax, table allowlist, and security before execution
+6. **QueryBuilder** (`backend/entities/query_builder/`) - Generates dynamic SQL from table metadata when no template matches
 
 ### Architecture Flow
 ```
@@ -24,7 +24,7 @@ The ConversationOrchestrator lives **outside** the MAF workflow. It manages the 
 - Intent classification before invoking the workflow
 - Cleaner separation of concerns
 
-The NL2SQL workflow is built in [backend/src/entities/workflow/workflow.py](backend/src/entities/workflow/workflow.py) and creates a fresh instance per request.
+The NL2SQL workflow is built in [backend/entities/workflow/workflow.py](backend/entities/workflow/workflow.py) and creates a fresh instance per request.
 
 ## Key Patterns
 
@@ -32,20 +32,20 @@ The NL2SQL workflow is built in [backend/src/entities/workflow/workflow.py](back
 Each workflow executor follows a consistent pattern in its folder:
 - `executor.py` - Workflow integration with `@handler` decorators
 - `prompt.md` - Agent instructions (loaded at runtime via `load_prompt()`)
-- `tools/` - AI function tools decorated with `@ai_function`
+- `tools/` - AI function tools decorated with `@tool`
 
 The orchestrator folder contains:
 - `orchestrator.py` - ConversationOrchestrator class (not a MAF executor)
 - `orchestrator_prompt.md` - Intent classification prompt
 
 ### Models Structure
-Shared models are in `backend/src/models/` with functional grouping:
+Shared models are in `backend/models/` with functional grouping:
 - `schema.py` - AI Search index models (`QueryTemplate`, `ParameterDefinition`, `TableMetadata`)
 - `extraction.py` - Parameter extraction workflow (`ParameterExtractionRequest`, `MissingParameter`)
 - `generation.py` - SQL generation (`SQLDraft`, `SQLDraftMessage`, `QueryBuilderRequest`)
 - `execution.py` - Query results (`NL2SQLResponse`)
 
-All models are re-exported from `backend/src/models/__init__.py` for backward compatibility.
+All models are re-exported from `backend/models/__init__.py` for backward compatibility.
 
 ### Dual Import Pattern
 Agents support both DevUI and FastAPI contexts:
@@ -53,7 +53,7 @@ Agents support both DevUI and FastAPI contexts:
 try:
     from models import QueryTemplate  # DevUI (entities on path)
 except ImportError:
-    from src.models import QueryTemplate  # FastAPI (src on path)
+    from models import QueryTemplate  # FastAPI (backend on path)
 ```
 
 ### SQLDraft Message Flow
@@ -66,12 +66,12 @@ The `SQLDraft` model carries SQL through the validation pipeline. The `SQLDraftM
 NL2SQLController routes based on these flags to prevent infinite loops.
 
 ### Query Templates
-SQL queries are parameterized templates stored in `data/query_templates/` and indexed in Azure AI Search. Parameters use `%{{name}}%` token syntax with validation rules. See `backend/src/models/schema.py` for `QueryTemplate` and `ParameterDefinition` schemas.
+SQL queries are parameterized templates stored in `data/query_templates/` and indexed in Azure AI Search. Parameters use `%{{name}}%` token syntax with validation rules. See `backend/models/schema.py` for `QueryTemplate` and `ParameterDefinition` schemas.
 
 ### SSE Streaming & Step Events
 Step events provide real-time progress to the UI. Emit from tools using:
 ```python
-from src.api.step_events import emit_step_start, emit_step_end
+from api.step_events import emit_step_start, emit_step_end
 emit_step_start("Executing SQL query...")
 # ... do work ...
 emit_step_end("Executing SQL query...")
@@ -91,7 +91,7 @@ pnpm dev              # Runs both UI and API concurrently
 pnpm dev:ui           # Next.js with Turbopack
 
 # DevUI for agent testing (from backend folder)
-devui ./src/entities  # Test agents in isolation
+devui ./entities  # Test agents in isolation
 ```
 
 ## Environment Configuration
@@ -114,7 +114,7 @@ API requires `.env` in `backend/` folder with:
 ## API Structure
 
 ```
-backend/src/
+backend/
 ├── api/                    # FastAPI application
 │   ├── main.py            # App entrypoint
 │   ├── middleware/        # Auth middleware
@@ -151,7 +151,7 @@ Run tests: `cd backend && pytest`
 ## Adding New Capabilities
 
 When adding a new tool to an agent:
-1. Create function in agent's `tools/` folder with `@ai_function` decorator
+1. Create function in agent's `tools/` folder with `@tool` decorator
 2. Import and add to agent's `tools=[]` list in `executor.py`
 3. Update the agent's `prompt.md` to describe when/how to use it
 4. For progress feedback, emit step events from within the tool

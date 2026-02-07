@@ -131,7 +131,7 @@ bun install
 
 ### Environment Variables - API
 
-Create an `.env` file inside the `api` folder. Next, copy the contents of the [.env.example](/api/.env.example) file into `.env` and update the values to match your enviorment.
+Create an `.env` file inside the `backend` folder. Next, copy the contents of the [.env.example](/backend/.env.example) file into `.env` and update the values to match your enviorment.
 
 > [!IMPORTANT]
 > The Entra ID section is optional. When these environment variables are set, the API will require a valid token issued by the source tenant with the correct target scope. If you don't require user-level authorization to the API, you can omit these.
@@ -183,16 +183,16 @@ This starts both the UI and the FastAPI backend concurrently.
 The Microsoft Agent Framework includes a development UI for testing and debugging agents and workflows:
 
 ```bash
-cd api
+cd backend
 source .venv/bin/activate
-devui ./src/entities
+devui ./entities
 ```
 
 DevUI auto-discovers agents and workflows in the `entities` directory, providing an interactive interface for testing individual components (`nl2sql_controller`, `orchestrator`, `parameter_extractor`) or the full `workflow`.
 
 ### Telemetry
 
-The application supports OpenTelemetry for observability. Add these environment variables to your `api/.env` file:
+The application supports OpenTelemetry for observability. Add these environment variables to your `backend/.env` file:
 
 ```env
 # Enable OpenTelemetry instrumentation
@@ -214,7 +214,7 @@ ENABLE_SENSITIVE_DATA=true
 Install the required telemetry packages:
 
 ```bash
-cd api
+cd backend
 uv pip install -e ".[observability]"
 ```
 
@@ -223,7 +223,7 @@ uv pip install -e ".[observability]"
 The frontend and API are automatically deployed via GitHub Actions when changes are pushed to the `main` branch:
 
 - **Frontend**: Changes to the `frontend/` folder trigger deployment to Azure Static Website (blob storage)
-- **API**: Changes to the `api/` folder trigger a Docker image build, push to Azure Container Registry, and deployment to Azure Container Apps
+- **API**: Changes to the `backend/` folder trigger a Docker image build, push to Azure Container Registry, and deployment to Azure Container Apps
 
 ### Prerequisites
 
@@ -327,10 +327,10 @@ az storage blob upload-batch \
 
 #### Build the Container Image for local testing (optional)
 
-From the `api/` directory, build the Docker image:
+From the `backend/` directory, build the Docker image:
 
 ```bash
-cd api
+cd backend
 
 # Build the image
 docker build -t dataagent-api .
@@ -362,7 +362,7 @@ terraform output container_registry_login_server
 2. **Build and push using ACR Build:**
 
 ```bash
-cd api
+cd backend
 
 # Build in Azure and push to ACR (replace <acr_name> with your registry name)
 az acr build --registry <acr_name> --image dataagent-api:latest --platform linux/amd64 .
@@ -372,7 +372,7 @@ az acr build --registry <acr_name> --image dataagent-api:latest --platform linux
 
 ```bash
 # Full example with actual registry name
-cd api
+cd backend
 az acr build --registry ay2q3pacr --image dataagent-api:latest --platform linux/amd64 .
 ```
 

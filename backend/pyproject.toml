@@ -30,7 +30,7 @@ dev = [
 
 [tool.pyright]
 pythonVersion = "3.12.3"
-include = ["src"]
+include = ["api", "entities", "models"]
 extraPaths = ["."]
 
 [tool.pylint.MASTER]

@@ -10,15 +10,15 @@ import logging
 import os
 from typing import Any
 
-from agent_framework import ai_function
+from agent_framework import tool
 
 # Support both DevUI and FastAPI import patterns
 try:
     from shared.search_client import AzureSearchClient  # type: ignore[import-not-found]
     from models import QueryTemplate, ParameterDefinition  # type: ignore[import-not-found]
 except ImportError:
-    from src.entities.shared.search_client import AzureSearchClient
-    from src.models import QueryTemplate, ParameterDefinition
+    from entities.shared.search_client import AzureSearchClient
+    from models import QueryTemplate, ParameterDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +27,10 @@ logger = logging.getLogger(__name__)
 # Good semantic matches typically score 0.80+, weak matches below 0.70
 DEFAULT_CONFIDENCE_THRESHOLD = float(os.getenv("QUERY_TEMPLATE_CONFIDENCE_THRESHOLD", "0.80"))
 
-# Minimum normalized score margin between top results to consider match unambiguous
-# Scores are normalized: normalized = score / top_score
-# If (1 - second_normalized) < this threshold, results are too similar (ambiguous)
-DEFAULT_AMBIGUITY_GAP_THRESHOLD = float(os.getenv("QUERY_TEMPLATE_AMBIGUITY_GAP", "0.05"))
+# Minimum absolute cosine-similarity gap between the 1st and 2nd results
+# to consider the match unambiguous. Unlike normalized margins, this uses
+# the raw score difference which is more meaningful with cosine similarity.
+DEFAULT_AMBIGUITY_GAP_THRESHOLD = float(os.getenv("QUERY_TEMPLATE_AMBIGUITY_GAP", "0.03"))
 
 
 def _parse_parameters(params_json: str | list | None) -> list[ParameterDefinition]:
@@ -96,7 +96,7 @@ def _hydrate_query_template(raw_result: dict[str, Any]) -> QueryTemplate:
     )
 
 
-@ai_function
+@tool
 async def search_query_templates(user_question: str) -> dict[str, Any]:
     """
     Search for query templates that match the user's question intent.
@@ -108,10 +108,10 @@ async def search_query_templates(user_question: str) -> dict[str, Any]:
     Vector search provides cosine similarity scores (0.0 to 1.0) which are
     more interpretable than hybrid RRF scores for confidence thresholding.
 
-    Ambiguity detection uses normalized scores:
-    - normalized = score / top_score
-    - If top results have similar normalized scores (margin < threshold): ambiguous
-    - If single dominant match (margin >= threshold): proceed to extraction
+    Ambiguity detection uses the absolute cosine-similarity gap:
+    - gap = top_score - second_score
+    - If gap < threshold: results are too similar (ambiguous)
+    - If gap >= threshold: single dominant match, proceed to extraction
 
     Unlike cached queries (which are exact SQL), templates contain tokens
     like %{{parameter_name}}% that need to be substituted with actual values.
@@ -126,7 +126,7 @@ async def search_query_templates(user_question: str) -> dict[str, Any]:
         - best_match: The best matching QueryTemplate object (if confidence is high and unambiguous)
         - confidence_score: The cosine similarity score of the best match (0.0 to 1.0)
         - confidence_threshold: The threshold used for this template
-        - ambiguity_gap: The normalized score margin between 1st and 2nd results
+        - ambiguity_gap: The absolute score gap between 1st and 2nd results
         - ambiguity_gap_threshold: The minimum margin required for unambiguous match
         - all_matches: All matching templates with their scores
         - message: Status message explaining the result
@@ -137,7 +137,7 @@ async def search_query_templates(user_question: str) -> dict[str, Any]:
     step_name = "Understanding intent"
     emit_step_end_fn = None
     try:
-        from src.api.step_events import emit_step_start, emit_step_end
+        from api.step_events import emit_step_start, emit_step_end
         emit_step_start(step_name)
         emit_step_end_fn = emit_step_end
     except ImportError:
@@ -191,24 +191,23 @@ async def search_query_templates(user_question: str) -> dict[str, Any]:
         top_score = best_template.score
         has_high_confidence = top_score >= threshold
 
-        # Calculate ambiguity using normalized scores
-        # normalized = score / top_score (so top result always has normalized = 1.0)
-        # margin = 1.0 - second_normalized (how much lower the second result is)
-        normalized_margin = 1.0  # Default: no second result means fully unambiguous
+        # Calculate ambiguity using absolute cosine-similarity gap
+        # Cosine similarity scores are well-distributed (0.0–1.0), so the raw
+        # difference between the top two scores is a reliable ambiguity signal.
+        score_gap = top_score  # Default: no second result means fully unambiguous
         is_ambiguous = False
-        
-        if len(hydrated_templates) >= 2 and top_score > 0:
+
+        if len(hydrated_templates) >= 2:
             second_score = hydrated_templates[1].score
-            second_normalized = second_score / top_score
-            normalized_margin = 1.0 - second_normalized
-            
+            score_gap = top_score - second_score
+
             # Match is ambiguous if:
             # 1. Top result meets confidence threshold
-            # 2. The normalized margin is smaller than the ambiguity gap threshold
-            #    (meaning second result is too close to the first)
+            # 2. The absolute gap is smaller than the ambiguity gap threshold
+            #    (meaning second result's score is too close to the first)
             if has_high_confidence:
-                is_ambiguous = normalized_margin < DEFAULT_AMBIGUITY_GAP_THRESHOLD
-        
+                is_ambiguous = score_gap < DEFAULT_AMBIGUITY_GAP_THRESHOLD
+
         # A match is only considered valid if it's both high confidence AND unambiguous
         is_valid_match = has_high_confidence and not is_ambiguous
 
@@ -217,23 +216,21 @@ async def search_query_templates(user_question: str) -> dict[str, Any]:
             message = f"No high confidence match (score {best_template.score:.3f} < threshold {threshold:.3f})"
         elif is_ambiguous:
             second_template = hydrated_templates[1]
-            second_normalized = second_template.score / top_score if top_score > 0 else 0
             message = (
                 f"Ambiguous match: '{best_template.intent}' (score={best_template.score:.3f}) "
-                f"and '{second_template.intent}' (score={second_template.score:.3f}, "
-                f"normalized={second_normalized:.3f}) are too similar "
-                f"(margin {normalized_margin:.3f} < {DEFAULT_AMBIGUITY_GAP_THRESHOLD:.3f})"
+                f"and '{second_template.intent}' (score={second_template.score:.3f}) "
+                f"are too similar (gap {score_gap:.3f} < {DEFAULT_AMBIGUITY_GAP_THRESHOLD:.3f})"
             )
         else:
             message = f"High confidence unambiguous match: '{best_template.intent}'"
 
         logger.info(
-            "Template search: %d results. Best: '%s' score=%.3f (threshold: %.3f, margin: %.3f, ambiguous: %s, valid: %s)",
+            "Template search: %d results. Best: '%s' score=%.3f (threshold: %.3f, gap: %.3f, ambiguous: %s, valid: %s)",
             len(results),
             best_template.intent,
             best_template.score,
             threshold,
-            normalized_margin,
+            score_gap,
             is_ambiguous,
             is_valid_match
         )
@@ -245,7 +242,7 @@ async def search_query_templates(user_question: str) -> dict[str, Any]:
             "best_match": best_template.model_dump() if is_valid_match else None,
             "confidence_score": best_template.score,
             "confidence_threshold": threshold,
-            "ambiguity_gap": normalized_margin,
+            "ambiguity_gap": score_gap,
             "ambiguity_gap_threshold": DEFAULT_AMBIGUITY_GAP_THRESHOLD,
             "all_matches": [t.model_dump() for t in hydrated_templates],
             "message": message

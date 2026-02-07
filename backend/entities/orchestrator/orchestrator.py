@@ -18,7 +18,7 @@ from agent_framework_azure_ai import AzureAIClient
 try:
     from models import NL2SQLRequest, NL2SQLResponse  # type: ignore[import-not-found]
 except ImportError:
-    from src.models import NL2SQLRequest, NL2SQLResponse
+    from models import NL2SQLRequest, NL2SQLResponse
 
 logger = logging.getLogger(__name__)
 

@@ -9,13 +9,13 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from src.api.models import (
+from api.models import (
     ThreadData,
     UpdateThreadRequest,
     MessageData,
     MessagesResponse,
 )
-from src.api.dependencies import (
+from api.dependencies import (
     get_project_client,
     verify_thread_ownership,
     get_thread_title,

@@ -13,13 +13,13 @@ Each subdirectory represents a discoverable entity:
 Shared models are available at the package level.
 
 Usage with DevUI:
-    devui ./src/entities
+    devui ./entities
 """
 
-# Support both DevUI (entities on path) and FastAPI (src on path) import patterns
+# Support both DevUI (entities on path) and FastAPI (backend on path) import patterns
 try:
     from models import NL2SQLResponse
 except ImportError:
-    from src.models import NL2SQLResponse
+    from models import NL2SQLResponse
 
 __all__ = ["NL2SQLResponse"]

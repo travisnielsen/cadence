@@ -18,9 +18,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.middleware import azure_scheme, azure_ad_settings, AzureADAuthMiddleware
-from src.api.monitoring import configure_observability, is_observability_enabled
-from src.api.routers import chat_router, threads_router
+from api.middleware import azure_scheme, azure_ad_settings, AzureADAuthMiddleware
+from api.monitoring import configure_observability, is_observability_enabled
+from api.routers import chat_router, threads_router
 
 
 load_dotenv()
@@ -117,4 +117,4 @@ async def health_check():
 
 
 if __name__ == "__main__":
-    uvicorn.run("src.api.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True)

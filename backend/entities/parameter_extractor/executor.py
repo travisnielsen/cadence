@@ -28,7 +28,7 @@ from agent_framework_azure_ai import AzureAIClient
 # Type alias for V2 client
 AzureAIAgentClient = AzureAIClient
 
-# Support both DevUI (entities on path) and FastAPI (src on path) import patterns
+# Support both DevUI (entities on path) and FastAPI (backend on path) import patterns
 try:
     from models import (  # type: ignore[import-not-found]
         QueryTemplate,
@@ -39,7 +39,7 @@ try:
         ExtractionRequestMessage,
     )
 except ImportError:
-    from src.models import (
+    from models import (
         QueryTemplate,
         ParameterExtractionRequest,
         SQLDraft,
@@ -58,7 +58,7 @@ def get_request_user_id() -> str | None:
     This is a lazy import wrapper to avoid circular imports.
     """
     try:
-        from src.api.step_events import get_request_user_id as _get_request_user_id
+        from api.step_events import get_request_user_id as _get_request_user_id
         return _get_request_user_id()
     except ImportError:
         return None
@@ -425,7 +425,7 @@ class ParameterExtractorExecutor(Executor):
         step_name = "Extracting parameters"
         emit_step_end_fn = None
         try:
-            from src.api.step_events import emit_step_start, emit_step_end
+            from api.step_events import emit_step_start, emit_step_end
             emit_step_start(step_name)
             emit_step_end_fn = emit_step_end
         except ImportError:

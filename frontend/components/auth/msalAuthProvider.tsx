@@ -3,16 +3,20 @@
 import { MsalProvider } from "@azure/msal-react";
 import { PublicClientApplication, EventType, EventMessage, AuthenticationResult } from "@azure/msal-browser";
 import { msalConfig, loginRequest } from "@/lib/msalConfig";
-import { useEffect, useState } from "react";
-
-// Create the MSAL instance outside the component to avoid re-initialization
-const msalInstance = new PublicClientApplication(msalConfig);
+import { useEffect, useState, useRef } from "react";
 
 export function MsalAuthProvider({ children }: { children: React.ReactNode }) {
   const [isInitialized, setIsInitialized] = useState(false);
+  const msalInstanceRef = useRef<PublicClientApplication | null>(null);
 
   useEffect(() => {
     const initializeMsal = async () => {
+      // Create instance lazily on the client to avoid SSR "window is not defined" errors
+      if (!msalInstanceRef.current) {
+        msalInstanceRef.current = new PublicClientApplication(msalConfig);
+      }
+      const msalInstance = msalInstanceRef.current;
+
       await msalInstance.initialize();
       
       // Handle redirect response
@@ -42,12 +46,12 @@ export function MsalAuthProvider({ children }: { children: React.ReactNode }) {
     initializeMsal();
   }, []);
 
-  if (!isInitialized) {
+  if (!isInitialized || !msalInstanceRef.current) {
     return null; // Or a loading spinner
   }
 
   return (
-    <MsalProvider instance={msalInstance}>
+    <MsalProvider instance={msalInstanceRef.current}>
       {children}
     </MsalProvider>
   );

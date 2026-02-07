@@ -8,7 +8,7 @@ The ConversationOrchestrator:
 4. Handles conversational refinements with context
 
 Usage:
-    from src.entities.orchestrator import ConversationOrchestrator
+    from entities.orchestrator import ConversationOrchestrator
     
     orchestrator = ConversationOrchestrator(chat_client, thread_id)
     response = await orchestrator.process_message(user_message)

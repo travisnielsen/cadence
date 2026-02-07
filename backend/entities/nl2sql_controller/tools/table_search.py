@@ -9,15 +9,15 @@ import logging
 import os
 from typing import Any
 
-from agent_framework import ai_function
+from agent_framework import tool
 
 # Support both DevUI and FastAPI import patterns
 try:
     from shared.search_client import AzureSearchClient  # type: ignore[import-not-found]
     from models import TableMetadata, TableColumn  # type: ignore[import-not-found]
 except ImportError:
-    from src.entities.shared.search_client import AzureSearchClient
-    from src.models import TableMetadata, TableColumn
+    from entities.shared.search_client import AzureSearchClient
+    from models import TableMetadata, TableColumn
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ def _hydrate_table_metadata(raw_result: dict[str, Any]) -> TableMetadata:
     )
 
 
-@ai_function
+@tool
 async def search_tables(user_question: str) -> dict[str, Any]:
     """
     Search for relevant database tables based on the user's question.
@@ -81,7 +81,7 @@ async def search_tables(user_question: str) -> dict[str, Any]:
     step_name = "Finding relevant tables"
     emit_step_end_fn = None
     try:
-        from src.api.step_events import emit_step_start, emit_step_end
+        from api.step_events import emit_step_start, emit_step_end
         emit_step_start(step_name)
         emit_step_end_fn = emit_step_end
     except ImportError:

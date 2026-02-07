@@ -7,14 +7,14 @@ Provides an AI-callable function for executing read-only SQL queries.
 import logging
 from typing import Any
 
-from agent_framework import ai_function
+from agent_framework import tool
 
-from src.entities.shared import AzureSqlClient
+from entities.shared import AzureSqlClient
 
 logger = logging.getLogger(__name__)
 
 
-@ai_function
+@tool
 async def execute_sql(query: str) -> dict[str, Any]:
     """
     Execute a read-only SQL SELECT query against the Wide World Importers database.
@@ -37,7 +37,7 @@ async def execute_sql(query: str) -> dict[str, Any]:
     step_name = "Executing SQL query..."
     emit_step_end_fn = None
     try:
-        from src.api.step_events import emit_step_start, emit_step_end
+        from api.step_events import emit_step_start, emit_step_end
         emit_step_start(step_name)
         emit_step_end_fn = emit_step_end
     except ImportError:

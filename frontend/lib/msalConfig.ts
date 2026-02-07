@@ -19,7 +19,6 @@ export const msalConfig: Configuration = {
   },
   cache: {
     cacheLocation: "localStorage", // Use localStorage for persistence across tabs/sessions
-    storeAuthStateInCookie: false,
   },
   system: {
     loggerOptions: {

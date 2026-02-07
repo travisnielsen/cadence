@@ -10,6 +10,6 @@ Contains:
 - util/: Utility modules (search client)
 """
 
-from src.api.main import app
+from api.main import app
 
 __all__ = ["app"]

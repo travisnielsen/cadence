@@ -33,7 +33,7 @@ from agent_framework import WorkflowBuilder
 from agent_framework_azure_ai import AzureAIClient
 from azure.identity.aio import DefaultAzureCredential
 
-# Support both DevUI (entities on path) and FastAPI (src on path) import patterns
+# Support both DevUI (entities on path) and FastAPI (backend on path) import patterns
 try:
     from nl2sql_controller.executor import NL2SQLController  # type: ignore[import-not-found]
     from parameter_extractor.executor import ParameterExtractorExecutor  # type: ignore[import-not-found]
@@ -41,11 +41,11 @@ try:
     from query_builder.executor import QueryBuilderExecutor  # type: ignore[import-not-found]
     from query_validator.executor import QueryValidatorExecutor  # type: ignore[import-not-found]
 except ImportError:
-    from src.entities.nl2sql_controller.executor import NL2SQLController
-    from src.entities.parameter_extractor.executor import ParameterExtractorExecutor
-    from src.entities.parameter_validator.executor import ParameterValidatorExecutor
-    from src.entities.query_builder.executor import QueryBuilderExecutor
-    from src.entities.query_validator.executor import QueryValidatorExecutor
+    from entities.nl2sql_controller.executor import NL2SQLController
+    from entities.parameter_extractor.executor import ParameterExtractorExecutor
+    from entities.parameter_validator.executor import ParameterValidatorExecutor
+    from entities.query_builder.executor import QueryBuilderExecutor
+    from entities.query_validator.executor import QueryValidatorExecutor
 
 logger = logging.getLogger(__name__)
 

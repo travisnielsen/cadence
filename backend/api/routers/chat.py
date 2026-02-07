@@ -30,9 +30,9 @@ from agent_framework import (
 if TYPE_CHECKING:
     from agent_framework import Workflow
 
-from src.api.dependencies import get_optional_user_id
-from src.api.step_events import set_step_queue, clear_step_queue, set_request_user_id
-from src.api.workflow_cache import store_paused_workflow, get_paused_workflow
+from api.dependencies import get_optional_user_id
+from api.step_events import set_step_queue, clear_step_queue, set_request_user_id
+from api.workflow_cache import store_paused_workflow, get_paused_workflow
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,7 @@ async def generate_clarification_response_stream(
                         response_data = output_data
                     
                     # Import NL2SQLResponse
-                    from src.models import NL2SQLResponse
+                    from models import NL2SQLResponse
                     
                     # Check if this looks like an NL2SQLResponse (has sql_query field)
                     if "sql_query" in response_data or "sql_response" in response_data:
@@ -179,7 +179,7 @@ async def generate_clarification_response_stream(
                 try:
                     from models import ClarificationRequest  # type: ignore[import-not-found]
                 except ImportError:
-                    from src.models import ClarificationRequest
+                    from models import ClarificationRequest
                 
                 if event.data is not None and isinstance(event.data, ClarificationRequest):
                     # Store the paused workflow for the follow-up clarification
@@ -237,9 +237,9 @@ async def generate_orchestrator_streaming_response(
     Supports conversational refinements like "show me for 90 days".
     """
     del title  # TODO: Use for thread metadata in orchestrator
-    from src.entities.orchestrator import ConversationOrchestrator
-    from src.entities.workflow import create_nl2sql_workflow
-    from src.api.session_manager import get_orchestrator, store_orchestrator
+    from entities.orchestrator import ConversationOrchestrator
+    from entities.workflow import create_nl2sql_workflow
+    from api.session_manager import get_orchestrator, store_orchestrator
     from agent_framework_azure_ai import AzureAIClient
     from azure.identity.aio import DefaultAzureCredential
     import os
@@ -353,7 +353,7 @@ async def generate_orchestrator_streaming_response(
                     logger.info("Received WorkflowOutputEvent with data type: %s", type(event.data).__name__)
                     try:
                         # Parse the NL2SQL response
-                        from src.models import NL2SQLResponse
+                        from models import NL2SQLResponse
                         
                         # The output comes from event.data (can be str or dict)
                         output_data = event.data
@@ -416,7 +416,7 @@ async def generate_orchestrator_streaming_response(
                     try:
                         from models import ClarificationRequest  # type: ignore[import-not-found]
                     except ImportError:
-                        from src.models import ClarificationRequest
+                        from models import ClarificationRequest
                     
                     if isinstance(event.data, ClarificationRequest):
                         # Store the paused workflow for later resumption

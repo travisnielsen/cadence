@@ -9,7 +9,7 @@ The controller:
 3. Returns structured results
 
 Usage with DevUI:
-    devui ./src/entities/nl2sql_controller
+    devui ./entities/nl2sql_controller
 """
 
 from .agent import agent, load_prompt

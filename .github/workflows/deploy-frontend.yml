@@ -44,14 +44,14 @@ jobs:
         run: npm run build
 
       - name: Login to Azure
-        uses: azure/login@v2
+        uses: azure/login@v2.3.0
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Add runner IP to storage firewall
-        uses: azure/cli@v2
+        uses: azure/cli@v2.2.0
         with:
           inlineScript: |
             RUNNER_IP=$(curl -s https://api.ipify.org)
@@ -64,7 +64,7 @@ jobs:
             sleep 30
 
       - name: Deploy to Azure Static Website
-        uses: azure/cli@v2
+        uses: azure/cli@v2.2.0
         with:
           inlineScript: |
             az storage blob upload-batch \
@@ -76,7 +76,7 @@ jobs:
 
       - name: Remove runner IP from storage firewall
         if: always()
-        uses: azure/cli@v2
+        uses: azure/cli@v2.2.0
         with:
           inlineScript: |
             RUNNER_IP=$(curl -s https://api.ipify.org)

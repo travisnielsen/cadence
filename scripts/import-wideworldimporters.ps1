@@ -7,6 +7,9 @@
     release and imports it to Azure SQL Database using sqlpackage with Entra ID
     authentication.
 
+    The script automatically checks for and installs required dependencies
+    (sqlpackage, .NET 8 runtime) if they are missing.
+
 .PARAMETER SqlServerName
     The name of the Azure SQL Server (without .database.windows.net suffix)
 
@@ -22,8 +25,8 @@
 .NOTES
     Prerequisites:
     - Azure CLI (az) - logged in with appropriate permissions
-    - sqlpackage - Install via: dotnet tool install -g microsoft.sqlpackage
-                   Or download from: https://aka.ms/sqlpackage-windows
+    - .NET 8 runtime (auto-installed on Linux if missing)
+    - sqlpackage (auto-installed via dotnet tool if missing)
 #>
 
 param(
@@ -64,7 +67,7 @@ catch {
     exit 1
 }
 
-# Check sqlpackage
+# Check sqlpackage and its dependencies
 $sqlpackagePath = $null
 try {
     $sqlpackagePath = (Get-Command sqlpackage -ErrorAction Stop).Source
@@ -72,6 +75,7 @@ try {
 catch {
     # Try common installation paths
     $possiblePaths = @(
+        "$env:HOME/.dotnet/tools/sqlpackage",
         "$env:USERPROFILE\.dotnet\tools\sqlpackage.exe",
         "C:\Program Files\Microsoft SQL Server\160\DAC\bin\sqlpackage.exe",
         "C:\Program Files\Microsoft SQL Server\150\DAC\bin\sqlpackage.exe",
@@ -79,7 +83,7 @@ catch {
     )
     
     foreach ($path in $possiblePaths) {
-        if (Test-Path $path) {
+        if ($path -and (Test-Path $path)) {
             $sqlpackagePath = $path
             break
         }
@@ -87,16 +91,59 @@ catch {
 }
 
 if (-not $sqlpackagePath) {
-    Write-Host "ERROR: sqlpackage is not installed or not in PATH." -ForegroundColor Red
-    Write-Host ""
-    Write-Host "Install options:" -ForegroundColor Yellow
-    Write-Host "  1. dotnet tool install -g microsoft.sqlpackage"
-    Write-Host "  2. Download from: https://aka.ms/sqlpackage-windows"
-    Write-Host ""
-    exit 1
+    Write-Host "  sqlpackage not found. Installing via dotnet tool..." -ForegroundColor Yellow
+    
+    # Check if dotnet CLI is available
+    try {
+        $null = Get-Command dotnet -ErrorAction Stop
+    }
+    catch {
+        Write-Host "ERROR: .NET SDK/CLI is not installed." -ForegroundColor Red
+        if ($IsLinux) {
+            Write-Host "Install with: sudo apt-get install -y dotnet-sdk-8.0" -ForegroundColor Yellow
+        } else {
+            Write-Host "Install from: https://dotnet.microsoft.com/download" -ForegroundColor Yellow
+        }
+        exit 1
+    }
+    
+    dotnet tool install -g microsoft.sqlpackage
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: Failed to install sqlpackage." -ForegroundColor Red
+        exit 1
+    }
+    
+    # Add dotnet tools to PATH for this session
+    $toolsDir = if ($IsLinux -or $IsMacOS) { "$env:HOME/.dotnet/tools" } else { "$env:USERPROFILE\.dotnet\tools" }
+    if ($toolsDir -and ($env:PATH -notlike "*$toolsDir*")) {
+        $env:PATH = "$toolsDir$([System.IO.Path]::PathSeparator)$env:PATH"
+    }
+    
+    $sqlpackagePath = (Get-Command sqlpackage -ErrorAction Stop).Source
 }
 
 Write-Host "  sqlpackage found: $sqlpackagePath" -ForegroundColor Green
+
+# Verify .NET 8 runtime is available (required by sqlpackage)
+if ($IsLinux -or $IsMacOS) {
+    $dotnetRuntimes = dotnet --list-runtimes 2>$null
+    if ($dotnetRuntimes -and ($dotnetRuntimes -notmatch "Microsoft\.NETCore\.App 8\.")) {
+        Write-Host "  .NET 8 runtime not found. sqlpackage requires it." -ForegroundColor Yellow
+        if ($IsLinux) {
+            Write-Host "  Installing dotnet-runtime-8.0..." -ForegroundColor Yellow
+            sudo apt-get update -qq && sudo apt-get install -y -qq dotnet-runtime-8.0
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "ERROR: Failed to install .NET 8 runtime." -ForegroundColor Red
+                Write-Host "Install manually: sudo apt-get install -y dotnet-runtime-8.0" -ForegroundColor Yellow
+                exit 1
+            }
+            Write-Host "  .NET 8 runtime installed." -ForegroundColor Green
+        } else {
+            Write-Host "ERROR: Install .NET 8 runtime from https://dotnet.microsoft.com/download/dotnet/8.0" -ForegroundColor Red
+            exit 1
+        }
+    }
+}
 
 # Verify Azure login
 Write-Host "Verifying Azure CLI login..." -ForegroundColor Yellow

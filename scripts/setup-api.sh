@@ -11,7 +11,7 @@ echo "Activating virtual environment..."
 source .venv/bin/activate
 
 echo "Installing dependencies..."
-pip install -e ".[dev]"
+pip install --pre -e ".[dev]"
 
 echo ""
 echo "Setup complete!"

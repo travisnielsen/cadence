@@ -12,6 +12,7 @@ This guide covers Azure infrastructure deployment, local development setup, and 
   - pnpm (recommended), npm, yarn, or bun
   - Azure CLI (`az`)
   - Terraform
+  - .NET 8 runtime (for `sqlpackage` — auto-installed by import script on Linux)
 
 ## Azure Infrastructure
 
@@ -79,6 +80,29 @@ terraform plan
 terraform apply
 ```
 
+### SQL Database Import
+
+After deploying infrastructure, import the Wide World Importers sample data into Azure SQL. The import script automatically installs required dependencies (`sqlpackage`, `.NET 8 runtime`) if they are missing.
+
+```powershell
+cd scripts
+
+# Get the SQL server name and resource group from Terraform
+$SqlServer = (cd ../infra/public-networking && terraform output -raw sql_server_name)
+$RG = (cd ../infra/public-networking && terraform output -raw resource_group_name)
+
+# Import sample data (5-10 minutes)
+./import-wideworldimporters.ps1 -SqlServerName $SqlServer -ResourceGroup $RG
+```
+
+Or with explicit values:
+
+```powershell
+./import-wideworldimporters.ps1 -SqlServerName "ay2q3p-sql" -ResourceGroup "cadence-ay2q3p"
+```
+
+> **Note:** Requires `az login` with a user that has SQL Server admin permissions. On Linux, the script may prompt for `sudo` to install the .NET 8 runtime if not present.
+
 ### SQL Database User Setup
 
 After deploying the infrastructure, create a contained database user in SQL Server to allow the API's managed identity to authenticate. This is a one-time setup step.
@@ -89,8 +113,8 @@ Run the setup script (PowerShell):
 cd scripts
 
 # Get the values from Terraform state
-$SqlServer = (cd ../infra/public-networking && terraform state show module.sql_server.azurerm_mssql_server.this | Select-String '^\s*name\s*=' | ForEach-Object { $_ -replace '.*"(.+)".*', '$1' })
-$IdentityName = (cd ../infra/public-networking && terraform state show azurerm_user_assigned_identity.api_identity | Select-String '^\s*name\s*=' | ForEach-Object { $_ -replace '.*"(.+)".*', '$1' })
+$SqlServer = (cd infra/public-networking && terraform state show module.sql_server.azurerm_mssql_server.this | Select-String '^\s*name\s*=' | ForEach-Object { $_ -replace '.*"(.+)".*', '$1' })
+$IdentityName = (cd infra/public-networking && terraform state show azurerm_user_assigned_identity.api_identity | Select-String '^\s*name\s*=' | ForEach-Object { $_ -replace '.*"(.+)".*', '$1' })
 
 # Run the PowerShell script
 ./setup-sql-user.ps1 -SqlServerName $SqlServer -DatabaseName "WideWorldImportersStd" -IdentityName $IdentityName
@@ -227,52 +251,13 @@ The frontend and API are automatically deployed via GitHub Actions when changes 
 
 ### Prerequisites
 
-To enable continueous deployment, use the following script template to create the Azure AD App Registration and grant deployment permissions:
+To enable continueous deployment, run [setup-github-actions.ps1](/scripts/setup-github-actions.ps1) to configure an Entra ID App Registration with federated credentials with GitHub and grant deployment permissions to the resource group.
 
-```bash
-# Create app registration
-az ad app create --display-name "github-actions-cadence"
-
-# Get the app ID
-APP_ID=$(az ad app list --display-name "github-actions-cadence" --query "[0].appId" -o tsv)
-
-# Create service principal
-az ad sp create --id $APP_ID
-
-# Create federated credential for GitHub Actions
-az ad app federated-credential create \
-  --id $APP_ID \
-  --parameters '{
-    "name": "github-main-branch",
-    "issuer": "https://token.actions.githubusercontent.com",
-    "subject": "repo:travisnielsen/cadence:ref:refs/heads/main",
-    "audiences": ["api://AzureADTokenExchange"]
-  }'
-
-# Grant Storage Blob Data Contributor role to the storage account
-az role assignment create \
-  --assignee $APP_ID \
-  --role "Storage Blob Data Contributor" \
-  --scope "/subscriptions/<SUB_ID>/resourceGroups/<RG>/providers/Microsoft.Storage/storageAccounts/<STORAGE_ACCOUNT>"
-
-# Grant Storage Account Contributor role (required to modify network rules during deployment)
-az role assignment create \
-  --assignee $APP_ID \
-  --role "Storage Account Contributor" \
-  --scope "/subscriptions/<SUB_ID>/resourceGroups/<RG>/providers/Microsoft.Storage/storageAccounts/<STORAGE_ACCOUNT>"
-
-# Grant Azure Container Registry Push permission (to push images)
-az role assignment create \
-  --assignee $APP_ID \
-  --role "AcrPush" \
-  --scope $ACR_ID
-
-# Grant Container Apps Contributor permission (resource group level)
-az role assignment create \
-  --assignee $APP_ID \
-  --role "Contributor" \
-  --scope "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<RG_NAME>"
+```powershell
+./setup-github-actions.ps1
 ```
+
+Document the App ID provided at the end of the script. You will need to set this value in the GitHub Actions variable: `AZURE_CLIENT_ID`.
 
 Next, navigate to your repository's **Settings → Secrets and variables → Actions → Variables** and add the following:
 

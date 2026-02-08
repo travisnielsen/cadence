@@ -64,29 +64,6 @@ module "container_registry" {
 
 
 #################################################################################
-# Key Vault for AI Foundry
-#################################################################################
-
-module "ai_keyvault" {
-  source  = "Azure/avm-res-keyvault-vault/azurerm"
-  name                              = "${local.identifier}-kv"
-  resource_group_name               = azurerm_resource_group.shared_rg.name
-  location                          = var.region_aifoundry
-  tenant_id                         = data.azurerm_client_config.current.tenant_id
-  sku_name                          = "standard"
-  public_network_access_enabled     = true
-  tags                              = local.tags
-
-  diagnostic_settings = {
-    to_law = {
-      name                  = "to-law"
-      workspace_resource_id = module.log_analytics.resource_id
-    }
-  }
-}
-
-
-#################################################################################
 # Storage Account for Microsoft Foundry blob uploads and NL2SQL data
 #################################################################################
 
@@ -239,8 +216,8 @@ module "ai_search" {
   source  = "Azure/avm-res-search-searchservice/azurerm"
   name                          = "${local.identifier}"
   resource_group_name           = azurerm_resource_group.shared_rg.name
-  location                      = var.region_aifoundry
-  sku                           = "standard"
+  location                      = var.region_search
+  sku                           = "basic"
   public_network_access_enabled = true
   local_authentication_enabled  = true
   # Enable both API key and AAD authentication
@@ -306,9 +283,6 @@ module "ai_foundry" {
       cosmos_db_connection = {
         existing_resource_id = module.ai_cosmosdb.resource_id
       }
-      key_vault_connection = {
-        existing_resource_id = module.ai_keyvault.resource_id
-      }
       storage_account_connection = {
         existing_resource_id = module.ai_storage.resource_id
       }
@@ -322,7 +296,6 @@ module "ai_foundry" {
   # with Azure AI Services API (see azapi_resource.ai_model_deployment_* resources)
 
   depends_on = [
-    module.ai_keyvault,
     module.ai_storage,
     module.ai_cosmosdb
   ]
@@ -1058,7 +1031,7 @@ resource "azurerm_container_app" "api" {
 
     container {
       name   = "api"
-      image  = "${module.container_registry.resource.login_server}/cadence-api:latest"
+      image  = "mcr.microsoft.com/k8se/quickstart:latest"  # Placeholder; GitHub Actions deploys the real image
       cpu    = 1.0
       memory = "2Gi"
 
@@ -1144,6 +1117,13 @@ resource "azurerm_container_app" "api" {
         value = "gpt-4.1-mini"
       }
     }
+  }
+
+  # Ignore image changes — the actual container image is deployed via GitHub Actions
+  lifecycle {
+    ignore_changes = [
+      template[0].container[0].image
+    ]
   }
 
   depends_on = [

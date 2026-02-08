@@ -5,8 +5,8 @@ description = "FastAPI server with Microsoft Agent Framework with support for Mi
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "agent-framework>=1.0.0b251223",
-    "agent-framework-devui>=1.0.0b251223",
+    "agent-framework>=1.0.0b0",
+    "agent-framework-devui>=1.0.0b0",
     "aioodbc>=0.5.0",
     "azure-identity>=1.15.0",
     "azure-search-documents>=11.5.0",
@@ -35,3 +35,6 @@ extraPaths = ["."]
 
 [tool.pylint.MASTER]
 # No special path hooks needed - src is a proper package
+
+[tool.uv]
+prerelease = "allow"

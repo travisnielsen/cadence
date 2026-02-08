@@ -111,7 +111,9 @@ async def generate_clarification_response_stream(
                     from models import NL2SQLResponse
 
                     # Check if this looks like an NL2SQLResponse (has sql_query field)
-                    if "sql_query" in response_data or "sql_response" in response_data:
+                    if isinstance(response_data, dict) and (
+                        "sql_query" in response_data or "sql_response" in response_data
+                    ):
                         response = NL2SQLResponse.model_validate(response_data)
                         logger.info("Parsed NL2SQLResponse: rows=%d", response.row_count)
 
@@ -143,7 +145,7 @@ async def generate_clarification_response_stream(
                         output_received = True
 
                         yield f"data: {json.dumps({'steps_complete': True, 'done': False})}\n\n"
-                    else:
+                    elif isinstance(response_data, dict):
                         # Legacy format: look for text/tool_call
                         output_text = response_data.get("text", "")
                         foundry_thread_id = response_data.get("thread_id") or foundry_thread_id

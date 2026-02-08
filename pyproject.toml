@@ -225,6 +225,7 @@ convention = "google"
 pythonVersion = "3.11"
 typeCheckingMode = "standard"
 include = ["src/backend"]
+extraPaths = ["src/backend"]
 exclude = [
     "**/__pycache__",
     "**/node_modules",

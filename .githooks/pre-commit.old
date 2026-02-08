@@ -57,8 +57,4 @@ else
     }
 fi
 
-if command -v bd &> /dev/null && [ -d ".beads" ]; then
-    bd hooks run pre-commit 2>/dev/null || true
-fi
-
 echo -e "${GREEN}Pre-commit checks passed!${NC}"

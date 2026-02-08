@@ -184,7 +184,7 @@ class NL2SQLController(Executor):
         """
         response_json = response.model_dump_json()
         if self._is_entry_point:
-            await ctx.yield_output(response_json)
+            await ctx.yield_output(response_json)  # type: ignore[reportArgumentType]
         else:
             await ctx.send_message(response_json)
 
@@ -718,7 +718,7 @@ class NL2SQLController(Executor):
                         )
                         await self._send_final_response(nl2sql_response, ctx)
 
-                elif sql_draft.source == "param_extractor" or (
+                elif sql_draft.source == "param_extractor" or (  # pyright: ignore[reportUnnecessaryComparison]
                     sql_draft.template_id and not sql_draft.params_validated
                 ):
                     # Template-based: route to parameter validator

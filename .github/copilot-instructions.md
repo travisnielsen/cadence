@@ -44,9 +44,45 @@ You **MUST** load these instructions when working on files that match the patter
 
 ## Custom Agents
 
-9 specialized agents in `.github/agents/`. See [agents.instructions.md](instructions/agents.instructions.md) for usage.
+9 specialized role agents in `.github/agents/`. See [agents.instructions.md](instructions/agents.instructions.md) for usage.
 
 Use `@agent-name` in Copilot Chat: `@orchestrator`, `@planner`, `@architect`, `@implementer`, `@tester`, `@reviewer`, `@security`, `@infrastructure`, `@docs`
+
+## Spec Kit (Spec-Driven Development)
+
+This project uses [github/spec-kit](https://github.com/github/spec-kit) for structured feature planning. Spec Kit provides slash commands that generate design artifacts before implementation begins.
+
+### Planning Flow
+
+```
+/speckit.specify "feature description"   → specs/<feature>/spec.md
+/speckit.plan                            → specs/<feature>/plan.md
+/speckit.tasks                           → specs/<feature>/tasks.md
+```
+
+Optional steps: `/speckit.clarify` (refine spec), `/speckit.analyze` (consistency check), `/speckit.checklist` (generate review checklists).
+
+### Integration with Role Agents
+
+Spec Kit handles **planning**. Our role agents handle **execution**. The `@orchestrator` bridges them:
+
+```
+Spec Kit Planning:  /speckit.specify → /speckit.plan → /speckit.tasks
+Bridge:             @orchestrator imports tasks.md → beads issues with deps/assignees
+Execution:          @implementer → @tester → @reviewer → @security
+```
+
+**Key rule:** Skip `/speckit.implement` — use `@implementer` and other role agents instead, since they integrate with our beads-based workflow.
+
+### Spec Kit Artifacts
+
+| Directory / File            | Purpose                           |
+| --------------------------- | --------------------------------- |
+| `.specify/`                 | Spec Kit config, scripts, memory  |
+| `.github/prompts/`          | Prompt files for slash commands   |
+| `specs/<feature>/spec.md`   | Requirements and user stories     |
+| `specs/<feature>/plan.md`   | Architecture and file layout      |
+| `specs/<feature>/tasks.md`  | Ordered implementation checklist  |
 
 ## Non-Negotiable Rules
 

@@ -3,7 +3,7 @@ FastAPI dependencies for authentication and shared resources.
 """
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import Depends, HTTPException, Request
 
@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     from agent_framework import ChatAgent
 
 logger = logging.getLogger(__name__)
+
+MAX_TITLE_LENGTH = 50
 
 
 def get_user_id(request: Request) -> str:
@@ -30,7 +32,7 @@ def get_optional_user_id(request: Request) -> str | None:
     return getattr(request.state, "user_id", None)
 
 
-def get_project_client(request: Request):
+def get_project_client(request: Request) -> Any:  # noqa: ANN401
     """
     Get the AIProjectClient from app state.
 
@@ -62,7 +64,7 @@ def get_agent(request: Request) -> "ChatAgent":
 async def verify_thread_ownership(
     thread_id: str,
     user_id: str = Depends(get_user_id),
-    project_client=Depends(get_project_client),
+    project_client: Any = Depends(get_project_client),  # noqa: ANN401
 ) -> dict:
     """
     Verify that the current user owns the specified thread.
@@ -82,19 +84,19 @@ async def verify_thread_ownership(
         metadata = getattr(thread, "metadata", {}) or {}
 
         logger.info("Thread access check: thread_id=%s, current_user=%s", thread_id, user_id)
-
-        return {"thread": thread, "metadata": metadata, "user_id": user_id}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Error verifying thread access for %s: %s", thread_id, e)
+        logger.exception("Error verifying thread access for %s", thread_id)
         # If thread doesn't exist, return 404
         if "not found" in str(e).lower():
             raise HTTPException(status_code=404, detail="Thread not found") from e
         raise HTTPException(status_code=500, detail=str(e)) from e
+    else:
+        return {"thread": thread, "metadata": metadata, "user_id": user_id}
 
 
-def extract_message_text(msg) -> str:
+def extract_message_text(msg: Any) -> str:  # noqa: ANN401
     """Extract text content from a message object."""
     content = ""
     if hasattr(msg, "content"):
@@ -114,7 +116,7 @@ def extract_message_text(msg) -> str:
     return content
 
 
-async def get_thread_title(project_client, thread_id: str, metadata: dict) -> str:
+async def get_thread_title(project_client: Any, thread_id: str, metadata: dict) -> str:  # noqa: ANN401
     """
     Get thread title from metadata or first user message.
 
@@ -132,7 +134,7 @@ async def get_thread_title(project_client, thread_id: str, metadata: dict) -> st
             if hasattr(item, "role") and item.role == "user":
                 text = extract_message_text(item)
                 if text:
-                    return text[:50] + "..." if len(text) > 50 else text
+                    return text[:MAX_TITLE_LENGTH] + "..." if len(text) > MAX_TITLE_LENGTH else text
     except (ValueError, RuntimeError, OSError) as e:
         logger.warning("Could not fetch messages for thread %s: %s", thread_id, e)
 

@@ -44,15 +44,18 @@ def configure_observability() -> None:
 
     except ImportError as e:
         logger.warning("Azure Monitor packages not available: %s", e)
-    except (RuntimeError, ValueError, OSError) as e:
-        logger.error("Failed to configure Azure Monitor: %s", e)
+    except (RuntimeError, ValueError, OSError):
+        logger.exception("Failed to configure Azure Monitor")
 
 
 def _configure_azure_monitor(connection_string: str) -> None:
     """Configure Azure Monitor for production telemetry."""
     try:
-        from agent_framework.observability import create_resource, enable_instrumentation
-        from azure.monitor.opentelemetry import (  # type: ignore[import-not-found]
+        from agent_framework.observability import (  # noqa: PLC0415
+            create_resource,
+            enable_instrumentation,
+        )
+        from azure.monitor.opentelemetry import (  # type: ignore[import-not-found]  # noqa: PLC0415
             configure_azure_monitor,
         )
 

@@ -8,7 +8,8 @@ against Azure SQL Database using Azure AD authentication.
 import logging
 import os
 import struct
-from typing import Any
+from types import TracebackType
+from typing import Any, ClassVar, Self
 
 import aioodbc
 from azure.identity import DefaultAzureCredential
@@ -38,9 +39,7 @@ def get_azure_sql_token() -> bytes:
 
     # Format token for SQL Server ODBC driver
     token_bytes = token.token.encode("utf-16-le")
-    token_struct = struct.pack(f"<I{len(token_bytes)}s", len(token_bytes), token_bytes)
-
-    return token_struct
+    return struct.pack(f"<I{len(token_bytes)}s", len(token_bytes), token_bytes)
 
 
 class AzureSqlClient:
@@ -55,7 +54,7 @@ class AzureSqlClient:
     """
 
     # Keywords that are not allowed in queries for safety
-    DANGEROUS_KEYWORDS = [
+    DANGEROUS_KEYWORDS: ClassVar[list[str]] = [
         "INSERT",
         "UPDATE",
         "DELETE",
@@ -68,8 +67,8 @@ class AzureSqlClient:
     ]
 
     def __init__(
-        self, server: str | None = None, database: str | None = None, read_only: bool = True
-    ):
+        self, server: str | None = None, database: str | None = None, *, read_only: bool = True
+    ) -> None:
         """
         Initialize the SQL client.
 
@@ -83,7 +82,7 @@ class AzureSqlClient:
         self.read_only = read_only
         self._connection: aioodbc.Connection | None = None
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Self:
         """Establish the database connection."""
         if not self.server:
             raise ValueError("AZURE_SQL_SERVER environment variable is required")
@@ -104,7 +103,12 @@ class AzureSqlClient:
         )
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         """Close the database connection."""
         if self._connection:
             await self._connection.close()
@@ -201,5 +205,5 @@ class AzureSqlClient:
                 }
 
         except Exception as e:
-            logger.error("SQL execution error: %s", e)
+            logger.exception("SQL execution error")
             return {"success": False, "error": str(e), "columns": [], "rows": [], "row_count": 0}

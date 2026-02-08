@@ -36,14 +36,14 @@ async def execute_sql(query: str) -> dict[str, Any]:
     step_name = "Executing SQL query..."
     emit_step_end_fn = None
     try:
-        from api.step_events import emit_step_end, emit_step_start
+        from api.step_events import emit_step_end, emit_step_start  # noqa: PLC0415
 
         emit_step_start(step_name)
         emit_step_end_fn = emit_step_end
     except ImportError:
         pass  # Step events not available (e.g., running outside API context)
 
-    def finish_step():
+    def finish_step() -> None:
         if emit_step_end_fn:
             emit_step_end_fn(step_name)
 
@@ -53,6 +53,6 @@ async def execute_sql(query: str) -> dict[str, Any]:
             finish_step()
             return result
     except Exception as e:
-        logger.error("SQL execution error: %s", e)
+        logger.exception("SQL execution error")
         finish_step()
         return {"success": False, "error": str(e), "columns": [], "rows": [], "row_count": 0}

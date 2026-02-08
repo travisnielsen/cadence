@@ -160,29 +160,55 @@ select = [
     "PL",    # pylint
 ]
 ignore = [
-    "E501",   # line too long (handled by formatter)
-    "B008",   # function calls in argument defaults (needed for FastAPI Depends)
-    "S603",   # subprocess without shell=True (too strict)
-    "S607",   # Starting a process with a partial path (too strict)
-    "ARG002", # unused method argument (common in base classes)
+    "E501",    # line too long (handled by formatter)
+    "B008",    # function calls in argument defaults (needed for FastAPI Depends)
+    "S603",    # subprocess without shell=True (too strict)
+    "S607",    # Starting a process with a partial path (too strict)
+    "ARG002",  # unused method argument (common in base classes)
+    "TRY003",  # long messages outside exception class (too strict for domain code)
+    "TRY301",  # abstract raise to inner function (over-engineering for simple raises)
+    "PLW0603", # global statement (acceptable for module-level singleton patterns)
+    "RUF029",  # async without await (framework patterns sometimes need this)
 ]
 
 [tool.ruff.lint.mccabe]
-max-complexity = 10
+max-complexity = 15
 
 [tool.ruff.lint.pylint]
 max-args = 7
-max-branches = 10
-max-nested-blocks = 3
+max-branches = 15
+max-nested-blocks = 5
+max-locals = 20
+max-statements = 60
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]
+"__init__.py" = ["F401", "RUF067"]
 "tests/**/*.py" = [
     "S101",    # Allow assert in tests
     "PLR2004", # Allow magic values in tests
     "PLR6301", # Allow methods that could be functions in test classes
     "ANN",     # Don't require type annotations in tests
     "ARG001",  # Allow unused arguments (common in mock side effects)
+    "PLC0415", # Allow inline imports in tests
+]
+# Executor files have complex handler methods by design (workflow routing logic)
+"**/executor.py" = [
+    "C901",    # complexity (handlers are inherently complex)
+    "PLR0912", # branches (handler routing)
+    "PLR0915", # statements (handler orchestration)
+    "PLR0914", # local variables (handler state)
+    "PLR1702", # nested blocks (try/if/for in handlers)
+    "PLC0415", # inline imports (lazy imports for circular dep avoidance)
+    "E402",    # module-level imports after code (framework constraints)
+]
+# Chat router has complex streaming generator functions
+"**/routers/chat.py" = [
+    "C901",    # complexity (streaming generators)
+    "PLR0912", # branches (event type routing)
+    "PLR0915", # statements (SSE formatting)
+    "PLR0914", # local variables
+    "PLR1702", # nested blocks (try/async for/if)
+    "PLC0415", # inline imports
 ]
 
 [tool.ruff.format]

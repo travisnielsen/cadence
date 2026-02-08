@@ -39,14 +39,14 @@ async def search_cached_queries(user_question: str) -> dict[str, Any]:
     step_name = "Searching cached queries..."
     emit_step_end_fn = None
     try:
-        from api.step_events import emit_step_end, emit_step_start
+        from api.step_events import emit_step_end, emit_step_start  # noqa: PLC0415
 
         emit_step_start(step_name)
         emit_step_end_fn = emit_step_end
     except ImportError:
         pass  # Step events not available
 
-    def finish_step():
+    def finish_step() -> None:
         if emit_step_end_fn:
             emit_step_end_fn(step_name)
 
@@ -78,19 +78,20 @@ async def search_cached_queries(user_question: str) -> dict[str, Any]:
         )
 
         finish_step()
-        return {
-            "has_high_confidence_match": has_high_confidence,
-            "best_match": best_match if has_high_confidence else None,
-            "all_matches": results,
-            "threshold": CONFIDENCE_THRESHOLD,
-        }
 
     except Exception as e:
-        logger.error("Error searching cached queries: %s", e)
+        logger.exception("Error searching cached queries")
         finish_step()
         return {
             "has_high_confidence_match": False,
             "best_match": None,
             "all_matches": [],
             "error": str(e),
+        }
+    else:
+        return {
+            "has_high_confidence_match": has_high_confidence,
+            "best_match": best_match if has_high_confidence else None,
+            "all_matches": results,
+            "threshold": CONFIDENCE_THRESHOLD,
         }

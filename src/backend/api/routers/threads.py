@@ -6,6 +6,7 @@ but we maintain 'threads' terminology in the API for consistency.
 """
 
 import logging
+from typing import Any
 
 from api.dependencies import (
     extract_message_text,
@@ -30,8 +31,8 @@ router = APIRouter(prefix="/api/threads", tags=["threads"])
 async def get_thread(
     thread_id: str,
     ownership: dict = Depends(verify_thread_ownership),
-    project_client=Depends(get_project_client),
-):
+    project_client: Any = Depends(get_project_client),  # noqa: ANN401
+) -> ThreadData:
     """
     Get a specific thread by ID.
     """
@@ -53,8 +54,8 @@ async def update_thread(
     thread_id: str,
     body: UpdateThreadRequest,
     ownership: dict = Depends(verify_thread_ownership),
-    project_client=Depends(get_project_client),
-):
+    project_client: Any = Depends(get_project_client),  # noqa: ANN401
+) -> dict[str, bool]:
     """
     Update thread metadata (title, status).
 
@@ -71,18 +72,19 @@ async def update_thread(
         openai_client = project_client.get_openai_client()
         # Attempt to update the thread (conversation in V2 API)
         openai_client.conversations.update(thread_id, metadata=metadata)
-        return {"success": True}
     except Exception as e:
-        logger.error("Error updating thread %s: %s", thread_id, e)
+        logger.exception("Error updating thread %s", thread_id)
         raise HTTPException(status_code=500, detail=str(e)) from e
+    else:
+        return {"success": True}
 
 
 @router.delete("/{thread_id}")
 async def delete_thread(
     thread_id: str,
     _ownership: dict = Depends(verify_thread_ownership),
-    project_client=Depends(get_project_client),
-):
+    project_client: Any = Depends(get_project_client),  # noqa: ANN401
+) -> dict[str, bool]:
     """
     Delete a thread.
 
@@ -91,18 +93,19 @@ async def delete_thread(
     try:
         openai_client = project_client.get_openai_client()
         openai_client.conversations.delete(thread_id)
-        return {"success": True}
     except Exception as e:
-        logger.error("Error deleting thread %s: %s", thread_id, e)
+        logger.exception("Error deleting thread %s", thread_id)
         raise HTTPException(status_code=500, detail=str(e)) from e
+    else:
+        return {"success": True}
 
 
 @router.get("/{thread_id}/messages", response_model=MessagesResponse)
 async def get_thread_messages(
     thread_id: str,
     _ownership: dict = Depends(verify_thread_ownership),
-    project_client=Depends(get_project_client),
-):
+    project_client: Any = Depends(get_project_client),  # noqa: ANN401
+) -> MessagesResponse:
     """
     Get all messages for a thread.
     Returns messages in chronological order (oldest first).
@@ -146,5 +149,5 @@ async def get_thread_messages(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Error getting messages for thread %s: %s", thread_id, e)
+        logger.exception("Error getting messages for thread %s", thread_id)
         raise HTTPException(status_code=500, detail=str(e)) from e

@@ -8,7 +8,8 @@ with vector embeddings generated via Azure OpenAI.
 import logging
 import os
 import re
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 
 from azure.identity.aio import DefaultAzureCredential
 from azure.search.documents.aio import SearchClient
@@ -33,7 +34,7 @@ class AzureSearchClient:
             )
     """
 
-    def __init__(self, index_name: str, vector_field: str = "content_vector"):
+    def __init__(self, index_name: str, vector_field: str = "content_vector") -> None:
         """
         Initialize the search client.
 
@@ -54,7 +55,7 @@ class AzureSearchClient:
         self._ai_base_endpoint = match.group(1) if match else ""
         self._embedding_deployment = os.getenv("AZURE_AI_EMBEDDING_DEPLOYMENT", "embedding-small")
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Self:
         """Set up the search client and credentials."""
         if not self.endpoint:
             raise ValueError("AZURE_SEARCH_ENDPOINT environment variable is required")
@@ -73,7 +74,12 @@ class AzureSearchClient:
         )
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         """Clean up resources."""
         if self._search_client:
             await self._search_client.close()
@@ -97,7 +103,8 @@ class AzureSearchClient:
             return None
 
         try:
-            assert self._credential is not None, "Client not initialized"
+            if self._credential is None:
+                raise RuntimeError("Client not initialized")
             token = await self._credential.get_token("https://cognitiveservices.azure.com/.default")
 
             if self._openai_client is None:
@@ -112,7 +119,7 @@ class AzureSearchClient:
                 input=text,
             )
             return response.data[0].embedding
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Failed to get embeddings: %s", e)
             return None
 
@@ -133,7 +140,8 @@ class AzureSearchClient:
         Returns:
             List of result dictionaries with selected fields and score
         """
-        assert self._search_client is not None, "Client not initialized"
+        if self._search_client is None:
+            raise RuntimeError("Client not initialized")
 
         embeddings = await self.get_embeddings(query)
         if embeddings is None:
@@ -182,7 +190,8 @@ class AzureSearchClient:
             List of result dictionaries with selected fields and score.
             Scores are cosine similarity values (0.0 to 1.0 range).
         """
-        assert self._search_client is not None, "Client not initialized"
+        if self._search_client is None:
+            raise RuntimeError("Client not initialized")
 
         embeddings = await self.get_embeddings(query)
         if embeddings is None:

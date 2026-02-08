@@ -12,10 +12,14 @@ The workflow:
 4. Returns structured results
 """
 
+from agent_framework import Workflow
+from agent_framework_azure_ai import AzureAIClient
+from entities.nl2sql_controller.executor import NL2SQLController
+
 from .workflow import create_nl2sql_workflow
 
 
-def get_workflow():
+def get_workflow() -> tuple[Workflow, NL2SQLController, AzureAIClient]:
     """
     Get a fresh NL2SQL workflow.
 

@@ -13,7 +13,12 @@ from fastapi.responses import JSONResponse
 from fastapi_azure_auth import SingleTenantAzureAuthorizationCodeBearer
 from jwt import PyJWKClient
 from pydantic_settings import BaseSettings
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.responses import Response
+from starlette.types import ASGIApp
+
+JWT_PARTS_COUNT = 3
+TOKEN_PREVIEW_LENGTH = 20
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +59,7 @@ class AzureADAuthMiddleware(BaseHTTPMiddleware):
     Middleware that validates Azure AD JWT tokens on all requests.
     """
 
-    def __init__(self, app, settings: AzureADSettings):
+    def __init__(self, app: ASGIApp, settings: AzureADSettings) -> None:
         super().__init__(app)
         self.settings = settings
         self.jwks_uri = (
@@ -81,7 +86,7 @@ class AzureADAuthMiddleware(BaseHTTPMiddleware):
         logger.info("Azure AD Auth configured with audiences: %s", self.valid_audiences)
         logger.info("Azure AD Auth configured with issuers: %s", self.valid_issuers)
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:  # noqa: PLR0911
         # Skip auth for public paths
         if request.url.path in PUBLIC_PATHS:
             return await call_next(request)
@@ -118,12 +123,12 @@ class AzureADAuthMiddleware(BaseHTTPMiddleware):
 
         # Check if the token looks like a JWT (should have 3 parts separated by dots)
         token_parts = token.split(".")
-        if len(token_parts) != 3:
+        if len(token_parts) != JWT_PARTS_COUNT:
             logger.error(
                 "Token does not have 3 parts (has %d). This is not a valid JWT.", len(token_parts)
             )
             for i, part in enumerate(token_parts):
-                preview = part[:20] if len(part) > 20 else part
+                preview = part[:TOKEN_PREVIEW_LENGTH] if len(part) > TOKEN_PREVIEW_LENGTH else part
                 logger.error("  Part %d: length=%d, preview=%s...", i, len(part), preview)
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -161,14 +166,14 @@ class AzureADAuthMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
         except jwt.InvalidTokenError as e:
-            logger.error("Token validation failed: %s", e)
+            logger.exception("Token validation failed")
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 content={"detail": f"Invalid token: {e!s}"},
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        except Exception as e:
-            logger.error("Unexpected auth error: %s", e)
+        except Exception:
+            logger.exception("Unexpected auth error")
             return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 content={"detail": "Authentication error"},

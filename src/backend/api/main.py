@@ -11,6 +11,7 @@ The API uses a hybrid architecture:
 """
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -43,7 +44,7 @@ configure_observability()
 
 
 @asynccontextmanager
-async def lifespan(application: FastAPI):
+async def lifespan(_application: FastAPI) -> AsyncIterator[None]:
     """
     Application lifespan handler.
 
@@ -76,7 +77,6 @@ async def lifespan(application: FastAPI):
 
     yield
 
-    # Shutdown: Cleanup
     logger.info("Application shutdown complete")
 
 
@@ -112,11 +112,11 @@ app.include_router(threads_router)
 
 
 @app.get("/health")
-async def health_check():
+async def health_check() -> dict[str, object]:
     """Health check endpoint."""
     agent_ready = getattr(app.state, "agent", None) is not None
     return {"status": "healthy", "agent_ready": agent_ready}
 
 
 if __name__ == "__main__":
-    uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True)  # noqa: S104

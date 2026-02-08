@@ -39,6 +39,8 @@ from models import (
 
 logger = logging.getLogger(__name__)
 
+MIN_PARAM_NAME_LENGTH = 2
+
 
 def get_request_user_id() -> str | None:
     """
@@ -125,7 +127,7 @@ def _extract_number_from_query(user_query: str, param_name: str) -> int | None:
 class ExtractionResult:
     """Result of parameter extraction with tracking for defaults used."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.extracted: dict[str, Any] = {}
         self.defaults_used: dict[str, Any] = {}
 
@@ -171,11 +173,8 @@ def _pre_extract_parameters(user_query: str, template: QueryTemplate) -> Extract
 def _all_required_params_satisfied(extracted: dict[str, Any], template: QueryTemplate) -> bool:
     """Check if all required parameters are satisfied."""
     for param in template.parameters:
-        if param.required:
-            if param.name not in extracted:
-                # Check if there's a default
-                if param.default_value is None:
-                    return False
+        if param.required and param.name not in extracted and param.default_value is None:
+            return False
     return True
 
 
@@ -230,12 +229,11 @@ def _build_extraction_prompt(user_query: str, template: QueryTemplate) -> str:
                 param_desc["max"] = v.max
         params_info.append(param_desc)
 
-    prompt = f"""Question: {user_query}
+    return f"""Question: {user_query}
 Reference date: {adjusted_date_str}
 Parameters: {json.dumps(params_info)}
 
 Extract parameter values. Respond with JSON only."""
-    return prompt
 
 
 def _parse_llm_response(response_text: str) -> dict[str, Any]:
@@ -303,12 +301,7 @@ def _substitute_parameters(sql_template: str, params: dict[str, Any]) -> str:
             str_value = str(value)
         elif isinstance(value, str):
             # Don't quote SQL keywords like ASC/DESC
-            if value.upper() in ("ASC", "DESC", "NULL"):
-                str_value = value.upper()
-            else:
-                # For string values that will be used in SQL, they might need quoting
-                # But the template should handle this - we just substitute the value
-                str_value = str(value)
+            str_value = value.upper() if value.upper() in {"ASC", "DESC", "NULL"} else str(value)
         else:
             str_value = str(value)
 
@@ -330,7 +323,9 @@ class ParameterExtractorExecutor(Executor):
 
     agent: ChatAgent
 
-    def __init__(self, chat_client: AzureAIAgentClient, executor_id: str = "param_extractor"):
+    def __init__(
+        self, chat_client: AzureAIAgentClient, executor_id: str = "param_extractor"
+    ) -> None:
         """
         Initialize the Parameter Extractor executor.
 
@@ -382,7 +377,8 @@ class ParameterExtractorExecutor(Executor):
         logger.info("ParamExtractor creating new Foundry thread")
         return self.agent.get_new_thread(), True
 
-    async def _store_thread_id(self, ctx: WorkflowContext[Any, Any], thread: AgentThread) -> None:
+    @staticmethod
+    async def _store_thread_id(ctx: WorkflowContext[Any, Any], thread: AgentThread) -> None:
         """Store the Foundry thread ID in shared state if it was created."""
         if thread.service_thread_id:
             try:
@@ -418,7 +414,7 @@ class ParameterExtractorExecutor(Executor):
         except ImportError:
             pass
 
-        def finish_step():
+        def finish_step() -> None:
             if emit_step_end_fn:
                 emit_step_end_fn(step_name)
 
@@ -538,28 +534,32 @@ class ParameterExtractorExecutor(Executor):
                 # Safety check: verify required ask_if_missing params were actually extracted
                 missing_required = []
                 for param in template.parameters:
-                    if param.required and param.ask_if_missing:
-                        if param.name not in extracted_params or not extracted_params.get(
-                            param.name
-                        ):
-                            # Required param with ask_if_missing was not extracted
-                            allowed_values = []
-                            if param.validation and hasattr(param.validation, "allowed_values"):
-                                allowed_values = param.validation.allowed_values or []
+                    if (
+                        param.required
+                        and param.ask_if_missing
+                        and (
+                            param.name not in extracted_params
+                            or not extracted_params.get(param.name)
+                        )
+                    ):
+                        # Required param with ask_if_missing was not extracted
+                        allowed_values = []
+                        if param.validation and hasattr(param.validation, "allowed_values"):
+                            allowed_values = param.validation.allowed_values or []
 
-                            missing_required.append(
-                                MissingParameter(
-                                    name=param.name,
-                                    description=f"Please provide a value for '{param.name}'",
-                                    validation_hint=f"Allowed values: {', '.join(allowed_values)}"
-                                    if allowed_values
-                                    else "",
-                                )
+                        missing_required.append(
+                            MissingParameter(
+                                name=param.name,
+                                description=f"Please provide a value for '{param.name}'",
+                                validation_hint=f"Allowed values: {', '.join(allowed_values)}"
+                                if allowed_values
+                                else "",
                             )
-                            logger.warning(
-                                "LLM returned success but required param '%s' (ask_if_missing=true) was not extracted",
-                                param.name,
-                            )
+                        )
+                        logger.warning(
+                            "LLM returned success but required param '%s' (ask_if_missing=true) was not extracted",
+                            param.name,
+                        )
 
                 if missing_required:
                     # Convert to needs_clarification
@@ -594,15 +594,14 @@ class ParameterExtractorExecutor(Executor):
 
             elif parsed.get("status") == "needs_clarification":
                 # Build missing parameters list
-                missing = []
-                for mp in parsed.get("missing_parameters", []):
-                    missing.append(
-                        MissingParameter(
-                            name=mp.get("name", ""),
-                            description=mp.get("description", ""),
-                            validation_hint=mp.get("validation_hint", ""),
-                        )
+                missing = [
+                    MissingParameter(
+                        name=mp.get("name", ""),
+                        description=mp.get("description", ""),
+                        validation_hint=mp.get("validation_hint", ""),
                     )
+                    for mp in parsed.get("missing_parameters", [])
+                ]
 
                 sql_draft = SQLDraft(
                     status="needs_clarification",
@@ -635,7 +634,9 @@ class ParameterExtractorExecutor(Executor):
 
                         # Match if any significant part of param name is in error
                         matches_error = any(
-                            part in error_lower for part in param_name_parts if len(part) > 2
+                            part in error_lower
+                            for part in param_name_parts
+                            if len(part) > MIN_PARAM_NAME_LENGTH
                         )
 
                         # Or if the parameter simply wasn't extracted
@@ -709,7 +710,7 @@ class ParameterExtractorExecutor(Executor):
             logger.info("Parameter extraction completed with status: %s", sql_draft.status)
 
         except Exception as e:
-            logger.error("Parameter extraction error: %s", e)
+            logger.exception("Parameter extraction error")
             sql_draft = SQLDraft(
                 status="error",
                 source="template",

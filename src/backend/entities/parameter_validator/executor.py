@@ -31,7 +31,7 @@ from models import (
 logger = logging.getLogger(__name__)
 
 
-def _validate_integer(value: Any, validation: ParameterValidation, param_name: str) -> list[str]:
+def _validate_integer(value: Any, validation: ParameterValidation, param_name: str) -> list[str]:  # noqa: ANN401
     """
     Validate an integer parameter value.
 
@@ -52,7 +52,7 @@ def _validate_integer(value: Any, validation: ParameterValidation, param_name: s
 
     # Coerce float to int if it's a whole number
     if isinstance(value, float):
-        if value != int(value):
+        if value != int(value):  # type: ignore[reportUnnecessaryComparison]
             violations.append(f"Parameter '{param_name}': expected integer, got float with decimal")
             return violations
         value = int(value)
@@ -81,7 +81,7 @@ def _validate_integer(value: Any, validation: ParameterValidation, param_name: s
     return violations
 
 
-def _validate_string(value: Any, validation: ParameterValidation, param_name: str) -> list[str]:
+def _validate_string(value: Any, validation: ParameterValidation, param_name: str) -> list[str]:  # noqa: ANN401
     """
     Validate a string parameter value.
 
@@ -116,7 +116,7 @@ def _validate_string(value: Any, validation: ParameterValidation, param_name: st
     return violations
 
 
-def _parse_date(value: Any) -> datetime | None:
+def _parse_date(value: Any) -> datetime | None:  # noqa: ANN401
     """
     Try to parse a date value from various formats.
 
@@ -148,7 +148,7 @@ def _parse_date(value: Any) -> datetime | None:
     return None
 
 
-def _validate_date(value: Any, validation: ParameterValidation, param_name: str) -> list[str]:
+def _validate_date(value: Any, validation: ParameterValidation, param_name: str) -> list[str]:  # noqa: ANN401
     """
     Validate a date parameter value.
 
@@ -186,7 +186,7 @@ def _validate_date(value: Any, validation: ParameterValidation, param_name: str)
     return violations
 
 
-def _validate_float(value: Any, validation: ParameterValidation, param_name: str) -> list[str]:
+def _validate_float(value: Any, validation: ParameterValidation, param_name: str) -> list[str]:  # noqa: ANN401
     """
     Validate a float/decimal parameter value.
 
@@ -229,7 +229,7 @@ def _validate_float(value: Any, validation: ParameterValidation, param_name: str
     return violations
 
 
-def _validate_parameter(param_name: str, value: Any, definition: ParameterDefinition) -> list[str]:
+def _validate_parameter(param_name: str, value: Any, definition: ParameterDefinition) -> list[str]:  # noqa: ANN401
     """
     Validate a single parameter value against its definition.
 
@@ -268,7 +268,7 @@ def _validate_parameter(param_name: str, value: Any, definition: ParameterDefini
         violations.extend(_validate_string(value, validation, param_name))
     elif val_type == "date":
         violations.extend(_validate_date(value, validation, param_name))
-    elif val_type in ("float", "decimal", "number"):
+    elif val_type in {"float", "decimal", "number"}:
         violations.extend(_validate_float(value, validation, param_name))
     else:
         # Unknown type - log warning but don't fail
@@ -307,11 +307,16 @@ def validate_all_parameters(
         all_violations.extend(violations)
 
     # Check for required parameters that weren't extracted
-    for definition in parameter_definitions:
-        if definition.required and definition.name not in extracted_parameters:
-            # Only flag if there's no default
-            if definition.default_value is None and not definition.ask_if_missing:
-                all_violations.append(f"Parameter '{definition.name}': required but not provided")
+    all_violations.extend(
+        f"Parameter '{definition.name}': required but not provided"
+        for definition in parameter_definitions
+        if (
+            definition.required
+            and definition.name not in extracted_parameters
+            and definition.default_value is None
+            and not definition.ask_if_missing
+        )
+    )
 
     return len(all_violations) == 0, all_violations
 
@@ -328,7 +333,7 @@ class ParameterValidatorExecutor(Executor):
     No LLM is used - all validation is done programmatically.
     """
 
-    def __init__(self, executor_id: str = "param_validator"):
+    def __init__(self, executor_id: str = "param_validator") -> None:
         """
         Initialize the Parameter Validator executor.
 
@@ -339,7 +344,7 @@ class ParameterValidatorExecutor(Executor):
         logger.info("ParameterValidatorExecutor initialized")
 
     @handler
-    async def handle_validation_request(
+    async def handle_validation_request(  # noqa: PLR6301
         self, request_msg: SQLDraftMessage, ctx: WorkflowContext[SQLDraftMessage]
     ) -> None:
         """
@@ -362,7 +367,7 @@ class ParameterValidatorExecutor(Executor):
         except ImportError:
             pass
 
-        def finish_step():
+        def finish_step() -> None:
             if emit_step_end_fn:
                 emit_step_end_fn(step_name)
 
@@ -470,7 +475,7 @@ class ParameterValidatorExecutor(Executor):
                 await ctx.send_message(response_msg)
 
         except Exception as e:
-            logger.error("Parameter validation error: %s", e)
+            logger.exception("Parameter validation error")
 
             error_draft = SQLDraft(
                 status="error",

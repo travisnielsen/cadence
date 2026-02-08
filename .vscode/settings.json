@@ -49,6 +49,15 @@
         "/^git status\\b/": true,
         "/^git diff\\b/": true,
         "/^git log\\b/": true,
-        "/^pytest\\b/": true
+        "/^pytest\\b/": true,
+        ".specify/scripts/bash/": true,
+        ".specify/scripts/powershell/": true
+    },
+    "chat.promptFilesRecommendations": {
+        "speckit.constitution": true,
+        "speckit.specify": true,
+        "speckit.plan": true,
+        "speckit.tasks": true,
+        "speckit.implement": false
     }
 }

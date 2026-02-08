@@ -36,19 +36,36 @@ You coordinate development workflows by invoking specialized agents as **subagen
 3. **Parallel when independent** - Run unrelated tasks simultaneously
 4. **Pause at gates** - Always ask user after Reviewer or Security findings
 5. **Track progress** - Update todo list after each phase
+6. **Prefer Spec Kit for planning** - When starting new features, suggest `/speckit.specify` for requirements
+
+## Two Planning Modes
+
+### Mode A: Spec Kit Planning (Preferred for Features)
+
+Use the Spec Kit slash commands for structured planning. The user drives planning via:
+
+```
+/speckit.specify  → /speckit.plan  → /speckit.tasks
+```
+
+After `/speckit.tasks` generates `specs/<feature>/tasks.md`, run the **Spec Kit Import** workflow (below) to bridge into beads for execution.
+
+### Mode B: Direct Planning (Quick Work)
+
+For bug fixes, small tasks, or when Spec Kit is overkill, use the Planner subagent directly.
 
 ## Subagents
 
-| Agent            | Purpose                     | Invoke When                      |
-| ---------------- | --------------------------- | -------------------------------- |
-| `Planner`        | Requirements --> design doc | Starting new work, scope changes |
-| `Architect`      | Patterns --> ADR            | Design decisions needed          |
-| `Infrastructure` | IaC (Bicep/Terraform)       | Azure resources required         |
-| `Implementer`    | Write production code       | Design complete, ready to build  |
-| `Tester`         | Write and run tests         | Implementation complete          |
-| `Reviewer`       | Code quality review         | Tests pass, ready for review     |
-| `Security`       | OWASP audit                 | Before merge, or after Reviewer  |
-| `Docs`           | Documentation, README       | Feature complete                 |
+| Agent            | Purpose                     | Invoke When                          |
+| ---------------- | --------------------------- | ------------------------------------ |
+| `Planner`        | Requirements --> design doc | Quick work without Spec Kit planning |
+| `Architect`      | Patterns --> ADR            | Design decisions needed              |
+| `Infrastructure` | IaC (Bicep/Terraform)       | Azure resources required             |
+| `Implementer`    | Write production code       | Design complete, ready to build      |
+| `Tester`         | Write and run tests         | Implementation complete              |
+| `Reviewer`       | Code quality review         | Tests pass, ready for review         |
+| `Security`       | OWASP audit                 | Before merge, or after Reviewer      |
+| `Docs`           | Documentation, README       | Feature complete                     |
 
 ## Parallel vs Sequential
 
@@ -74,10 +91,37 @@ Planner --> Implementer --> Tester --> Reviewer
 
 ## Workflows
 
+### Spec Kit Import (Bridge: Planning --> Execution)
+
+When Spec Kit planning is complete (`specs/<feature>/tasks.md` exists), import tasks into beads:
+
+1. **Read** `specs/<feature>/tasks.md`
+2. **Parse** each task line: `- [ ] [T001] [P?] [Story?] Description with file path`
+3. **Create epic** in beads: `bd create "<feature name>" -t epic -p 1`
+4. **Create tasks** for each item with proper assignees:
+   - Implementation tasks (`[US*]`, no `test` in description) --> `--assignee implementer`
+   - Test tasks (description contains "test") --> `--assignee tester`
+   - Setup/config tasks (Phase 1) --> `--assignee implementer`
+   - All tasks: `bd create "<description>" -t task -p 2 --assignee <role> --parent <epic-id>`
+5. **Add dependencies** based on task order and `[P]` markers:
+   - Sequential tasks (no `[P]`): `bd dep add <current-id> <previous-id>`
+   - Parallel tasks (`[P]`): No dependency on each other, but depend on previous non-parallel task
+   - Test tasks depend on their corresponding implementation task
+6. **Add review/security gates**: Create review and security tasks that depend on all impl+test tasks
+7. Run `bd sync` to persist
+
+After import, proceed with the **Feature** workflow starting from Implementer (since planning is done).
+
 ### Feature (Default)
 
 ```
 Planner --> Architect --> Implementer --> Tester --> Reviewer --> [Security || Docs]
+```
+
+### Feature with Spec Kit
+
+```
+(Spec Kit planning already done) --> Spec Kit Import --> Implementer --> Tester --> Reviewer --> [Security || Docs]
 ```
 
 ### Feature + Infrastructure
@@ -147,6 +191,20 @@ Return combined findings when both complete.
 
 After 5 fix cycles on same issue --> stop and escalate to user to either continue or move on.
 
+## Spec Kit Artifacts
+
+When Spec Kit planning has been used, these artifacts exist in `specs/<feature>/`:
+
+| File            | Contains                              | Used By          |
+| --------------- | ------------------------------------- | ---------------- |
+| `spec.md`       | Requirements, user stories            | Implementer      |
+| `plan.md`       | Architecture, tech stack, file layout | Architect, Infra |
+| `tasks.md`      | Ordered task checklist                | Spec Kit Import  |
+| `data-model.md` | Entity definitions (optional)         | Implementer      |
+| `contracts/`    | API specs (optional)                  | Implementer      |
+
+Pass relevant spec paths to subagents when invoking them so they have full context.
+
 ## Constraints
 
 - **NEVER** write code or docs directly
@@ -154,3 +212,5 @@ After 5 fix cycles on same issue --> stop and escalate to user to either continu
 - **ALWAYS** check `bd ready` before starting
 - **ALWAYS** pause at Reviewer/Security findings
 - **ALWAYS** specify expected output format when invoking subagents
+- **PREFER** Spec Kit planning for new features (suggest `/speckit.specify`)
+- **SKIP** `/speckit.implement` — use role-based subagents instead

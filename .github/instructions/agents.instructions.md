@@ -73,6 +73,8 @@ All agents include base tools: `read`, `edit`, `search`
 
 Select agents from the **dropdown menu** in VS Code Chat view.
 
+### Role Agents
+
 | Agent            | Purpose                       | Additional Tools                                |
 | ---------------- | ----------------------------- | ----------------------------------------------- |
 | `Planner`        | Implementation planning       | `web`, `todo`, `azure-mcp/*`, `microsoftdocs/*` |
@@ -84,6 +86,22 @@ Select agents from the **dropdown menu** in VS Code Chat view.
 | `Architect`      | Architecture design (no code) | `web`, `azure-mcp/*`, `microsoftdocs/*`         |
 | `Infrastructure` | IaC (Bicep/Terraform/ARM)     | `execute`, `web`, `agent`, `azure-mcp/*`        |
 | `Docs`           | Technical writing & docs      | `web`, `microsoftdocs/*`                        |
+
+### Spec Kit Agents (Planning)
+
+Use these via slash commands for structured feature planning. See copilot-instructions.md for the full flow.
+
+| Agent                  | Slash Command          | Purpose                        |
+| ---------------------- | ---------------------- | ------------------------------ |
+| `speckit.specify`      | `/speckit.specify`     | Create feature spec from description |
+| `speckit.clarify`      | `/speckit.clarify`     | Refine spec requirements       |
+| `speckit.plan`         | `/speckit.plan`        | Generate technical plan        |
+| `speckit.tasks`        | `/speckit.tasks`       | Generate ordered task checklist |
+| `speckit.analyze`      | `/speckit.analyze`     | Analyze for consistency        |
+| `speckit.checklist`    | `/speckit.checklist`   | Generate review checklists     |
+| `speckit.implement`    | `/speckit.implement`   | Execute tasks (prefer role agents) |
+| `speckit.taskstoissues`| `/speckit.taskstoissues`| Convert tasks to GitHub Issues |
+| `speckit.constitution` | `/speckit.constitution` | Set project coding standards   |
 
 ## Agent Body Structure
 

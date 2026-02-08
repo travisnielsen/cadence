@@ -8,6 +8,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Copy dependency files from repo root (build context is repo root)
 COPY pyproject.toml uv.lock ./
+COPY src/backend/README.md ./README.md
 
 # Install dependencies (including observability extras)
 RUN uv sync --frozen --no-dev --extra observability

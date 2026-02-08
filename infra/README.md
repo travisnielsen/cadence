@@ -9,7 +9,7 @@ This guide covers Azure infrastructure deployment, local development setup, and 
   - Python 3.12+
   - [uv](https://github.com/astral-sh/uv) (Python package manager)
   - Node.js 20+
-  - pnpm (recommended), npm, yarn, or bun
+  - [pnpm](https://pnpm.io/) (Node.js package manager)
   - Azure CLI (`az`)
   - Terraform
   - .NET 8 runtime (for `sqlpackage` — auto-installed by import script on Linux)
@@ -135,34 +135,29 @@ The script creates the managed identity as a database user and grants **db_datar
 
 ### Install Dependencies
 
-Install dependencies using your preferred package manager:
+Install frontend dependencies:
 
 ```bash
-# Using pnpm (recommended)
+cd src/frontend
 pnpm install
-
-# Using npm
-npm install
-
-# Using yarn
-yarn install
-
-# Using bun
-bun install
 ```
 
-> **Note:** This automatically sets up the Python environment as well. If you have issues, run: `pnpm run install:agent`
+Install backend dependencies:
+
+```bash
+./devsetup.sh
+```
 
 ### Environment Variables - API
 
-Create an `.env` file inside the `backend` folder. Next, copy the contents of the [.env.example](/backend/.env.example) file into `.env` and update the values to match your enviorment.
+Create an `.env` file inside `src/backend/`. Copy the contents of [.env.example](../src/backend/.env.example) into `.env` and update the values to match your environment.
 
 > [!IMPORTANT]
 > The Entra ID section is optional. When these environment variables are set, the API will require a valid token issued by the source tenant with the correct target scope. If you don't require user-level authorization to the API, you can omit these.
 
 ### Environment Variables - Frontend
 
-Create a `.env.local` file within the `frontend` directory. Use [.env.example](../frontend/.env.example) as a reference:
+Create a `.env.local` file within `src/frontend/`. Use [.env.example](../src/frontend/.env.example) as a reference:
 
 ```env
 NEXT_PUBLIC_AZURE_AD_CLIENT_ID=your-client-id-here
@@ -171,20 +166,11 @@ NEXT_PUBLIC_AZURE_AD_TENANT_ID=your-tenant-id-here
 
 ### Start Development Server
 
-From the [frontend](/frontend/) directory, run any of the following commands:
+From the `src/frontend/` directory:
 
 ```bash
-# Using pnpm (recommended)
+cd src/frontend
 pnpm dev
-
-# Using npm
-npm run dev
-
-# Using yarn
-yarn dev
-
-# Using bun
-bun run dev
 ```
 
 This starts both the UI and the FastAPI backend concurrently.
@@ -207,7 +193,7 @@ This starts both the UI and the FastAPI backend concurrently.
 The Microsoft Agent Framework includes a development UI for testing and debugging agents and workflows:
 
 ```bash
-cd backend
+cd src/backend
 source .venv/bin/activate
 devui ./entities
 ```
@@ -238,7 +224,7 @@ ENABLE_SENSITIVE_DATA=true
 Install the required telemetry packages:
 
 ```bash
-cd backend
+cd src/backend
 uv pip install -e ".[observability]"
 ```
 
@@ -246,8 +232,8 @@ uv pip install -e ".[observability]"
 
 The frontend and API are automatically deployed via GitHub Actions when changes are pushed to the `main` branch:
 
-- **Frontend**: Changes to the `frontend/` folder trigger deployment to Azure Static Website (blob storage)
-- **API**: Changes to the `backend/` folder trigger a Docker image build, push to Azure Container Registry, and deployment to Azure Container Apps
+- **Frontend**: Changes to `src/frontend/` trigger deployment to Azure Static Website (blob storage)
+- **API**: Changes to `src/backend/` trigger a Docker image build, push to Azure Container Registry, and deployment to Azure Container Apps
 
 ### Prerequisites
 
@@ -293,7 +279,7 @@ The GitHub Actions workflow (`.github/workflows/deploy-frontend.yml`) triggers o
 To manually deploy the frontend:
 
 ```bash
-cd frontend
+cd src/frontend
 
 # Install dependencies and build
 pnpm install
@@ -312,20 +298,18 @@ az storage blob upload-batch \
 
 #### Build the Container Image for local testing (optional)
 
-From the `backend/` directory, build the Docker image:
+From the repo root, build the Docker image:
 
 ```bash
-cd backend
-
-# Build the image
-docker build -t cadence-api .
+# Build the image (context is repo root)
+docker build -f src/backend/Dockerfile -t cadence-api .
 ```
 
 To test the container locally before pushing:
 
 ```bash
 # Run with environment variables from .env file
-docker run -p 8000:8000 --env-file .env cadence-api
+docker run -p 8000:8000 --env-file src/backend/.env cadence-api
 ```
 
 The API will be available at `http://localhost:8000`. Verify it's running by checking the health endpoint: `http://localhost:8000/health`
@@ -344,21 +328,18 @@ cd infra/public-networking
 terraform output container_registry_login_server
 ```
 
-2. **Build and push using ACR Build:**
+1. **Build and push using ACR Build:**
 
 ```bash
-cd backend
-
 # Build in Azure and push to ACR (replace <acr_name> with your registry name)
-az acr build --registry <acr_name> --image cadence-api:latest --platform linux/amd64 .
+az acr build --registry <acr_name> --image cadence-api:latest --platform linux/amd64 -f src/backend/Dockerfile .
 ```
 
 ### Example
 
 ```bash
 # Full example with actual registry name
-cd backend
-az acr build --registry ay2q3pacr --image cadence-api:latest --platform linux/amd64 .
+az acr build --registry ay2q3pacr --image cadence-api:latest --platform linux/amd64 -f src/backend/Dockerfile .
 ```
 
 After the image is updated and you are using the `latest` tag, you can update the Container App by running:

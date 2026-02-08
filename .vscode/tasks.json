@@ -1,0 +1,120 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run Checks",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "poe",
+                "check"
+            ],
+            "problemMatcher": {
+                "owner": "python",
+                "fileLocation": [
+                    "relative",
+                    "${workspaceFolder}"
+                ],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "message": 4
+                }
+            },
+            "presentation": {
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Format",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "poe",
+                "format"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Lint",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "poe",
+                "lint"
+            ],
+            "problemMatcher": {
+                "owner": "python",
+                "fileLocation": [
+                    "relative",
+                    "${workspaceFolder}"
+                ],
+                "pattern": {
+                    "regexp": "^(.*):(\\d+):(\\d+):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "message": 4
+                }
+            },
+            "presentation": {
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Test",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "poe",
+                "test"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "panel": "shared"
+            },
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Dev API Server",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "poe",
+                "dev-api"
+            ],
+            "isBackground": true,
+            "problemMatcher": [],
+            "presentation": {
+                "panel": "dedicated"
+            }
+        },
+        {
+            "label": "Quality",
+            "type": "shell",
+            "command": "uv",
+            "args": [
+                "run",
+                "poe",
+                "quality"
+            ],
+            "problemMatcher": [],
+            "presentation": {
+                "panel": "shared"
+            }
+        }
+    ]
+}

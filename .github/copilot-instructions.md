@@ -1,16 +1,87 @@
 # Copilot Instructions for Cadence
 
+Trust these instructions first; only search if information is incomplete or incorrect.
+
+## Quick Reference
+
+| What                | Where               |
+| ------------------- | ------------------- |
+| **Package manager** | `uv` (NOT pip)      |
+| **Task runner**     | `uv run poe <task>` |
+| **All checks**      | `uv run poe check`  |
+| **Python version**  | 3.11+               |
+| **Line length**     | 100 chars            |
+
+## Essential Commands
+
+```bash
+uv run poe check     # Run ALL quality checks (required before commit)
+uv run poe test      # Run tests
+uv run poe lint      # Lint only
+uv run poe format    # Format, lint, and type check
+uv run poe dev-api   # Start FastAPI dev server
+```
+
+## Documentation (Read These)
+
+| Document                                    | Purpose                             |
+| ------------------------------------------- | ----------------------------------- |
+| [CODING_STANDARD.md](../CODING_STANDARD.md) | Anti-slop rules, forbidden patterns |
+| [DEV_SETUP.md](../DEV_SETUP.md)             | Environment setup, all poe tasks    |
+| [AGENTS.md](../AGENTS.md)                   | AI agent quick reference            |
+| [CONTRIBUTING.md](../CONTRIBUTING.md)       | Git conventions, PR guidelines      |
+
+## Path-Specific Instructions
+
+You **MUST** load these instructions when working on files that match the patterns below.
+
+| File Pattern    | Instructions                                                  |
+| --------------- | ------------------------------------------------------------- |
+| `**/*.py`       | [python.instructions.md](instructions/python.instructions.md) |
+| `**/*.agent.md` | [agents.instructions.md](instructions/agents.instructions.md) |
+| Git files       | [git.instructions.md](instructions/git.instructions.md)       |
+| Task tracking   | [tasks.instructions.md](instructions/tasks.instructions.md)   |
+
+## Custom Agents
+
+9 specialized agents in `.github/agents/`. See [agents.instructions.md](instructions/agents.instructions.md) for usage.
+
+Use `@agent-name` in Copilot Chat: `@orchestrator`, `@planner`, `@architect`, `@implementer`, `@tester`, `@reviewer`, `@security`, `@infrastructure`, `@docs`
+
+## Non-Negotiable Rules
+
+1. **Async-first**: Use `async def` for I/O, never block the event loop
+2. **Type hints** on all parameters and returns
+3. **Pydantic models** for all I/O (no raw dicts)
+4. **`uv run poe check`** must pass before commit
+5. **Conventional Commits**: `type(scope): description`
+
+## Task/Issue Tracking
+
+This project uses **bd (beads)** for issue tracking.
+
+```bash
+bd ready              # Find unblocked work
+bd ready --json       # Get ready tasks as JSON
+bd create "Title" --type task --priority 2  # Create issue
+bd update <id> --status in_progress  # Claim task
+bd close <id> --reason "Done"   # Complete task
+bd sync               # Sync with git (run at session end)
+```
+
+---
+
 ## Architecture Overview
 
 This is a **multi-agent NL2SQL application** using Microsoft Agent Framework (MAF) with a FastAPI backend and Next.js/assistant-ui frontend. Communication happens via SSE streaming, with thread management delegated to Microsoft Foundry.
 
 ### Architecture Components
-1. **ConversationOrchestrator** (`backend/entities/orchestrator/`) - Manages chat sessions, classifies intent (data query vs conversation), handles refinements, invokes NL2SQL workflow
-2. **NL2SQLController** (`backend/entities/nl2sql_controller/`) - Orchestrates query flow, searches templates via Azure AI Search, executes SQL via `execute_sql` tool
-3. **ParameterExtractor** (`backend/entities/parameter_extractor/`) - Extracts parameter values from natural language to fill SQL template tokens
-4. **ParameterValidator** (`backend/entities/parameter_validator/`) - Non-LLM validation of extracted parameters (type, range, regex, allowed values)
-5. **QueryValidator** (`backend/entities/query_validator/`) - Validates SQL syntax, table allowlist, and security before execution
-6. **QueryBuilder** (`backend/entities/query_builder/`) - Generates dynamic SQL from table metadata when no template matches
+1. **ConversationOrchestrator** (`src/backend/entities/orchestrator/`) - Manages chat sessions, classifies intent (data query vs conversation), handles refinements, invokes NL2SQL workflow
+2. **NL2SQLController** (`src/backend/entities/nl2sql_controller/`) - Orchestrates query flow, searches templates via Azure AI Search, executes SQL via `execute_sql` tool
+3. **ParameterExtractor** (`src/backend/entities/parameter_extractor/`) - Extracts parameter values from natural language to fill SQL template tokens
+4. **ParameterValidator** (`src/backend/entities/parameter_validator/`) - Non-LLM validation of extracted parameters (type, range, regex, allowed values)
+5. **QueryValidator** (`src/backend/entities/query_validator/`) - Validates SQL syntax, table allowlist, and security before execution
+6. **QueryBuilder** (`src/backend/entities/query_builder/`) - Generates dynamic SQL from table metadata when no template matches
 
 ### Architecture Flow
 ```
@@ -24,7 +95,7 @@ The ConversationOrchestrator lives **outside** the MAF workflow. It manages the 
 - Intent classification before invoking the workflow
 - Cleaner separation of concerns
 
-The NL2SQL workflow is built in [backend/entities/workflow/workflow.py](backend/entities/workflow/workflow.py) and creates a fresh instance per request.
+The NL2SQL workflow is built in `src/backend/entities/workflow/workflow.py` and creates a fresh instance per request.
 
 ## Key Patterns
 
@@ -39,21 +110,20 @@ The orchestrator folder contains:
 - `orchestrator_prompt.md` - Intent classification prompt
 
 ### Models Structure
-Shared models are in `backend/models/` with functional grouping:
+Shared models are in `src/backend/models/` with functional grouping:
 - `schema.py` - AI Search index models (`QueryTemplate`, `ParameterDefinition`, `TableMetadata`)
 - `extraction.py` - Parameter extraction workflow (`ParameterExtractionRequest`, `MissingParameter`)
 - `generation.py` - SQL generation (`SQLDraft`, `SQLDraftMessage`, `QueryBuilderRequest`)
 - `execution.py` - Query results (`NL2SQLResponse`)
 
-All models are re-exported from `backend/models/__init__.py` for backward compatibility.
+All models are re-exported from `src/backend/models/__init__.py` for backward compatibility.
 
-### Dual Import Pattern
-Agents support both DevUI and FastAPI contexts:
+### Import Pattern
+With `src/backend/` on the Python path, all imports use the package directly:
 ```python
-try:
-    from models import QueryTemplate  # DevUI (entities on path)
-except ImportError:
-    from models import QueryTemplate  # FastAPI (backend on path)
+from models import QueryTemplate
+from entities.shared.search_client import AzureSearchClient
+from api.step_events import emit_step_start
 ```
 
 ### SQLDraft Message Flow
@@ -66,7 +136,7 @@ The `SQLDraft` model carries SQL through the validation pipeline. The `SQLDraftM
 NL2SQLController routes based on these flags to prevent infinite loops.
 
 ### Query Templates
-SQL queries are parameterized templates stored in `data/query_templates/` and indexed in Azure AI Search. Parameters use `%{{name}}%` token syntax with validation rules. See `backend/models/schema.py` for `QueryTemplate` and `ParameterDefinition` schemas.
+SQL queries are parameterized templates stored in `infra/data/query_templates/` and indexed in Azure AI Search. Parameters use `%{{name}}%` token syntax with validation rules. See `src/backend/models/schema.py` for `QueryTemplate` and `ParameterDefinition` schemas.
 
 ### SSE Streaming & Step Events
 Step events provide real-time progress to the UI. Emit from tools using:
@@ -77,26 +147,9 @@ emit_step_start("Executing SQL query...")
 emit_step_end("Executing SQL query...")
 ```
 
-## Development Commands
-
-```bash
-# Full stack (from frontend folder)
-pnpm dev              # Runs both UI and API concurrently
-
-# API only
-./scripts/run-api.sh  # FastAPI on :8000 with hot reload
-./scripts/setup-api.sh # Create venv and install deps
-
-# Frontend only  
-pnpm dev:ui           # Next.js with Turbopack
-
-# DevUI for agent testing (from backend folder)
-devui ./entities  # Test agents in isolation
-```
-
 ## Environment Configuration
 
-API requires `.env` in `backend/` folder with:
+API requires `.env` in `src/backend/` folder with:
 - `AZURE_AI_PROJECT_ENDPOINT` - Foundry project endpoint (required)
 - `AZURE_AI_MODEL_DEPLOYMENT_NAME` - Default model deployment
 - `AZURE_SEARCH_ENDPOINT` - AI Search for query templates
@@ -108,32 +161,42 @@ API requires `.env` in `backend/` folder with:
 
 - Uses `assistant-ui` library with `ExternalStoreRuntime` for SSE
 - Thread IDs come from Foundry (no local session management)
-- Tool results render via generative UI components in `frontend/components/assistant-ui/`
-- Auth via MSAL with optional Azure AD (`frontend/lib/msalConfig.ts`)
+- Tool results render via generative UI components in `src/frontend/components/assistant-ui/`
+- Auth via MSAL with optional Azure AD (`src/frontend/lib/msalConfig.ts`)
 
-## API Structure
+## Project Structure
 
 ```
-backend/
-├── api/                    # FastAPI application
-│   ├── main.py            # App entrypoint
-│   ├── middleware/        # Auth middleware
-│   ├── routers/           # API routes
-│   └── step_events.py     # SSE step event helpers
-├── entities/              # Agent executors (DevUI compatible)
-│   ├── orchestrator/
-│   ├── nl2sql_controller/
-│   ├── parameter_extractor/
-│   ├── parameter_validator/
-│   ├── query_builder/
-│   ├── query_validator/
-│   ├── shared/            # Shared utilities (search_client)
-│   └── workflow/
-└── models/                # Pydantic models
-    ├── schema.py          # AI Search index models
-    ├── extraction.py      # Parameter extraction
-    ├── generation.py      # SQL generation
-    └── execution.py       # Query results
+cadence/
+├── src/                        # All application code
+│   ├── backend/               # Python backend
+│   │   ├── __init__.py
+│   │   ├── Dockerfile
+│   │   ├── api/               # FastAPI application
+│   │   │   ├── main.py        # App entrypoint
+│   │   │   ├── middleware/    # Auth middleware
+│   │   │   ├── routers/       # API routes
+│   │   │   └── step_events.py # SSE step event helpers
+│   │   ├── entities/          # Agent executors
+│   │   │   ├── orchestrator/
+│   │   │   ├── nl2sql_controller/
+│   │   │   ├── parameter_extractor/
+│   │   │   ├── parameter_validator/
+│   │   │   ├── query_builder/
+│   │   │   ├── query_validator/
+│   │   │   ├── shared/        # Shared utilities (search_client)
+│   │   │   └── workflow/
+│   │   └── models/            # Pydantic models
+│   └── frontend/              # Next.js + assistant-ui
+├── infra/                      # Terraform IaC
+│   ├── data/                  # Query templates, table metadata
+│   └── scripts/               # Shell scripts
+├── tests/                     # Test suite
+│   ├── unit/
+│   └── integration/
+├── pyproject.toml             # Python config (deps, tools, linting)
+├── devsetup.sh                # One-command dev setup
+└── .github/                   # CI/CD, agents, instructions
 ```
 
 ## Testing Strategy
@@ -146,7 +209,7 @@ Tests use `pytest` with `pytest-asyncio`. Key test scenarios to cover:
 4. **Parameter Validation** - Invalid parameter types, out-of-range values, regex failures
 5. **Query Validation** - Disallowed tables, SQL injection patterns, non-SELECT statements
 
-Run tests: `cd backend && pytest`
+Run tests: `uv run poe test`
 
 ## Adding New Capabilities
 

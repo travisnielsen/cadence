@@ -1,0 +1,91 @@
+# Gitleaks configuration for Cadence
+# https://github.com/gitleaks/gitleaks
+
+title = "cadence gitleaks config"
+
+[extend]
+useDefault = true
+
+# Global allowlists
+[[allowlists]]
+description = "Ignore example/template files and test fixtures"
+paths = [
+    '''\.gitleaks\.toml$''',
+    '''\.gitleaksignore$''',
+    '''\.env\.example$''',
+    '''\.env\.template$''',
+    '''\.env\.sample$''',
+    '''tests/fixtures/''',
+    '''tests/data/''',
+    '''docs/''',
+    '''\.copilot-tracking/''',
+]
+
+[[allowlists]]
+description = "Ignore placeholder values and example strings"
+regexes = [
+    '''EXAMPLE_''',
+    '''example[-_]?key''',
+    '''your[-_]?api[-_]?key''',
+    '''placeholder''',
+    '''xxxx+''',
+    '''<your[-_]''',
+    '''changeme''',
+    '''TODO''',
+]
+
+# Azure-specific rules
+
+[[rules]]
+id = "azure-storage-account-key"
+description = "Azure Storage Account Key (base64 encoded, 88 chars)"
+regex = '''AccountKey=([A-Za-z0-9+/]{86}==)'''
+keywords = ["accountkey"]
+tags = ["azure", "storage"]
+
+[[rules]]
+id = "azure-storage-connection-string"
+description = "Azure Storage Connection String with embedded key"
+regex = '''DefaultEndpointsProtocol=https?;AccountName=[^;]+;AccountKey=[A-Za-z0-9+/]{86}=='''
+keywords = ["defaultendpointsprotocol", "accountkey"]
+tags = ["azure", "storage", "connection-string"]
+
+[[rules]]
+id = "azure-sas-token"
+description = "Azure Shared Access Signature (SAS) Token"
+regex = '''[?&]sig=([A-Za-z0-9%+/=]{40,})'''
+keywords = ["sig="]
+tags = ["azure", "sas"]
+
+[[rules]]
+id = "azure-cosmos-key"
+description = "Azure Cosmos DB Key"
+regex = '''AccountKey=([A-Za-z0-9+/]{86}==)'''
+keywords = ["cosmos", "accountkey"]
+tags = ["azure", "cosmos"]
+
+[[rules]]
+id = "azure-service-bus-connection"
+description = "Azure Service Bus Connection String"
+regex = '''Endpoint=sb://[^;]+;SharedAccessKeyName=[^;]+;SharedAccessKey=[A-Za-z0-9+/=]{43}='''
+keywords = ["endpoint=sb://", "sharedaccesskey"]
+tags = ["azure", "servicebus"]
+
+[[rules]]
+id = "env-var-secret"
+description = "Environment variable with secret-like name and value"
+regex = '''(?i)([A-Z_]*(?:SECRET|PASSWORD|PASSWD|PWD|API_KEY|APIKEY|TOKEN|PRIVATE_KEY)[A-Z_]*)\s*=\s*["']?([^\s"']{8,})["']?'''
+keywords = [
+    "secret",
+    "password",
+    "passwd",
+    "pwd",
+    "api_key",
+    "apikey",
+    "token",
+    "private_key",
+]
+tags = ["env", "secret"]
+
+[[rules.allowlists]]
+regexes = ['''EXAMPLE_''', '''your[-_]''', '''placeholder''', '''changeme''']

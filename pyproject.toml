@@ -1,0 +1,293 @@
+[project]
+name = "cadence"
+version = "0.1.0"
+description = "Multi-agent NL2SQL application using Microsoft Agent Framework"
+authors = [{ name = "Travis Nielsen" }]
+readme = "README.md"
+requires-python = ">=3.11"
+keywords = ["ai", "agent", "nl2sql", "fastapi"]
+license-files = ["LICENSE"]
+urls.homepage = "https://github.com/travisnielsen/cadence"
+urls.source = "https://github.com/travisnielsen/cadence"
+urls.issues = "https://github.com/travisnielsen/cadence/issues"
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+dependencies = [
+    "agent-framework>=1.0.0b0",
+    "aioodbc>=0.5.0",
+    "azure-identity>=1.15.0",
+    "azure-search-documents>=11.5.0",
+    "fastapi>=0.115.0",
+    "fastapi-azure-auth>=5.0.0",
+    "openai>=1.0.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.5.0",
+    "typing-extensions>=4.12",
+]
+
+[project.optional-dependencies]
+observability = ["azure-monitor-opentelemetry>=1.0.0"]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+    "pytest-mock>=3.14.0",
+    "pytest-xdist>=3.5.0",
+    "httpx>=0.27.0",
+    "ruff>=0.14.4",
+    "basedpyright>=1.29.0",
+    "poethepoet>=0.29.0",
+    "radon>=6.0.0",
+    "skylos>=3.1.2",
+    "sloppylint>=0.5.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/backend"]
+
+[tool.uv]
+prerelease = "allow"
+
+# ============================================================================
+# Poe Tasks
+# ============================================================================
+
+[tool.poe.tasks]
+# Setup and Installation
+bootstrap = { shell = "bash devsetup.sh", help = "Full dev environment setup (Python, venv, deps, hooks)" }
+setup = "uv sync --all-extras --dev"
+install = "uv sync --all-extras --dev"
+
+# Formatting and Linting
+format = [
+    { cmd = "ruff format src/backend tests" },
+    { cmd = "ruff check src/backend tests --fix" },
+    { cmd = "basedpyright --level error src/backend" },
+]
+
+check.ignore_fail = "return_non_zero"
+check.sequence = [
+    { cmd = "ruff check src/backend tests" },
+    { cmd = "basedpyright --level error src/backend" },
+]
+
+lint = { cmd = "ruff check src/backend tests --fix" }
+lint-unsafe = { cmd = "ruff check src/backend tests --fix --unsafe-fixes" }
+
+slop = { cmd = "sloppylint src/backend/ --lenient" }
+slop-strict = { cmd = "sloppylint src/backend/ --strict" }
+
+metrics = [
+    { cmd = "skylos src/backend --quality" },
+    { cmd = "radon cc src/backend -a -nb" },
+    { cmd = "radon mi src/backend -nb" },
+]
+
+quality.ignore_fail = "return_non_zero"
+quality.sequence = [
+    { cmd = "ruff format src/backend tests" },
+    { cmd = "ruff check src/backend tests --fix" },
+    { cmd = "basedpyright --level error src/backend" },
+    { cmd = "radon cc src/backend -a -nb" },
+    { cmd = "skylos src/backend --quality --danger" },
+]
+
+# Testing
+test = { cmd = "pytest tests/ -v" }
+test-cov = { cmd = "pytest tests/ --cov=src/backend --cov-report=html --cov-report=term" }
+
+# Dev server
+dev-api = { shell = "cd src/backend && uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload", help = "Run FastAPI dev server" }
+
+# Building
+build = { cmd = "uv build" }
+clean-dist = { cmd = "rm -rf dist/" }
+
+# ============================================================================
+# Ruff Configuration
+# ============================================================================
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+fix = true
+include = ["*.py", "*.pyi", "**/pyproject.toml", "*.ipynb"]
+preview = true
+
+[tool.ruff.lint]
+fixable = ["ALL"]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "B",     # flake8-bugbear
+    "C4",    # flake8-comprehensions
+    "UP",    # pyupgrade
+    "ARG",   # flake8-unused-arguments
+    "SIM",   # flake8-simplify
+    "N",     # pep8-naming
+    "Q",     # flake8-quotes
+    "PTH",   # flake8-use-pathlib
+    "FBT",   # flake8-boolean-trap
+    "BLE",   # flake8-blind-except
+    "C90",   # mccabe complexity
+    "ERA",   # eradicate (commented-out code)
+    "TRY",   # tryceratops (exception handling)
+    "PERF",  # performance anti-patterns
+    "FURB",  # refurb (modern Python idioms)
+    "PLR",   # pylint refactoring
+    "RUF",   # ruff-specific rules
+    "ASYNC", # flake8-async
+    "S",     # flake8-bandit (security)
+    "T20",   # flake8-print
+    "ANN",   # flake8-annotations
+    "RET",   # flake8-return
+    "PL",    # pylint
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # function calls in argument defaults (needed for FastAPI Depends)
+    "S603",   # subprocess without shell=True (too strict)
+    "S607",   # Starting a process with a partial path (too strict)
+    "ARG002", # unused method argument (common in base classes)
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 7
+max-branches = 10
+max-nested-blocks = 3
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**/*.py" = [
+    "S101",    # Allow assert in tests
+    "PLR2004", # Allow magic values in tests
+    "PLR6301", # Allow methods that could be functions in test classes
+    "ANN",     # Don't require type annotations in tests
+    "ARG001",  # Allow unused arguments (common in mock side effects)
+]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+# ============================================================================
+# Type Checking
+# ============================================================================
+
+[tool.basedpyright]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+include = ["src/backend"]
+exclude = [
+    "**/__pycache__",
+    "**/node_modules",
+    ".git",
+    ".mypy_cache",
+    ".pyright_cache",
+    ".ruff_cache",
+    ".pytest_cache",
+    ".venv",
+    "venv",
+    "env",
+    "logs",
+    "output",
+    "data",
+    "build",
+    "dist",
+    "*.egg-info",
+]
+
+reportMissingTypeStubs = false
+reportUnknownMemberType = "warning"
+reportUnknownArgumentType = "warning"
+reportUnknownVariableType = "warning"
+reportUntypedFunctionDecorator = false
+
+reportPrivateUsage = "warning"
+reportConstantRedefinition = "error"
+reportIncompatibleMethodOverride = "error"
+reportIncompatibleVariableOverride = "error"
+reportAssertAlwaysTrue = "error"
+
+reportUnusedImport = "error"
+reportUnusedVariable = "error"
+reportUnnecessaryIsInstance = "error"
+reportUnnecessaryCast = "error"
+reportUnnecessaryComparison = "error"
+
+reportImportCycles = "warning"
+
+# ============================================================================
+# Testing
+# ============================================================================
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = ["--strict-markers", "--strict-config", "--tb=short"]
+filterwarnings = ["error"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.coverage.run]
+source = ["src/backend"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/.venv/*",
+    "*/venv/*",
+    "*/scripts/*",
+]
+
+[tool.coverage.report]
+fail_under = 50
+show_missing = true
+skip_covered = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+    "@overload",
+]
+
+# Sloppylint - AI slop detector
+[tool.sloppy]
+ignore = ["tests/*", "scripts/*", ".github/*"]
+disable = ["magic_number"]
+severity = "high"
+max-score = 100
+ci = false
+format = "detailed"

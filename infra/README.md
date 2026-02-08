@@ -52,7 +52,7 @@ The Search service uses managed identity authentication to access storage and AI
 
 #### Entra ID App Registration
 
-This repo supports user-level authentication to the agent API, which supports enterprise security as well as documenting user feedback. The application can be created using: [create-chat-app.ps1](../scripts/create-chat-app.ps1). Be sure to sign-into your Entra ID tenant using `az login` first.
+This repo supports user-level authentication to the agent API, which supports enterprise security as well as documenting user feedback. The application can be created using: [create-chat-app.ps1](scripts/create-chat-app.ps1). Be sure to sign-into your Entra ID tenant using `az login` first.
 
 #### Azure Services
 

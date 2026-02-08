@@ -18,18 +18,18 @@ locals {
 
 # Log Analytics Workspace (shared)
 module "log_analytics" {
-  source  = "Azure/avm-res-operationalinsights-workspace/azurerm"
-  name                            = "${local.identifier}-law"
-  resource_group_name             = azurerm_resource_group.shared_rg.name
-  location                        = azurerm_resource_group.shared_rg.location
+  source                                             = "Azure/avm-res-operationalinsights-workspace/azurerm"
+  name                                               = "${local.identifier}-law"
+  resource_group_name                                = azurerm_resource_group.shared_rg.name
+  location                                           = azurerm_resource_group.shared_rg.location
   log_analytics_workspace_internet_ingestion_enabled = true
   log_analytics_workspace_internet_query_enabled     = true
-  tags                            = local.tags
+  tags                                               = local.tags
 }
 
 # Application Insights
 module "application_insights" {
-  source  = "Azure/avm-res-insights-component/azurerm"
+  source              = "Azure/avm-res-insights-component/azurerm"
   name                = "${local.identifier}-appi"
   resource_group_name = azurerm_resource_group.shared_rg.name
   location            = azurerm_resource_group.shared_rg.location
@@ -44,7 +44,7 @@ module "application_insights" {
 #################################################################################
 
 module "container_registry" {
-  source  = "Azure/avm-res-containerregistry-registry/azurerm"
+  source                        = "Azure/avm-res-containerregistry-registry/azurerm"
   name                          = replace("${local.identifier}acr", "-", "")
   resource_group_name           = azurerm_resource_group.shared_rg.name
   location                      = azurerm_resource_group.shared_rg.location
@@ -68,7 +68,7 @@ module "container_registry" {
 #################################################################################
 
 module "ai_storage" {
-  source  = "Azure/avm-res-storage-storageaccount/azurerm"
+  source                        = "Azure/avm-res-storage-storageaccount/azurerm"
   name                          = replace("${local.identifier}foundry", "-", "")
   resource_group_name           = azurerm_resource_group.shared_rg.name
   location                      = var.region_aifoundry
@@ -82,7 +82,7 @@ module "ai_storage" {
   static_website = {
     frontend = {
       index_document     = "index.html"
-      error_404_document = "index.html"  # SPA fallback
+      error_404_document = "index.html" # SPA fallback
     }
   }
 
@@ -115,40 +115,40 @@ resource "time_sleep" "wait_for_storage_rbac" {
   create_duration = "60s"
 }
 
-# Upload query files from /data/queries
+# Upload query files from infra/data/queries
 resource "azurerm_storage_blob" "nl2sql_queries" {
-  for_each               = fileset("${path.module}/../../data/queries", "*.json")
+  for_each               = fileset("${path.module}/../data/queries", "*.json")
   name                   = "queries/${each.value}"
   storage_account_name   = module.ai_storage.name
   storage_container_name = "nl2sql"
   type                   = "Block"
-  source                 = "${path.module}/../../data/queries/${each.value}"
+  source                 = "${path.module}/../data/queries/${each.value}"
   content_type           = "application/json"
 
   depends_on = [time_sleep.wait_for_storage_rbac]
 }
 
-# Upload table schema files from /data/tables
+# Upload table schema files from infra/data/tables
 resource "azurerm_storage_blob" "nl2sql_tables" {
-  for_each               = fileset("${path.module}/../../data/tables", "*.json")
+  for_each               = fileset("${path.module}/../data/tables", "*.json")
   name                   = "tables/${each.value}"
   storage_account_name   = module.ai_storage.name
   storage_container_name = "nl2sql"
   type                   = "Block"
-  source                 = "${path.module}/../../data/tables/${each.value}"
+  source                 = "${path.module}/../data/tables/${each.value}"
   content_type           = "application/json"
 
   depends_on = [time_sleep.wait_for_storage_rbac]
 }
 
-# Upload query template files from /data/query_templates
+# Upload query template files from infra/data/query_templates
 resource "azurerm_storage_blob" "nl2sql_query_templates" {
-  for_each               = fileset("${path.module}/../../data/query_templates", "*.json")
+  for_each               = fileset("${path.module}/../data/query_templates", "*.json")
   name                   = "query_templates/${each.value}"
   storage_account_name   = module.ai_storage.name
   storage_container_name = "nl2sql"
   type                   = "Block"
-  source                 = "${path.module}/../../data/query_templates/${each.value}"
+  source                 = "${path.module}/../data/query_templates/${each.value}"
   content_type           = "application/json"
 
   depends_on = [time_sleep.wait_for_storage_rbac]
@@ -160,14 +160,14 @@ resource "azurerm_storage_blob" "nl2sql_query_templates" {
 #################################################################################
 
 module "ai_cosmosdb" {
-  source  = "Azure/avm-res-documentdb-databaseaccount/azurerm"
+  source                        = "Azure/avm-res-documentdb-databaseaccount/azurerm"
   name                          = "${local.identifier}-foundry"
   resource_group_name           = azurerm_resource_group.shared_rg.name
   location                      = var.region_aifoundry
   public_network_access_enabled = true
   analytical_storage_enabled    = true
   automatic_failover_enabled    = true
-  
+
   geo_locations = [
     {
       location          = var.region_aifoundry
@@ -180,7 +180,7 @@ module "ai_cosmosdb" {
     to_law = {
       name                  = "to-law"
       workspace_resource_id = module.log_analytics.resource_id
-      metric_categories = ["SLI", "Requests"]
+      metric_categories     = ["SLI", "Requests"]
     }
   }
 
@@ -192,9 +192,9 @@ resource "azurerm_cosmosdb_sql_role_assignment" "current_user" {
   resource_group_name = azurerm_resource_group.shared_rg.name
   account_name        = module.ai_cosmosdb.name
   # Built-in Data Contributor role: 00000000-0000-0000-0000-000000000002
-  role_definition_id  = "${module.ai_cosmosdb.resource_id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
-  principal_id        = data.azurerm_client_config.current.object_id
-  scope               = module.ai_cosmosdb.resource_id
+  role_definition_id = "${module.ai_cosmosdb.resource_id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
+  principal_id       = data.azurerm_client_config.current.object_id
+  scope              = module.ai_cosmosdb.resource_id
 }
 
 # Cosmos DB Data Contributor role assignment for the Foundry project managed identity
@@ -202,9 +202,9 @@ resource "azurerm_cosmosdb_sql_role_assignment" "foundry_project" {
   resource_group_name = azurerm_resource_group.shared_rg.name
   account_name        = module.ai_cosmosdb.name
   # Built-in Data Contributor role: 00000000-0000-0000-0000-000000000002
-  role_definition_id  = "${module.ai_cosmosdb.resource_id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
-  principal_id        = module.ai_foundry.ai_foundry_project_system_identity_principal_id["cadence"]
-  scope               = module.ai_cosmosdb.resource_id
+  role_definition_id = "${module.ai_cosmosdb.resource_id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
+  principal_id       = module.ai_foundry.ai_foundry_project_system_identity_principal_id["cadence"]
+  scope              = module.ai_cosmosdb.resource_id
 }
 
 
@@ -213,16 +213,16 @@ resource "azurerm_cosmosdb_sql_role_assignment" "foundry_project" {
 #################################################################################
 
 module "ai_search" {
-  source  = "Azure/avm-res-search-searchservice/azurerm"
-  name                          = "${local.identifier}"
+  source                        = "Azure/avm-res-search-searchservice/azurerm"
+  name                          = local.identifier
   resource_group_name           = azurerm_resource_group.shared_rg.name
   location                      = var.region_search
   sku                           = "basic"
   public_network_access_enabled = true
   local_authentication_enabled  = true
   # Enable both API key and AAD authentication
-  authentication_failure_mode   = "http401WithBearerChallenge"
-  tags                          = local.tags
+  authentication_failure_mode = "http401WithBearerChallenge"
+  tags                        = local.tags
 
   # Enable managed identity for RBAC access to storage and AI services
   managed_identities = {
@@ -488,12 +488,12 @@ resource "azapi_resource" "ai_model_deployment_gpt41_mini" {
 #################################################################################
 
 module "sql_server" {
-  source  = "Azure/avm-res-sql-server/azurerm"
+  source              = "Azure/avm-res-sql-server/azurerm"
   name                = "${local.identifier}-sql"
   resource_group_name = azurerm_resource_group.shared_rg.name
   location            = azurerm_resource_group.shared_rg.location
   server_version      = "12.0"
-  tags = local.tags
+  tags                = local.tags
 
   # Use Entra ID authentication only (recommended)
   azuread_administrator = {
@@ -513,7 +513,7 @@ module "sql_server" {
   }
 
   public_network_access_enabled = true
-  
+
   # Allow all IP addresses (for demo/development purposes)
   firewall_rules = {
     allow_azure_services = {
@@ -535,7 +535,7 @@ module "sql_server" {
 # Import Wide World Importers BACPAC
 # Downloads and imports the WideWorldImporters-Standard sample database from
 # Microsoft's official release. This runs after the empty database is created.
-# 
+#
 # IMPORTANT: This requires sqlpackage to be installed locally.
 # Install via: dotnet tool install -g microsoft.sqlpackage
 # Or download from: https://aka.ms/sqlpackage-linux
@@ -553,7 +553,7 @@ resource "null_resource" "import_wideworldimporters" {
 
   provisioner "local-exec" {
     interpreter = ["pwsh", "-Command"]
-    command     = "& '${path.module}/../../scripts/import-wideworldimporters.ps1' -SqlServerName '${module.sql_server.resource.name}' -DatabaseName 'WideWorldImportersStd' -ResourceGroup '${azurerm_resource_group.shared_rg.name}' -Force"
+    command     = "& '${path.module}/../scripts/import-wideworldimporters.ps1' -SqlServerName '${module.sql_server.resource.name}' -DatabaseName 'WideWorldImportersStd' -ResourceGroup '${azurerm_resource_group.shared_rg.name}' -Force"
   }
 }
 
@@ -593,17 +593,17 @@ resource "null_resource" "search_config" {
       STORAGE_RESOURCE_ID="${module.ai_storage.resource_id}"
       AI_FOUNDRY_ID="${module.ai_foundry.ai_foundry_id}"
       AI_SERVICES_NAME="${module.ai_foundry.ai_foundry_name}"
-      
+
       # Get Search service principal ID
       echo "Getting Search service managed identity principal ID..."
       SEARCH_PRINCIPAL_ID=$(az search service show --name "$${SEARCH_NAME}" --resource-group "${azurerm_resource_group.shared_rg.name}" --query identity.principalId -o tsv)
-      
+
       if [ -z "$${SEARCH_PRINCIPAL_ID}" ] || [ "$${SEARCH_PRINCIPAL_ID}" = "null" ]; then
         echo "Error: Search service does not have a managed identity"
         exit 1
       fi
       echo "Search principal ID: $${SEARCH_PRINCIPAL_ID}"
-      
+
       # Assign Storage Blob Data Reader role
       echo "Assigning Storage Blob Data Reader role to Search service..."
       az role assignment create \
@@ -612,7 +612,7 @@ resource "null_resource" "search_config" {
         --assignee-principal-type ServicePrincipal \
         --scope "$${STORAGE_RESOURCE_ID}" \
         --only-show-errors || echo "Role may already exist"
-      
+
       # Assign Cognitive Services OpenAI User role
       echo "Assigning Cognitive Services OpenAI User role to Search service..."
       az role assignment create \
@@ -621,14 +621,14 @@ resource "null_resource" "search_config" {
         --assignee-principal-type ServicePrincipal \
         --scope "$${AI_FOUNDRY_ID}" \
         --only-show-errors || echo "Role may already exist"
-      
+
       # Wait for RBAC to propagate
       echo "Waiting 60 seconds for RBAC propagation..."
       sleep 60
-      
+
       echo "Getting access token for Search..."
       TOKEN=$(az account get-access-token --resource https://search.azure.com --query accessToken -o tsv)
-      
+
       echo "Creating data source: agentic-queries..."
       curl -s -X PUT "$${SEARCH_URL}/datasources/agentic-queries?api-version=$${API_VERSION}" \
         -H "Authorization: Bearer $${TOKEN}" \
@@ -644,7 +644,7 @@ resource "null_resource" "search_config" {
             "query": "queries"
           }
         }'
-      
+
       echo ""
       echo "Creating data source: agentic-tables..."
       curl -s -X PUT "$${SEARCH_URL}/datasources/agentic-tables?api-version=$${API_VERSION}" \
@@ -661,7 +661,7 @@ resource "null_resource" "search_config" {
             "query": "tables"
           }
         }'
-      
+
       echo ""
       echo "Creating data source: agentic-query-templates..."
       curl -s -X PUT "$${SEARCH_URL}/datasources/agentic-query-templates?api-version=$${API_VERSION}" \
@@ -678,28 +678,28 @@ resource "null_resource" "search_config" {
             "query": "query_templates"
           }
         }'
-      
+
       echo ""
       echo "Creating index: queries..."
       curl -s -X PUT "$${SEARCH_URL}/indexes/queries?api-version=$${API_VERSION}" \
         -H "Authorization: Bearer $${TOKEN}" \
         -H "Content-Type: application/json" \
         -d @${path.module}/../search-config/queries_index.json
-      
+
       echo ""
       echo "Creating index: tables..."
       curl -s -X PUT "$${SEARCH_URL}/indexes/tables?api-version=$${API_VERSION}" \
         -H "Authorization: Bearer $${TOKEN}" \
         -H "Content-Type: application/json" \
         -d @${path.module}/../search-config/tables_index.json
-      
+
       echo ""
       echo "Creating index: query_templates..."
       curl -s -X PUT "$${SEARCH_URL}/indexes/query_templates?api-version=$${API_VERSION}" \
         -H "Authorization: Bearer $${TOKEN}" \
         -H "Content-Type: application/json" \
         -d @${path.module}/../search-config/query_templates_index.json
-      
+
       echo ""
       echo "Creating skillset: query-embed-skill..."
       curl -s -X PUT "$${SEARCH_URL}/skillsets/query-embed-skill?api-version=$${API_VERSION}" \
@@ -733,7 +733,7 @@ resource "null_resource" "search_config" {
             }
           ]
         }'
-      
+
       echo ""
       echo "Creating skillset: table-embed-skill..."
       curl -s -X PUT "$${SEARCH_URL}/skillsets/table-embed-skill?api-version=$${API_VERSION}" \
@@ -767,7 +767,7 @@ resource "null_resource" "search_config" {
             }
           ]
         }'
-      
+
       echo ""
       echo "Creating skillset: query-template-embed-skill..."
       curl -s -X PUT "$${SEARCH_URL}/skillsets/query-template-embed-skill?api-version=$${API_VERSION}" \
@@ -801,7 +801,7 @@ resource "null_resource" "search_config" {
             }
           ]
         }'
-      
+
       echo ""
       echo "Creating indexer: indexer-queries..."
       curl -s -X PUT "$${SEARCH_URL}/indexers/indexer-queries?api-version=$${API_VERSION}" \
@@ -826,7 +826,7 @@ resource "null_resource" "search_config" {
             }
           ]
         }'
-      
+
       echo ""
       echo "Creating indexer: indexer-tables..."
       curl -s -X PUT "$${SEARCH_URL}/indexers/indexer-tables?api-version=$${API_VERSION}" \
@@ -851,7 +851,7 @@ resource "null_resource" "search_config" {
             }
           ]
         }'
-      
+
       echo ""
       echo "Creating indexer: indexer-query-templates..."
       curl -s -X PUT "$${SEARCH_URL}/indexers/indexer-query-templates?api-version=$${API_VERSION}" \
@@ -876,7 +876,7 @@ resource "null_resource" "search_config" {
             }
           ]
         }'
-      
+
       echo ""
       echo "Search configuration complete!"
     EOT
@@ -892,14 +892,14 @@ module "container_app_environment" {
   source  = "Azure/avm-res-app-managedenvironment/azurerm"
   version = "~> 0.2"
 
-  name                           = "${local.identifier}-cae"
-  resource_group_name            = azurerm_resource_group.shared_rg.name
-  location                       = azurerm_resource_group.shared_rg.location
+  name                = "${local.identifier}-cae"
+  resource_group_name = azurerm_resource_group.shared_rg.name
+  location            = azurerm_resource_group.shared_rg.location
   log_analytics_workspace = {
     resource_id = module.log_analytics.resource_id
   }
   zone_redundancy_enabled        = false
-  infrastructure_subnet_id       = null  # Use consumption plan without VNet integration
+  infrastructure_subnet_id       = null # Use consumption plan without VNet integration
   internal_load_balancer_enabled = false
   tags                           = local.tags
 }
@@ -1031,7 +1031,7 @@ resource "azurerm_container_app" "api" {
 
     container {
       name   = "api"
-      image  = "mcr.microsoft.com/k8se/quickstart:latest"  # Placeholder; GitHub Actions deploys the real image
+      image  = "mcr.microsoft.com/k8se/quickstart:latest" # Placeholder; GitHub Actions deploys the real image
       cpu    = 1.0
       memory = "2Gi"
 

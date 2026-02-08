@@ -1,0 +1,16 @@
+{
+  "name": "cadence",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:ui\" \"npm run dev:api\" --names ui,api --prefix-colors blue,green --kill-others",
+    "dev:ui": "cd frontend && pnpm run dev",
+    "dev:api": "../infra/scripts/run-api.sh",
+    "setup": "npm run setup:api && npm run setup:ui",
+    "setup:api": "../infra/scripts/setup-api.sh",
+    "setup:ui": "cd frontend && pnpm install"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

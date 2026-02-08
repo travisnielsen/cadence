@@ -1,0 +1,87 @@
+name: Deploy Frontend to Azure Static Website
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/frontend/**"
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: "20"
+  AZURE_STORAGE_ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: src/frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: src/frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        working-directory: src/frontend
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_AZURE_AD_CLIENT_ID: ${{ vars.NEXT_PUBLIC_AZURE_AD_CLIENT_ID }}
+          NEXT_PUBLIC_AZURE_AD_TENANT_ID: ${{ vars.NEXT_PUBLIC_AZURE_AD_TENANT_ID }}
+        run: pnpm run build
+
+      - name: Login to Azure
+        uses: azure/login@v2.3.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Add runner IP to storage firewall
+        uses: azure/cli@v2.2.0
+        with:
+          inlineScript: |
+            RUNNER_IP=$(curl -s https://api.ipify.org)
+            echo "Adding runner IP $RUNNER_IP to storage firewall"
+            az storage account network-rule add \
+              --account-name ${{ env.AZURE_STORAGE_ACCOUNT }} \
+              --ip-address $RUNNER_IP \
+              --only-show-errors || true
+            # Wait for firewall rule to propagate
+            sleep 30
+
+      - name: Deploy to Azure Static Website
+        uses: azure/cli@v2.2.0
+        with:
+          inlineScript: |
+            az storage blob upload-batch \
+              --account-name ${{ env.AZURE_STORAGE_ACCOUNT }} \
+              --destination '$web' \
+              --source src/frontend/out \
+              --overwrite \
+              --auth-mode login
+
+      - name: Remove runner IP from storage firewall
+        if: always()
+        uses: azure/cli@v2.2.0
+        with:
+          inlineScript: |
+            RUNNER_IP=$(curl -s https://api.ipify.org)
+            echo "Removing runner IP $RUNNER_IP from storage firewall"
+            az storage account network-rule remove \
+              --account-name ${{ env.AZURE_STORAGE_ACCOUNT }} \
+              --ip-address $RUNNER_IP \
+              --only-show-errors || true

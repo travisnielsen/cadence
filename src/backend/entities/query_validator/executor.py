@@ -247,7 +247,7 @@ class QueryValidatorExecutor(Executor):
     4. Returns SQLDraftMessage back to nl2sql_controller
     """
 
-    def __init__(self, executor_id: str = "query_validator"):
+    def __init__(self, executor_id: str = "query_validator") -> None:
         """
         Initialize the Query Validator executor.
 
@@ -260,7 +260,7 @@ class QueryValidatorExecutor(Executor):
         )
 
     @handler
-    async def handle_validation_request(
+    async def handle_validation_request(  # noqa: PLR6301
         self, request_msg: SQLDraftMessage, ctx: WorkflowContext[SQLDraftMessage]
     ) -> None:
         """
@@ -283,7 +283,7 @@ class QueryValidatorExecutor(Executor):
         except ImportError:
             pass
 
-        def finish_step():
+        def finish_step() -> None:
             if emit_step_end_fn:
                 emit_step_end_fn(step_name)
 
@@ -340,12 +340,12 @@ class QueryValidatorExecutor(Executor):
             )
 
         except Exception as e:
-            logger.error("Validation error: %s", e)
+            logger.exception("Validation error")
             # Parse the draft to preserve data, mark as validated with error
             try:
                 draft_data = json.loads(request_msg.response_json)
                 draft = SQLDraft.model_validate(draft_data)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 # If we can't parse, create minimal draft with dynamic source as fallback
                 draft = SQLDraft(
                     status="error",

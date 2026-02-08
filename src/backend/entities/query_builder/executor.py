@@ -90,7 +90,7 @@ def _build_generation_prompt(user_query: str, tables: list[TableMetadata]) -> st
             "columns": columns_info,
         })
 
-    prompt = f"""Generate a SQL query to answer the following user question.
+    return f"""Generate a SQL query to answer the following user question.
 
 ## User Question
 {user_query}
@@ -101,7 +101,6 @@ def _build_generation_prompt(user_query: str, tables: list[TableMetadata]) -> st
 Analyze the user question and generate a valid SQL SELECT query using only the tables and columns provided above.
 Respond with a JSON object containing your query and reasoning.
 """
-    return prompt
 
 
 def _parse_llm_response(response_text: str) -> dict[str, Any]:
@@ -158,7 +157,7 @@ class QueryBuilderExecutor(Executor):
 
     agent: ChatAgent
 
-    def __init__(self, chat_client: AzureAIAgentClient, executor_id: str = "query_builder"):
+    def __init__(self, chat_client: AzureAIAgentClient, executor_id: str = "query_builder") -> None:
         """
         Initialize the Query Builder executor.
 
@@ -210,7 +209,8 @@ class QueryBuilderExecutor(Executor):
         logger.info("QueryBuilder creating new Foundry thread")
         return self.agent.get_new_thread(), True
 
-    async def _store_thread_id(self, ctx: WorkflowContext[Any, Any], thread: AgentThread) -> None:
+    @staticmethod
+    async def _store_thread_id(ctx: WorkflowContext[Any, Any], thread: AgentThread) -> None:
         """Store the Foundry thread ID in shared state if it was created."""
         if thread.service_thread_id:
             try:
@@ -246,7 +246,7 @@ class QueryBuilderExecutor(Executor):
         except ImportError:
             pass
 
-        def finish_step():
+        def finish_step() -> None:
             if emit_step_end_fn:
                 emit_step_end_fn(step_name)
 
@@ -328,7 +328,7 @@ class QueryBuilderExecutor(Executor):
             logger.info("Query generation completed with status: %s", sql_draft.status)
 
         except Exception as e:
-            logger.error("Query generation error: %s", e)
+            logger.exception("Query generation error")
             sql_draft = SQLDraft(
                 status="error",
                 source="dynamic",

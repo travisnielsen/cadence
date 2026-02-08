@@ -32,12 +32,11 @@ def _hydrate_table_metadata(raw_result: dict[str, Any]) -> TableMetadata:
     """
     # Parse columns from the result
     raw_columns = raw_result.get("columns", [])
-    columns = []
-    for col in raw_columns:
-        if isinstance(col, dict):
-            columns.append(
-                TableColumn(name=col.get("name", ""), description=col.get("description", ""))
-            )
+    columns = [
+        TableColumn(name=col.get("name", ""), description=col.get("description", ""))
+        for col in raw_columns
+        if isinstance(col, dict)
+    ]
 
     return TableMetadata(
         id=raw_result.get("id", ""),
@@ -74,14 +73,14 @@ async def search_tables(user_question: str) -> dict[str, Any]:
     step_name = "Finding relevant tables"
     emit_step_end_fn = None
     try:
-        from api.step_events import emit_step_end, emit_step_start
+        from api.step_events import emit_step_end, emit_step_start  # noqa: PLC0415
 
         emit_step_start(step_name)
         emit_step_end_fn = emit_step_end
     except ImportError:
         pass  # Step events not available
 
-    def finish_step():
+    def finish_step() -> None:
         if emit_step_end_fn:
             emit_step_end_fn(step_name)
 
@@ -143,7 +142,7 @@ async def search_tables(user_question: str) -> dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error("Error searching tables: %s", e)
+        logger.exception("Error searching tables")
         finish_step()
         return {
             "has_matches": False,

@@ -29,7 +29,7 @@ Workflow Per-Request:
 import logging
 import os
 
-from agent_framework import WorkflowBuilder
+from agent_framework import Workflow, WorkflowBuilder
 from agent_framework_azure_ai import AzureAIClient
 from azure.identity.aio import DefaultAzureCredential
 from entities.nl2sql_controller.executor import NL2SQLController
@@ -113,7 +113,7 @@ def _get_clients() -> tuple[AzureAIClient, AzureAIClient, AzureAIClient]:
     return _nl2sql_client, _param_extractor_client, _query_builder_client
 
 
-def create_nl2sql_workflow():
+def create_nl2sql_workflow() -> tuple[Workflow, NL2SQLController, AzureAIClient]:
     """
     Create the NL2SQL workflow for processing data queries.
 

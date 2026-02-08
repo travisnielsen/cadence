@@ -388,9 +388,9 @@ async def generate_orchestrator_streaming_response(
                         output = orchestrator.render_response(response)
                         yield f"data: {json.dumps(output)}\n\n"
 
-                    except json.JSONDecodeError as e:
+                    except json.JSONDecodeError:
                         # If not JSON, emit as text
-                        logger.error("Failed to parse NL2SQL response: %s", e)
+                        logger.exception("Failed to parse NL2SQL response")
                         yield f"data: {json.dumps({'text': str(event.data), 'thread_id': orchestrator.thread_id})}\n\n"
 
                 elif isinstance(event, ExecutorInvokedEvent):
@@ -481,7 +481,7 @@ async def chat_stream(
     title: str | None = Query(None, description="Thread title (for new threads only)"),
     request_id: str | None = Query(None, description="Request ID for clarification responses"),
     user_id: str | None = Depends(get_optional_user_id),
-):
+) -> StreamingResponse:
     """
     SSE streaming chat with ConversationOrchestrator architecture.
 

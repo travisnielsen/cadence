@@ -7,10 +7,12 @@ The controller:
 3. Returns structured results
 """
 
+from agent_framework import ChatAgent
+
 from .agent import agent, load_prompt
 
 
-def get_agent():
+def get_agent() -> ChatAgent:
     """
     Get the NL2SQL agent.
 
@@ -22,4 +24,3 @@ def get_agent():
 
 # Export for programmatic access and DevUI discovery
 __all__ = ["agent", "get_agent", "load_prompt"]
-__all__ = ["execute_sql", "get_agent", "load_prompt", "search_cached_queries"]

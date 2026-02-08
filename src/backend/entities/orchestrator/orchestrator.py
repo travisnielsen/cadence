@@ -68,7 +68,7 @@ class ConversationOrchestrator:
     5. Render results back to the user
     """
 
-    def __init__(self, client: AzureAIClient, thread_id: str | None = None):
+    def __init__(self, client: AzureAIClient, thread_id: str | None = None) -> None:
         """
         Initialize the conversation orchestrator.
 
@@ -219,9 +219,7 @@ JSON response:"""
         )
 
         # AgentRunResponse has .text property
-        response_text = result.text or ""
-
-        return response_text
+        return result.text or ""
 
     def build_nl2sql_request(self, classification: ClassificationResult) -> NL2SQLRequest:
         """
@@ -333,7 +331,8 @@ JSON response:"""
             },
         }
 
-    def _format_response_text(self, response: NL2SQLResponse) -> str:
+    @staticmethod
+    def _format_response_text(response: NL2SQLResponse) -> str:
         """Format the response as markdown text."""
         if response.needs_clarification and response.clarification:
             clarification = response.clarification

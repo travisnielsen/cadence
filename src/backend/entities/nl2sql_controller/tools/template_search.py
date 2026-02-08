@@ -14,6 +14,8 @@ from agent_framework import tool
 from entities.shared.search_client import AzureSearchClient
 from models import ParameterDefinition, QueryTemplate
 
+MIN_AMBIGUITY_RESULTS = 2
+
 logger = logging.getLogger(__name__)
 
 # Confidence threshold for vector search (cosine similarity) scores
@@ -58,7 +60,7 @@ def _parse_parameters(params_json: str | list | None) -> list[ParameterDefinitio
     for param_dict in params_list:
         try:
             result.append(ParameterDefinition.model_validate(param_dict))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning("Failed to parse parameter definition: %s", e)
 
     return result
@@ -131,14 +133,14 @@ async def search_query_templates(user_question: str) -> dict[str, Any]:
     step_name = "Understanding intent"
     emit_step_end_fn = None
     try:
-        from api.step_events import emit_step_end, emit_step_start
+        from api.step_events import emit_step_end, emit_step_start  # noqa: PLC0415
 
         emit_step_start(step_name)
         emit_step_end_fn = emit_step_end
     except ImportError:
         pass  # Step events not available
 
-    def finish_step():
+    def finish_step() -> None:
         if emit_step_end_fn:
             emit_step_end_fn(step_name)
 
@@ -186,12 +188,12 @@ async def search_query_templates(user_question: str) -> dict[str, Any]:
         has_high_confidence = top_score >= threshold
 
         # Calculate ambiguity using absolute cosine-similarity gap
-        # Cosine similarity scores are well-distributed (0.0–1.0), so the raw
+        # Cosine similarity scores are well-distributed (0.0-1.0), so the raw
         # difference between the top two scores is a reliable ambiguity signal.
         score_gap = top_score  # Default: no second result means fully unambiguous
         is_ambiguous = False
 
-        if len(hydrated_templates) >= 2:
+        if len(hydrated_templates) >= MIN_AMBIGUITY_RESULTS:
             second_score = hydrated_templates[1].score
             score_gap = top_score - second_score
 
@@ -243,7 +245,7 @@ async def search_query_templates(user_question: str) -> dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error("Error searching query templates: %s", e)
+        logger.exception("Error searching query templates")
         finish_step()
         return {
             "has_high_confidence_match": False,

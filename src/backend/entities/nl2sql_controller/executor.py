@@ -9,9 +9,10 @@ at class definition time, which is incompatible with PEP 563 stringified annotat
 import json
 import logging
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 from agent_framework import (
+    AgentResponse,
     ChatAgent,
     Executor,
     Role,
@@ -24,6 +25,8 @@ from pydantic import ValidationError
 
 # Type alias for V2 client
 AzureAIAgentClient = AzureAIClient
+
+import contextlib
 
 from models import (
     ClarificationMessage,
@@ -47,9 +50,7 @@ logger = logging.getLogger(__name__)
 # Type alias for NL2SQL output messages
 # NL2SQL sends str (JSON) to chat, ExtractionRequestMessage to param_extractor,
 # QueryBuilderRequestMessage to query_builder, and SQLDraftMessage to query_validator/param_validator
-NL2SQLOutputMessage = Union[
-    str, ExtractionRequestMessage, QueryBuilderRequestMessage, SQLDraftMessage
-]
+NL2SQLOutputMessage = str | ExtractionRequestMessage | QueryBuilderRequestMessage | SQLDraftMessage
 
 # Key for storing pending clarification state
 CLARIFICATION_STATE_KEY = "pending_clarification"
@@ -78,10 +79,7 @@ def _substitute_parameters(sql_template: str, params: dict) -> str:
             str_value = str(value)
         elif isinstance(value, str):
             # Don't quote SQL keywords like ASC/DESC
-            if value.upper() in ("ASC", "DESC", "NULL"):
-                str_value = value.upper()
-            else:
-                str_value = str(value)
+            str_value = value.upper() if value.upper() in {"ASC", "DESC", "NULL"} else str(value)
         else:
             str_value = str(value)
 
@@ -110,9 +108,9 @@ def _format_defaults_for_display(defaults_used: dict[str, Any]) -> dict[str, str
             descriptions[name] = f"last {value} days"
         elif name == "from_date" and isinstance(value, str) and "GETDATE()" in value.upper():
             descriptions[name] = "relative to current date"
-        elif name == "limit" or name == "top":
+        elif name in {"limit", "top"}:
             descriptions[name] = f"showing top {value} results"
-        elif name == "order" or name == "sort":
+        elif name in {"order", "sort"}:
             descriptions[name] = f"sorted {value}"
         else:
             # Generic format
@@ -146,7 +144,7 @@ class NL2SQLController(Executor):
 
     agent: ChatAgent
 
-    def __init__(self, chat_client: AzureAIAgentClient, executor_id: str = "nl2sql"):
+    def __init__(self, chat_client: AzureAIAgentClient, executor_id: str = "nl2sql") -> None:
         """
         Initialize the NL2SQL executor.
 
@@ -348,7 +346,7 @@ class NL2SQLController(Executor):
                         await self._send_final_response(nl2sql_response, ctx)
 
         except Exception as e:
-            logger.error("NL2SQL execution error: %s", e)
+            logger.exception("NL2SQL execution error")
             nl2sql_response = NL2SQLResponse(sql_query="", error=str(e))
             await self._send_final_response(nl2sql_response, ctx)
 
@@ -387,7 +385,7 @@ class NL2SQLController(Executor):
                 await self.handle_question(request.user_query, ctx)
 
         except Exception as e:
-            logger.error("NL2SQL request error: %s", e)
+            logger.exception("NL2SQL request error")
             nl2sql_response = NL2SQLResponse(sql_query="", error=str(e))
             await self._send_final_response(nl2sql_response, ctx)
 
@@ -402,8 +400,8 @@ class NL2SQLController(Executor):
         try:
             template_data = json.loads(request.previous_template_json or "{}")
             template = QueryTemplate.model_validate(template_data)
-        except (json.JSONDecodeError, ValidationError) as e:
-            logger.error("Failed to parse previous template: %s", e)
+        except (json.JSONDecodeError, ValidationError):
+            logger.exception("Failed to parse previous template")
             # Fall back to treating as a new question
             await self.handle_question(request.user_query, ctx)
             return
@@ -574,8 +572,8 @@ class NL2SQLController(Executor):
                                 )
                                 sql_draft.completed_sql = completed_sql
                                 logger.info("Built SQL from template: %s", completed_sql[:200])
-                    except (KeyError, TypeError) as e:
-                        logger.error("Failed to get template for SQL substitution: %s", e)
+                    except (KeyError, TypeError):
+                        logger.exception("Failed to get template for SQL substitution")
 
                 if not completed_sql:
                     raise ValueError("SQL draft succeeded but no SQL was generated")
@@ -683,10 +681,8 @@ class NL2SQLController(Executor):
                         sql_result = await execute_sql(completed_sql)  # type: ignore[misc]
 
                         # Clear clarification state
-                        try:
+                        with contextlib.suppress(Exception):
                             await ctx.set_shared_state(CLARIFICATION_STATE_KEY, None)
-                        except Exception:
-                            pass
 
                         query_source = "template" if sql_draft.template_id else "dynamic"
                         confidence = 0.85 if sql_draft.template_id else 0.7
@@ -736,10 +732,10 @@ class NL2SQLController(Executor):
                     )
                     await ctx.send_message(forward_msg, target_id="param_validator")
 
-                elif sql_draft.params_validated or sql_draft.source in (
+                elif sql_draft.params_validated or sql_draft.source in {
                     "query_builder",
                     "param_validator",
-                ):
+                }:
                     # Parameters validated or dynamic query - route to query_validator
                     logger.info("Routing SQLDraft to query validator: %s", completed_sql[:200])
 
@@ -863,7 +859,7 @@ class NL2SQLController(Executor):
                 await self._send_final_response(nl2sql_response, ctx)
 
         except Exception as e:
-            logger.error("Error handling SQLDraft: %s", e)
+            logger.exception("Error handling SQLDraft")
             nl2sql_response = NL2SQLResponse(sql_query="", error=str(e))
             await self._send_final_response(nl2sql_response, ctx)
 
@@ -933,7 +929,7 @@ class NL2SQLController(Executor):
             await self.handle_question(clarification, ctx)
 
         except Exception as e:
-            logger.error("Error handling clarification: %s", e)
+            logger.exception("Error handling clarification")
             nl2sql_response = NL2SQLResponse(sql_query="", error=str(e))
             await self._send_final_response(nl2sql_response, ctx)
 
@@ -1002,19 +998,20 @@ class NL2SQLController(Executor):
             )
             await ctx.send_message(request_msg, target_id="param_extractor")
 
-        except json.JSONDecodeError as e:
-            logger.error("Failed to parse template JSON: %s", e)
+        except json.JSONDecodeError:
+            logger.exception("Failed to parse template JSON")
             nl2sql_response = NL2SQLResponse(
                 sql_query="", error="Failed to resume clarification flow - invalid template data"
             )
             await self._send_final_response(nl2sql_response, ctx)
 
         except Exception as e:
-            logger.error("Error handling clarification response: %s", e)
+            logger.exception("Error handling clarification response")
             nl2sql_response = NL2SQLResponse(sql_query="", error=str(e))
             await self._send_final_response(nl2sql_response, ctx)
 
-    def _parse_agent_response(self, response) -> NL2SQLResponse:
+    @staticmethod
+    def _parse_agent_response(response: AgentResponse) -> NL2SQLResponse:
         """Parse the agent's response to extract structured data."""
         sql_query = ""
         sql_response: list[dict] = []
@@ -1062,16 +1059,17 @@ class NL2SQLController(Executor):
             # Look for function calls to get the SQL query
             if message.role == Role.ASSISTANT:
                 for content in message.contents:
-                    if hasattr(content, "name") and content.name == "execute_sql":
-                        if hasattr(content, "arguments"):
-                            args = content.arguments
-                            if isinstance(args, str):
-                                try:
-                                    args = json.loads(args)
-                                except json.JSONDecodeError:
-                                    pass
-                            if isinstance(args, dict) and "query" in args:
-                                sql_query = args["query"]
+                    if (
+                        hasattr(content, "name")
+                        and content.name == "execute_sql"
+                        and hasattr(content, "arguments")
+                    ):
+                        args = content.arguments
+                        if isinstance(args, str):
+                            with contextlib.suppress(json.JSONDecodeError):
+                                args = json.loads(args)
+                        if isinstance(args, dict) and "query" in args:
+                            sql_query = args["query"]
 
         return NL2SQLResponse(
             sql_query=sql_query,

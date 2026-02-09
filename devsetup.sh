@@ -174,7 +174,7 @@ setup_frontend() {
         success "Node.js found: $(node --version)"
         if [ -d "src/frontend" ]; then
             info "Installing frontend dependencies..."
-            cd src/frontend && npm install && cd ../..
+            cd src/frontend && pnpm install && cd ../..
             success "Frontend dependencies installed"
         fi
     else

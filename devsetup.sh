@@ -167,6 +167,22 @@ install_beads() {
     fi
 }
 
+install_speckit() {
+    info "Setting up Spec Kit CLI..."
+
+    if command_exists specify; then
+        success "specify already installed: $(specify --version 2>/dev/null || echo 'unknown')"
+    else
+        info "Installing specify-cli via uv tool..."
+        if uv tool install specify-cli --from git+https://github.com/github/spec-kit.git 2>/dev/null; then
+            success "Spec Kit CLI installed"
+        else
+            warn "Failed to install Spec Kit CLI (non-critical, can be installed manually)"
+            echo "  Install: uv tool install specify-cli --from git+https://github.com/github/spec-kit.git"
+        fi
+    fi
+}
+
 setup_frontend() {
     info "Checking frontend dependencies..."
 
@@ -196,6 +212,7 @@ main() {
     install_dependencies
     setup_git_hooks
     install_beads
+    install_speckit
     setup_frontend
 
     echo ""

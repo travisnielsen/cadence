@@ -10,7 +10,7 @@ import os
 from typing import Any
 
 from agent_framework import tool
-from entities.shared.search_client import AzureSearchClient
+from entities.shared.clients import AzureSearchClient
 from models import TableColumn, TableMetadata
 
 logger = logging.getLogger(__name__)

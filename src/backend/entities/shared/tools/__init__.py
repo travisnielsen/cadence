@@ -1,5 +1,5 @@
 """
-Tools for the data agent.
+Shared tools for AI agents.
 
 Provides AI-callable functions for:
 - Searching cached SQL queries

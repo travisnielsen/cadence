@@ -1,50 +1,47 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# Cadence Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Async-First
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+All I/O-bound operations must be asynchronous. Never block the event loop. Use async-compatible libraries exclusively.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### II. Validated Data at Boundaries
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+All data crossing boundaries (API, config, inter-agent messages) must be validated through Pydantic models. No raw dicts or untyped data.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### III. Fully Typed
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+All function parameters and return types must have type annotations. Static type checking must pass.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### IV. Single-Responsibility Executors
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+Each workflow executor owns exactly one concern. Shared capabilities (clients, tools) are centralized for reuse across agents.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+### V. Automated Quality Gates (NON-NEGOTIABLE)
+
+All quality checks must pass before any commit. No exceptions, no overrides.
+
+## Technology Stack
+
+| Layer       | Technology                                     |
+| ----------- | ---------------------------------------------- |
+| Backend     | Python 3.11+, FastAPI, Microsoft Agent Framework |
+| Frontend    | Next.js, React, assistant-ui, Tailwind CSS     |
+| AI Platform | Azure AI Foundry, Azure OpenAI                 |
+| Data        | Azure SQL, Azure AI Search                     |
+| Auth        | Azure AD via MSAL (optional)                   |
+| IaC         | Terraform                                      |
+
+## Development Workflow
+
+1. **Task tracking** — All work tracked via `bd` (beads).
+2. **Conventional commits** — `type(scope): description` format required.
+3. **Quality before commit** — Automated checks must pass.
+4. **Push before done** — All changes committed AND pushed before ending a session.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+This constitution states principles. Implementation details (file conventions, thresholds, commands) live in `CODING_STANDARD.md`, `DEV_SETUP.md`, and `.github/copilot-instructions.md`. Changes to principles require updating this file and related docs in tandem.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.1.0 | **Ratified**: 2026-02-09 | **Last Amended**: 2026-02-09

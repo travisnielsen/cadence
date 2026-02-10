@@ -5,7 +5,6 @@
         "charliermarsh.ruff",
         "tamasfe.even-better-toml",
         "redhat.vscode-yaml",
-        "github.copilot",
         "github.copilot-chat",
         "davidanson.vscode-markdownlint",
         "ms-azuretools.vscode-azureterraform",

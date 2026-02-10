@@ -13,8 +13,7 @@ from pathlib import Path
 from agent_framework import ChatAgent
 from agent_framework_azure_ai import AzureAIClient
 from azure.identity.aio import DefaultAzureCredential
-
-from .tools import execute_sql, search_cached_queries
+from entities.shared.tools import execute_sql, search_cached_queries
 
 
 def load_prompt() -> str:

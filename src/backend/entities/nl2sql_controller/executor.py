@@ -28,6 +28,7 @@ AzureAIAgentClient = AzureAIClient
 
 import contextlib
 
+from entities.shared.tools import execute_sql, search_query_templates, search_tables
 from models import (
     ClarificationMessage,
     ClarificationRequest,
@@ -42,8 +43,6 @@ from models import (
     SQLDraftMessage,
     TableMetadata,
 )
-
-from .tools import execute_sql, search_query_templates, search_tables
 
 logger = logging.getLogger(__name__)
 

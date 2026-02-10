@@ -8,7 +8,7 @@ import logging
 from typing import Any
 
 from agent_framework import tool
-from entities.shared import AzureSqlClient
+from entities.shared.clients import AzureSqlClient
 
 logger = logging.getLogger(__name__)
 

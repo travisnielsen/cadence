@@ -1,0 +1,21 @@
+{
+    "description": "Column format inference rules for NL2SQL data tables. Edit this file to control how columns are formatted based on their names.",
+    "currencyPatterns": [
+        "price",
+        "cost",
+        "amount",
+        "revenue",
+        "due",
+        "balance",
+        "fee",
+        "charge",
+        "salary",
+        "payment",
+        "budget",
+        "spend",
+        "spent",
+        "value"
+    ],
+    "defaultCurrency": "USD",
+    "columnOverrides": {}
+}

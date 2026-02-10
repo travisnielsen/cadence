@@ -8,6 +8,7 @@ against Azure SQL Database using Azure AD authentication.
 import logging
 import os
 import struct
+from decimal import Decimal
 from types import TracebackType
 from typing import Any, ClassVar, Self
 
@@ -173,8 +174,11 @@ class AzureSqlClient:
             async with self._connection.cursor() as cursor:
                 await cursor.execute(query)
 
-                # Get column names
-                columns = [column[0] for column in cursor.description] if cursor.description else []
+                # Extract column names from cursor.description
+                # PEP 249: (name, type_code, display_size, internal_size, precision, scale, null_ok)
+                columns: list[str] = (
+                    [col_desc[0] for col_desc in cursor.description] if cursor.description else []
+                )
 
                 # Fetch all rows
                 raw_rows = await cursor.fetchall()
@@ -190,6 +194,9 @@ class AzureSqlClient:
                             row_dict[col] = None
                         elif isinstance(value, (int, float, str, bool)):
                             row_dict[col] = value
+                        elif isinstance(value, Decimal):
+                            # Preserve numeric type for frontend formatters
+                            row_dict[col] = float(value)
                         else:
                             row_dict[col] = str(value)
                     rows.append(row_dict)

@@ -1,9 +1,15 @@
 "use client";
 
+import {
+  DataTable,
+  DataTableErrorBoundary,
+  sortData,
+  type Column,
+} from "@/components/tool-ui/data-table";
+import { buildColumn } from "@/lib/column-format-rules";
 import { makeAssistantToolUI, useThreadRuntime } from "@assistant-ui/react";
-import { DatabaseIcon, ChevronDownIcon, ChevronUpIcon, LightbulbIcon } from "lucide-react";
-import { useState, useCallback } from "react";
-import { cn } from "@/lib/utils";
+import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, DatabaseIcon, LightbulbIcon } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -36,65 +42,131 @@ interface NL2SQLResult {
 }
 
 /**
- * Data Table component for rendering SQL results
+ * Build tool-ui Column definitions from backend column names.
+ *
+ * Delegates format inference + width to the configurable rules module
+ * (`column-format-rules.json`). First column gets mobile "primary" priority.
  */
-function DataTable({
-  columns,
-  rows,
-  maxRows = 10,
-}: {
-  columns: string[];
-  rows: Record<string, unknown>[];
-  maxRows?: number;
-}) {
-  const displayRows = rows.slice(0, maxRows);
-  const hasMore = rows.length > maxRows;
+function buildColumns(
+  columnNames: string[],
+  rows: Record<string, unknown>[],
+): Column[] {
+  return columnNames.map((name, idx) =>
+    buildColumn(name, rows.map((r) => r[name]), idx === 0 ? "primary" : "secondary"),
+  );
+}
 
-  if (columns.length === 0 || rows.length === 0) {
+/**
+ * Coerce row values to JSON primitives expected by tool-ui DataTable.
+ * Non-primitive values are stringified.
+ */
+function coerceRows(
+  rows: Record<string, unknown>[],
+): Record<string, string | number | boolean | null>[] {
+  return rows.map((row) => {
+    const out: Record<string, string | number | boolean | null> = {};
+    for (const [key, value] of Object.entries(row)) {
+      if (value === null || value === undefined) {
+        out[key] = null;
+      } else if (
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean"
+      ) {
+        out[key] = value;
+      } else {
+        out[key] = String(value);
+      }
+    }
+    return out;
+  });
+}
+
+const PAGE_SIZE = 10;
+
+/**
+ * NL2SQL Data Table wrapper that maps backend response to tool-ui DataTable.
+ *
+ * Handles column format mapping, row coercion, pagination, and empty states.
+ */
+type SortState = {
+  by?: string | undefined;
+  direction?: "asc" | "desc" | undefined;
+};
+
+function NL2SQLDataTable({ result }: { result: NL2SQLResult }) {
+  const columns = useMemo(
+    () => buildColumns(result.columns, result.sql_response),
+    [result.columns, result.sql_response],
+  );
+  const allData = useMemo(() => coerceRows(result.sql_response), [result.sql_response]);
+
+  const [sort, setSort] = useState<SortState>({ by: undefined, direction: undefined });
+  const [page, setPage] = useState(0);
+
+  // Sort the full dataset, then paginate
+  const sortedData = useMemo(() => {
+    if (!sort.by || !sort.direction) return allData;
+    return sortData(allData, sort.by, sort.direction);
+  }, [allData, sort]);
+
+  const totalPages = Math.ceil(sortedData.length / PAGE_SIZE);
+  const pagedData = useMemo(
+    () => sortedData.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
+    [sortedData, page],
+  );
+
+  const handleSortChange = useCallback((next: SortState) => {
+    setSort(next);
+    setPage(0);
+  }, []);
+
+  if (result.columns.length === 0 || result.sql_response.length === 0) {
     return (
       <p className="text-sm text-muted-foreground italic">No data returned</p>
     );
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm border-collapse">
-        <thead>
-          <tr className="border-b bg-muted/50">
-            {columns.map((col) => (
-              <th
-                key={col}
-                className="px-3 py-2 text-left font-medium text-muted-foreground"
-              >
-                {col}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {displayRows.map((row, idx) => (
-            <tr
-              key={idx}
-              className={cn(
-                "border-b transition-colors",
-                idx % 2 === 0 ? "bg-background" : "bg-muted/30"
-              )}
+    <DataTableErrorBoundary>
+      <DataTable
+        id="nl2sql-query-results"
+        columns={columns}
+        data={pagedData}
+        sort={sort}
+        onSortChange={handleSortChange}
+        emptyMessage="No data returned"
+      />
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between border-t px-2 py-2 text-sm text-muted-foreground">
+          <span>
+            {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, sortedData.length)} of{" "}
+            {sortedData.length}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="rounded p-1 hover:bg-muted disabled:opacity-30 disabled:pointer-events-none"
+              aria-label="Previous page"
             >
-              {columns.map((col) => (
-                <td key={col} className="px-3 py-2">
-                  {String(row[col] ?? "")}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {hasMore && (
-        <p className="mt-2 text-xs text-muted-foreground">
-          Showing {maxRows} of {rows.length} rows
-        </p>
+              <ChevronLeftIcon className="size-4" />
+            </button>
+            <span className="px-2 tabular-nums">
+              {page + 1} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+              className="rounded p-1 hover:bg-muted disabled:opacity-30 disabled:pointer-events-none"
+              aria-label="Next page"
+            >
+              <ChevronRightIcon className="size-4" />
+            </button>
+          </div>
+        </div>
       )}
-    </div>
+    </DataTableErrorBoundary>
   );
 }
 
@@ -131,7 +203,7 @@ function SQLQuerySection({ query }: { query: string }) {
  */
 function ClarificationOptions({ prompt, allowedValues }: { prompt: string; allowedValues: string[] }) {
   const threadRuntime = useThreadRuntime();
-  
+
   const handleClick = useCallback((value: string) => {
     threadRuntime.composer.setText(value);
     threadRuntime.composer.send();
@@ -274,7 +346,7 @@ export const NL2SQLToolUI = makeAssistantToolUI<NL2SQLArgs, NL2SQLResult>({
         )}
 
         {/* Data Table */}
-        <DataTable columns={result.columns} rows={result.sql_response} />
+        <NL2SQLDataTable result={result} />
 
         {/* Expandable SQL Query */}
         {result.sql_query && <SQLQuerySection query={result.sql_query} />}

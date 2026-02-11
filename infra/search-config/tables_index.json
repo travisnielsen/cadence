@@ -93,6 +93,78 @@
           "facetable": true,
           "key": false,
           "synonymMaps": []
+        },
+        {
+          "name": "data_type",
+          "type": "Edm.String",
+          "searchable": false,
+          "filterable": true,
+          "retrievable": true,
+          "stored": true,
+          "sortable": false,
+          "facetable": true,
+          "key": false,
+          "synonymMaps": []
+        },
+        {
+          "name": "is_nullable",
+          "type": "Edm.Boolean",
+          "searchable": false,
+          "filterable": true,
+          "retrievable": true,
+          "stored": true,
+          "sortable": false,
+          "facetable": true,
+          "key": false,
+          "synonymMaps": []
+        },
+        {
+          "name": "is_primary_key",
+          "type": "Edm.Boolean",
+          "searchable": false,
+          "filterable": true,
+          "retrievable": true,
+          "stored": true,
+          "sortable": false,
+          "facetable": true,
+          "key": false,
+          "synonymMaps": []
+        },
+        {
+          "name": "is_foreign_key",
+          "type": "Edm.Boolean",
+          "searchable": false,
+          "filterable": true,
+          "retrievable": true,
+          "stored": true,
+          "sortable": false,
+          "facetable": true,
+          "key": false,
+          "synonymMaps": []
+        },
+        {
+          "name": "foreign_key_table",
+          "type": "Edm.String",
+          "searchable": false,
+          "filterable": true,
+          "retrievable": true,
+          "stored": true,
+          "sortable": false,
+          "facetable": true,
+          "key": false,
+          "synonymMaps": []
+        },
+        {
+          "name": "foreign_key_column",
+          "type": "Edm.String",
+          "searchable": false,
+          "filterable": true,
+          "retrievable": true,
+          "stored": true,
+          "sortable": false,
+          "facetable": true,
+          "key": false,
+          "synonymMaps": []
         }
       ]
     }

@@ -1,0 +1,37 @@
+{
+    "table": "Warehouse.Colors",
+    "datasource": "wideworldimporters",
+    "description": "Reference table of colors used for stock items.",
+    "columns": [
+        {
+            "name": "ColorID",
+            "description": "Primary key. Unique identifier for each color.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": true,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "ColorName",
+            "description": "Name of the color.",
+            "data_type": "nvarchar(20)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "LastEditedBy",
+            "description": "Foreign key to Application.People for last editor.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        }
+    ]
+}

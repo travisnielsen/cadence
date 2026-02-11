@@ -1,0 +1,57 @@
+{
+    "table": "Warehouse.StockItemStockGroups",
+    "datasource": "wideworldimporters",
+    "description": "Junction table linking stock items to their stock groups (many-to-many relationship).",
+    "columns": [
+        {
+            "name": "StockItemStockGroupID",
+            "description": "Primary key. Unique identifier for each association.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": true,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "StockItemID",
+            "description": "Foreign key to Warehouse.StockItems.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Warehouse.StockItems",
+            "foreign_key_column": "StockItemID"
+        },
+        {
+            "name": "StockGroupID",
+            "description": "Foreign key to Warehouse.StockGroups.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Warehouse.StockGroups",
+            "foreign_key_column": "StockGroupID"
+        },
+        {
+            "name": "LastEditedBy",
+            "description": "Foreign key to Application.People for last editor.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        },
+        {
+            "name": "LastEditedWhen",
+            "description": "Timestamp of last edit.",
+            "data_type": "datetime2(7)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        }
+    ]
+}

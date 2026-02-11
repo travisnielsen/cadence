@@ -1,0 +1,127 @@
+{
+    "table": "Purchasing.PurchaseOrderLines",
+    "datasource": "wideworldimporters",
+    "description": "Line items for purchase orders, tracking ordered and received quantities of stock items.",
+    "columns": [
+        {
+            "name": "PurchaseOrderLineID",
+            "description": "Primary key. Unique identifier for each purchase order line.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": true,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "PurchaseOrderID",
+            "description": "Foreign key to the parent purchase order.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Purchasing.PurchaseOrders",
+            "foreign_key_column": "PurchaseOrderID"
+        },
+        {
+            "name": "StockItemID",
+            "description": "Foreign key to the stock item being ordered.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Warehouse.StockItems",
+            "foreign_key_column": "StockItemID"
+        },
+        {
+            "name": "OrderedOuters",
+            "description": "Number of outer packages ordered.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "Description",
+            "description": "Description of the item on the purchase order line.",
+            "data_type": "nvarchar(100)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "ReceivedOuters",
+            "description": "Number of outer packages received so far.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "PackageTypeID",
+            "description": "Foreign key to Warehouse.PackageTypes for the package type.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Warehouse.PackageTypes",
+            "foreign_key_column": "PackageTypeID"
+        },
+        {
+            "name": "ExpectedUnitPricePerOuter",
+            "description": "Expected unit price per outer package.",
+            "data_type": "decimal(18,2)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "LastReceiptDate",
+            "description": "Date of the last receipt for this line.",
+            "data_type": "date",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "IsOrderLineFinalized",
+            "description": "Whether this order line has been finalized.",
+            "data_type": "bit",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "LastEditedBy",
+            "description": "Foreign key to Application.People for last editor.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        },
+        {
+            "name": "LastEditedWhen",
+            "description": "Timestamp of last edit.",
+            "data_type": "datetime2(7)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        }
+    ]
+}

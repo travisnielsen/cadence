@@ -81,6 +81,18 @@ class TableColumn(BaseModel):
 
     name: str = Field(description="Column name")
     description: str = Field(default="", description="Column description")
+    data_type: str = Field(
+        default="", description="SQL Server data type (e.g., 'int', 'nvarchar(100)')"
+    )
+    is_nullable: bool = Field(default=True, description="Whether the column allows NULL values")
+    is_primary_key: bool = Field(default=False, description="Whether the column is a primary key")
+    is_foreign_key: bool = Field(default=False, description="Whether the column is a foreign key")
+    foreign_key_table: str = Field(
+        default="", description="Referenced table for FK (e.g., 'Application.People')"
+    )
+    foreign_key_column: str = Field(
+        default="", description="Referenced column for FK (e.g., 'PersonID')"
+    )
 
 
 class TableMetadata(BaseModel):

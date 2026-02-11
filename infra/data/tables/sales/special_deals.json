@@ -1,0 +1,147 @@
+{
+    "table": "Sales.SpecialDeals",
+    "datasource": "wideworldimporters",
+    "description": "Special pricing deals that can apply to specific stock items, customers, buying groups, or customer categories.",
+    "columns": [
+        {
+            "name": "SpecialDealID",
+            "description": "Primary key. Unique identifier for each special deal.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": true,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "StockItemID",
+            "description": "Foreign key to Warehouse.StockItems if deal applies to a specific item.",
+            "data_type": "int",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Warehouse.StockItems",
+            "foreign_key_column": "StockItemID"
+        },
+        {
+            "name": "CustomerID",
+            "description": "Foreign key to Sales.Customers if deal applies to a specific customer.",
+            "data_type": "int",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Sales.Customers",
+            "foreign_key_column": "CustomerID"
+        },
+        {
+            "name": "BuyingGroupID",
+            "description": "Foreign key to Sales.BuyingGroups if deal applies to a buying group.",
+            "data_type": "int",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Sales.BuyingGroups",
+            "foreign_key_column": "BuyingGroupID"
+        },
+        {
+            "name": "CustomerCategoryID",
+            "description": "Foreign key to Sales.CustomerCategories if deal applies to a category.",
+            "data_type": "int",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Sales.CustomerCategories",
+            "foreign_key_column": "CustomerCategoryID"
+        },
+        {
+            "name": "StockGroupID",
+            "description": "Foreign key to Warehouse.StockGroups if deal applies to a stock group.",
+            "data_type": "int",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Warehouse.StockGroups",
+            "foreign_key_column": "StockGroupID"
+        },
+        {
+            "name": "DealDescription",
+            "description": "Description of the special deal.",
+            "data_type": "nvarchar(30)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "StartDate",
+            "description": "Start date for the deal.",
+            "data_type": "date",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "EndDate",
+            "description": "End date for the deal.",
+            "data_type": "date",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "DiscountAmount",
+            "description": "Fixed discount amount if applicable.",
+            "data_type": "decimal(18,2)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "DiscountPercentage",
+            "description": "Discount percentage if applicable.",
+            "data_type": "decimal(18,3)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "UnitPrice",
+            "description": "Special unit price if applicable.",
+            "data_type": "decimal(18,2)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "LastEditedBy",
+            "description": "Foreign key to Application.People for last editor.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        },
+        {
+            "name": "LastEditedWhen",
+            "description": "Timestamp of last edit.",
+            "data_type": "datetime2(7)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        }
+    ]
+}

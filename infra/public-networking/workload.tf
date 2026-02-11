@@ -130,7 +130,7 @@ resource "azurerm_storage_blob" "nl2sql_queries" {
 
 # Upload table schema files from infra/data/tables
 resource "azurerm_storage_blob" "nl2sql_tables" {
-  for_each               = fileset("${path.module}/../data/tables", "*.json")
+  for_each               = fileset("${path.module}/../data/tables", "**/*.json")
   name                   = "tables/${each.value}"
   storage_account_name   = module.ai_storage.name
   storage_container_name = "nl2sql"

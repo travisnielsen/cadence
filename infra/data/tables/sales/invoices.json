@@ -1,0 +1,257 @@
+{
+    "table": "Sales.Invoices",
+    "datasource": "wideworldimporters",
+    "description": "Contains sales invoice headers with customer, delivery, and payment information.",
+    "columns": [
+        {
+            "name": "InvoiceID",
+            "description": "Primary key. Unique identifier for each invoice.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": true,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "CustomerID",
+            "description": "Foreign key to Sales.Customers for the invoiced customer.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Sales.Customers",
+            "foreign_key_column": "CustomerID"
+        },
+        {
+            "name": "BillToCustomerID",
+            "description": "Foreign key to Sales.Customers for the billing customer.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Sales.Customers",
+            "foreign_key_column": "CustomerID"
+        },
+        {
+            "name": "OrderID",
+            "description": "Foreign key to Sales.Orders for the originating order.",
+            "data_type": "int",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Sales.Orders",
+            "foreign_key_column": "OrderID"
+        },
+        {
+            "name": "DeliveryMethodID",
+            "description": "Foreign key to Application.DeliveryMethods.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.DeliveryMethods",
+            "foreign_key_column": "DeliveryMethodID"
+        },
+        {
+            "name": "ContactPersonID",
+            "description": "Foreign key to Application.People for the customer contact.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        },
+        {
+            "name": "AccountsPersonID",
+            "description": "Foreign key to Application.People for the accounts staff.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        },
+        {
+            "name": "SalespersonPersonID",
+            "description": "Foreign key to Application.People for the salesperson.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        },
+        {
+            "name": "PackedByPersonID",
+            "description": "Foreign key to Application.People for warehouse staff who packed the order.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        },
+        {
+            "name": "InvoiceDate",
+            "description": "Date the invoice was generated.",
+            "data_type": "date",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "CustomerPurchaseOrderNumber",
+            "description": "Customer's own purchase order reference number.",
+            "data_type": "nvarchar(20)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "IsCreditNote",
+            "description": "Whether this invoice is a credit note.",
+            "data_type": "bit",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "CreditNoteReason",
+            "description": "Reason for the credit note if applicable.",
+            "data_type": "nvarchar(max)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "Comments",
+            "description": "Additional comments about the invoice.",
+            "data_type": "nvarchar(max)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "DeliveryInstructions",
+            "description": "Special instructions for delivery.",
+            "data_type": "nvarchar(max)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "InternalComments",
+            "description": "Internal notes not visible to customer.",
+            "data_type": "nvarchar(max)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "TotalDryItems",
+            "description": "Total count of non-chiller items.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "TotalChillerItems",
+            "description": "Total count of chiller items.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "DeliveryRun",
+            "description": "Delivery run identifier.",
+            "data_type": "nvarchar(5)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "RunPosition",
+            "description": "Position within the delivery run.",
+            "data_type": "nvarchar(5)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "ReturnedDeliveryData",
+            "description": "JSON data about the delivery returned from the driver.",
+            "data_type": "nvarchar(max)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "ConfirmedDeliveryTime",
+            "description": "Confirmed time of delivery.",
+            "data_type": "datetime2(7)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "ConfirmedReceivedBy",
+            "description": "Name of person who confirmed receipt of delivery.",
+            "data_type": "nvarchar(4000)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "LastEditedBy",
+            "description": "Foreign key to Application.People for last editor.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        },
+        {
+            "name": "LastEditedWhen",
+            "description": "Timestamp of last edit.",
+            "data_type": "datetime2(7)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        }
+    ]
+}

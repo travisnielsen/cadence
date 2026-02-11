@@ -1,0 +1,277 @@
+{
+    "table": "Purchasing.Suppliers",
+    "datasource": "wideworldimporters",
+    "description": "Contains supplier information including contacts, banking, delivery and postal addresses.",
+    "columns": [
+        {
+            "name": "SupplierID",
+            "description": "Primary key. Unique identifier for each supplier.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": true,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "SupplierName",
+            "description": "Name of the supplier.",
+            "data_type": "nvarchar(100)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "SupplierCategoryID",
+            "description": "Foreign key to Purchasing.SupplierCategories.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Purchasing.SupplierCategories",
+            "foreign_key_column": "SupplierCategoryID"
+        },
+        {
+            "name": "PrimaryContactPersonID",
+            "description": "Foreign key to Application.People for primary contact.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        },
+        {
+            "name": "AlternateContactPersonID",
+            "description": "Foreign key to Application.People for alternate contact.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        },
+        {
+            "name": "DeliveryMethodID",
+            "description": "Foreign key to Application.DeliveryMethods.",
+            "data_type": "int",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.DeliveryMethods",
+            "foreign_key_column": "DeliveryMethodID"
+        },
+        {
+            "name": "DeliveryCityID",
+            "description": "Foreign key to Application.Cities for delivery city.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.Cities",
+            "foreign_key_column": "CityID"
+        },
+        {
+            "name": "PostalCityID",
+            "description": "Foreign key to Application.Cities for postal city.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.Cities",
+            "foreign_key_column": "CityID"
+        },
+        {
+            "name": "SupplierReference",
+            "description": "Supplier's own reference identifier.",
+            "data_type": "nvarchar(20)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "BankAccountName",
+            "description": "Name on the supplier's bank account.",
+            "data_type": "nvarchar(50)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "BankAccountBranch",
+            "description": "Branch of the supplier's bank.",
+            "data_type": "nvarchar(50)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "BankAccountCode",
+            "description": "Bank routing/sort code.",
+            "data_type": "nvarchar(20)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "BankAccountNumber",
+            "description": "Supplier's bank account number.",
+            "data_type": "nvarchar(20)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "BankInternationalCode",
+            "description": "SWIFT/BIC code for international transfers.",
+            "data_type": "nvarchar(20)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "PaymentDays",
+            "description": "Number of days for payment terms.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "InternalComments",
+            "description": "Internal notes about the supplier.",
+            "data_type": "nvarchar(max)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "PhoneNumber",
+            "description": "Supplier's phone number.",
+            "data_type": "nvarchar(20)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "FaxNumber",
+            "description": "Supplier's fax number.",
+            "data_type": "nvarchar(20)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "WebsiteURL",
+            "description": "Supplier's website URL.",
+            "data_type": "nvarchar(256)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "DeliveryAddressLine1",
+            "description": "First line of the supplier's delivery address.",
+            "data_type": "nvarchar(60)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "DeliveryAddressLine2",
+            "description": "Second line of the supplier's delivery address.",
+            "data_type": "nvarchar(60)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "DeliveryPostalCode",
+            "description": "Postal code for the supplier's delivery address.",
+            "data_type": "nvarchar(10)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "DeliveryLocation",
+            "description": "Geographic location of delivery address (spatial data).",
+            "data_type": "geography",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "PostalAddressLine1",
+            "description": "First line of the supplier's postal address.",
+            "data_type": "nvarchar(60)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "PostalAddressLine2",
+            "description": "Second line of the supplier's postal address.",
+            "data_type": "nvarchar(60)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "PostalPostalCode",
+            "description": "Postal code for the supplier's postal address.",
+            "data_type": "nvarchar(10)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "LastEditedBy",
+            "description": "Foreign key to Application.People for last editor.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        }
+    ]
+}

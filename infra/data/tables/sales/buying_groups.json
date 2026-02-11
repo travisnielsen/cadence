@@ -1,0 +1,37 @@
+{
+    "table": "Sales.BuyingGroups",
+    "datasource": "wideworldimporters",
+    "description": "Reference table of buying groups that customers can belong to for volume discounts.",
+    "columns": [
+        {
+            "name": "BuyingGroupID",
+            "description": "Primary key. Unique identifier for each buying group.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": true,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "BuyingGroupName",
+            "description": "Name of the buying group.",
+            "data_type": "nvarchar(50)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "LastEditedBy",
+            "description": "Foreign key to Application.People for last editor.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        }
+    ]
+}

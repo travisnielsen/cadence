@@ -1,0 +1,97 @@
+{
+    "table": "Warehouse.StockItemHoldings",
+    "datasource": "wideworldimporters",
+    "description": "Current stock holding quantities and warehouse bin locations for each stock item.",
+    "columns": [
+        {
+            "name": "StockItemID",
+            "description": "Primary key and foreign key to Warehouse.StockItems.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": true,
+            "is_foreign_key": true,
+            "foreign_key_table": "Warehouse.StockItems",
+            "foreign_key_column": "StockItemID"
+        },
+        {
+            "name": "QuantityOnHand",
+            "description": "Current quantity on hand in warehouse.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "BinLocation",
+            "description": "Warehouse bin location where the item is stored.",
+            "data_type": "nvarchar(20)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "LastStocktakeQuantity",
+            "description": "Quantity recorded at the last stocktake.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "LastCostPrice",
+            "description": "Last recorded cost price for the item.",
+            "data_type": "decimal(18,2)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "ReorderLevel",
+            "description": "Quantity level at which reorder should be triggered.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "TargetStockLevel",
+            "description": "Target quantity to maintain in stock.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "LastEditedBy",
+            "description": "Foreign key to Application.People for last editor.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        },
+        {
+            "name": "LastEditedWhen",
+            "description": "Timestamp of last edit.",
+            "data_type": "datetime2(7)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        }
+    ]
+}

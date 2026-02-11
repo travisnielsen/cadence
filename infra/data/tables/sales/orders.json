@@ -1,0 +1,167 @@
+{
+    "table": "Sales.Orders",
+    "datasource": "wideworldimporters",
+    "description": "Contains sales order header information including customer, dates, and order status.",
+    "columns": [
+        {
+            "name": "OrderID",
+            "description": "Primary key. Unique identifier for each sales order.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": true,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "CustomerID",
+            "description": "Foreign key to Sales.Customers identifying who placed the order.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Sales.Customers",
+            "foreign_key_column": "CustomerID"
+        },
+        {
+            "name": "SalespersonPersonID",
+            "description": "Foreign key to Application.People for the salesperson who handled the order.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        },
+        {
+            "name": "PickedByPersonID",
+            "description": "Foreign key to Application.People for the warehouse staff who picked the order.",
+            "data_type": "int",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        },
+        {
+            "name": "ContactPersonID",
+            "description": "Foreign key to Application.People for the customer contact for this order.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        },
+        {
+            "name": "BackorderOrderID",
+            "description": "Reference to original order if this is a backorder (self-referencing).",
+            "data_type": "int",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Sales.Orders",
+            "foreign_key_column": "OrderID"
+        },
+        {
+            "name": "OrderDate",
+            "description": "Date when the order was placed.",
+            "data_type": "date",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "ExpectedDeliveryDate",
+            "description": "Expected date for order delivery.",
+            "data_type": "date",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "CustomerPurchaseOrderNumber",
+            "description": "Customer's own purchase order reference number.",
+            "data_type": "nvarchar(20)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "IsUndersupplyBackordered",
+            "description": "Indicates if undersupplied items should be backordered.",
+            "data_type": "bit",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "Comments",
+            "description": "Additional comments or notes about the order.",
+            "data_type": "nvarchar(max)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "DeliveryInstructions",
+            "description": "Special instructions for delivery.",
+            "data_type": "nvarchar(max)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "InternalComments",
+            "description": "Internal notes not visible to customer.",
+            "data_type": "nvarchar(max)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "PickingCompletedWhen",
+            "description": "Timestamp when warehouse picking was completed.",
+            "data_type": "datetime2(7)",
+            "is_nullable": true,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        },
+        {
+            "name": "LastEditedBy",
+            "description": "Foreign key to Application.People for last editor.",
+            "data_type": "int",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": true,
+            "foreign_key_table": "Application.People",
+            "foreign_key_column": "PersonID"
+        },
+        {
+            "name": "LastEditedWhen",
+            "description": "Timestamp of last edit.",
+            "data_type": "datetime2(7)",
+            "is_nullable": false,
+            "is_primary_key": false,
+            "is_foreign_key": false,
+            "foreign_key_table": "",
+            "foreign_key_column": ""
+        }
+    ]
+}

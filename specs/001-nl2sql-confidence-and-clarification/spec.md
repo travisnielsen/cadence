@@ -127,5 +127,5 @@ For parameters whose valid values change in the database (e.g., customer names, 
 - **SC-001**: Clarification prompts always present a hypothesis (best guess) — zero open-ended "what do you want?" questions
 - **SC-002**: Parameters resolved via exact match or fuzzy match skip the LLM call (existing fast path preserved)
 - **SC-003**: Dynamic allowed values cache loads in < 500ms per column and has < 1% miss rate after warm-up
-- **SC-004**: Schema-area suggestions appear as clickable pills in > 90% of successful query responses
+- **SC-004**: Schema-area suggestions appear as clickable pills in > 90% of query responses where `NL2SQLResponse.error is None` (includes empty-result responses)
 - **SC-005**: No regressions in existing parameter extraction — all current test scenarios continue to pass

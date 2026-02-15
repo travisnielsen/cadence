@@ -153,11 +153,13 @@ For parameters with `allowed_values`, alternatives come from the values list (ex
 
 **Decision**: Infer `current_schema_area` from the fully qualified table names (e.g., `Sales.Orders` → `"sales"`). Use the FROM clause's primary table, not JOINed lookup tables. Deliver suggestions through the existing `makeAssistantToolUI` pattern, not through `SuggestionPrimitive`.
 
+**Table name source for schema detection**: For template-based queries, derive tables from `sql_draft.template_id` → look up the template's `sql_template` and parse the FROM/JOIN clause. For dynamic queries, use `sql_draft.tables_used` (already populated). This is needed because `allowed_tables`/`allowed_columns` fields are dead data slated for removal (see chore task cadence-lxt).
+
 **Why `makeAssistantToolUI` (not `SuggestionPrimitive`)**: The codebase already uses `makeAssistantToolUI` for the `NL2SQLToolUI` component, which renders data tables, SQL sections, observations, and — critically — `ClarificationOptions` (clickable pills that populate + send the composer). The `Suggestions()` API / `ThreadPrimitive.Suggestions` is purpose-built for empty-thread welcome screens, not post-response follow-ups. Extending the existing tool UI keeps suggestions anchored to the query result that generated them.
 
 **Full-stack data flow**:
 
-1. **Backend** — Orchestrator detects schema area from the tables in the query result, selects 2–3 suggestions from `SCHEMA_SUGGESTIONS`, and includes them as `suggestions: list[SchemaSuggestion]` in the `NL2SQLResult` tool response
+1. **Backend** — Orchestrator detects schema area from the tables in the query result (see table name source note above), selects 2–3 suggestions from `SCHEMA_SUGGESTIONS` (returns empty list if schema area is `None`), and attaches them as `suggestions: list[SchemaSuggestion]` to the `NL2SQLResponse` **after** the workflow returns — the orchestrator owns this logic because it has `ConversationContext`
 2. **Frontend** — `NL2SQLToolUI` renders a `<SuggestionPills>` section after the Observations block, using the same `threadRuntime.composer.setText(prompt)` + `.send()` pattern as `ClarificationOptions`
 3. **Styling** — Differentiated from clarification pills (neutral/green border instead of blue, "You might also explore:" header)
 

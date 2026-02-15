@@ -18,9 +18,9 @@
 - [ ] T001 [US2] Add `ParameterConfidence` model to `src/backend/models/extraction.py` — fields: `name: str`, `value: Any`, `confidence: float`, `resolution_method: str` (enum: "exact_match", "fuzzy_match", "llm_validated", "llm_unvalidated", "default_value", "default_policy", "llm_failed_validation")
 - [ ] T002 [P] [US1] Add `best_guess: str | None`, `guess_confidence: float`, and `alternatives: list[str] | None` fields to `MissingParameter` in `src/backend/models/extraction.py`
 - [ ] T003 [P] [US2] Add `parameter_confidences: dict[str, float]` and `needs_confirmation: bool` fields to `SQLDraft` in `src/backend/models/generation.py`
-- [ ] T004 [P] [US4] Add `allowed_values_source: str | None` and `table: str | None` fields to `ParameterDefinition` in `src/backend/models/schema.py` — `allowed_values_source` accepts `"static"`, `"database"`, or `None`; `table` holds the fully-qualified table name (e.g., `"Sales.CustomerCategories"`) used with `column` to resolve database-sourced allowed values
+- [ ] T004 [P] [US4] Add `allowed_values_source: str | None` and `table: str | None` fields to `ParameterDefinition` in `src/backend/models/schema.py` — `allowed_values_source` accepts `"database"` or `None` (no `"static"` value — structural enums are identified by `allowed_values_source is None` + `validation.allowed_values` being set); `table` holds the fully-qualified table name (e.g., `"Sales.CustomerCategories"`) used with `column` to resolve database-sourced allowed values
 - [ ] T005 [P] [US3] Add `current_schema_area: str | None` and `schema_exploration_depth: int` fields to `ConversationContext` in `src/backend/entities/orchestrator/orchestrator.py`
-- [ ] T006 [P] [US2] Update `confidence_weight` from 0.4 to 1.0 for all parameters in all query templates (`infra/data/query_templates/*.json`). Date/time parameters (`from_date`, `days`) should use 0.7 instead to force confirmation on LLM-inferred dates.
+- [ ] T006 [P] [US2] Update `confidence_weight` from 0.4 to 1.0 for all parameters in all query templates (`infra/data/query_templates/*.json`). Date/time parameters (`from_date`, `days`) should use 0.7 instead to force confirmation on LLM-inferred dates (applies to `query_tempate_1.json` only). Also update the `ParameterDefinition.confidence_weight` field default from `0.0` to `1.0` in `src/backend/models/schema.py` so that templates loaded without an explicit weight use the correct pass-through default.
 
 **Checkpoint**: All model changes in place. No behavior changes yet — all new fields have defaults.
 
@@ -73,6 +73,7 @@
   - Clarification without best_guess → graceful fallback to current prompt style
   - Confirmation tier (0.6–0.85) → response includes "I assumed X — is that right?"
   - Single question per turn enforced (max 1 clarification question per response)
+  - Previously extracted parameters preserved across clarification turns (FR-014)
 
 ### Implementation for User Story 1
 
@@ -112,9 +113,9 @@
 - [ ] T022 [US3] Add `SchemaSuggestion` model to `src/backend/models/execution.py` with `title: str` and `prompt: str` fields. Add `suggestions: list[SchemaSuggestion] = []` field to `NL2SQLResponse`.
 - [ ] T023 [US3] Add `SCHEMA_SUGGESTIONS` dict (keyed by area, values are `list[SchemaSuggestion]` with both `title` and `prompt`) and `_detect_schema_area(tables: list[str]) -> str | None` helper function to `src/backend/entities/orchestrator/orchestrator.py`
 - [ ] T024 [US3] Modify `ConversationOrchestrator.update_context()` to call `_detect_schema_area()` using the tables from the query result, update `current_schema_area` and increment/reset `schema_exploration_depth`
-- [ ] T025 [US3] Add `_build_suggestions(schema_area: str, depth: int) -> list[SchemaSuggestion]` method to orchestrator that selects 2–3 relevant suggestions based on area and depth. At depth ≥ 3, include one cross-area suggestion.
-- [ ] T026 [US3] Modify the NL2SQL tool response to include the `suggestions` list from the orchestrator in the `NL2SQLResult` returned to the frontend. Ensure the `execute_sql` tool (or the controller's response builder) populates the field.
-- [ ] T027 [US3] Update orchestrator prompt (`src/backend/entities/orchestrator/orchestrator_prompt.md`) to instruct the LLM to incorporate schema-area context when generating conversational responses and empty-result recovery suggestions
+- [ ] T025 [US3] Add `_build_suggestions(schema_area: str | None, depth: int) -> list[SchemaSuggestion]` method to orchestrator that selects 2–3 relevant suggestions based on area and depth. At depth ≥ 3, include one cross-area suggestion. If `schema_area is None`, return an empty list (no suggestions for undetectable schema areas).
+- [ ] T026 [US3] Add suggestions to the `NL2SQLResponse` in the orchestrator's `_handle_nl2sql_result()` method — **after** the NL2SQL workflow returns but **before** passing to the frontend SSE stream. The orchestrator (not a workflow executor) owns suggestion logic because it has access to `ConversationContext` (schema area, depth). Call `_build_suggestions()` and set `response.suggestions`.
+- [ ] T027 [US3] Update orchestrator prompt (`src/backend/entities/orchestrator/orchestrator_prompt.md`) to instruct the LLM to incorporate schema-area context when generating conversational responses and empty-result recovery suggestions. When `NL2SQLResponse.sql_response` is empty, `_build_suggestions` should include recovery suggestions ("Try a broader date range", "Check related tables") in addition to standard schema-area suggestions.
 
 ### Frontend Implementation for User Story 3
 

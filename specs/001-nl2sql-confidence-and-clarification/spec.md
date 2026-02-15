@@ -80,7 +80,7 @@ For parameters whose valid values change in the database (e.g., customer names, 
 2. **Given** a cache miss for a `(table, column)` pair, **When** the parameter extractor needs the values, **Then** it executes `SELECT DISTINCT column FROM table` and caches the result with a configurable TTL
 3. **Given** cached values older than the TTL, **When** the parameter extractor needs the values, **Then** it refreshes the cache in the background and uses stale values for the current request (stale-while-revalidate)
 4. **Given** a column with more than 500 distinct values, **When** the cache loads, **Then** it caps at 500 values and logs a warning; the parameter extractor falls back to LLM extraction without fuzzy matching for that parameter
-5. **Given** a parameter with `allowed_values_source: "static"` or `null`, **When** the parameter extractor processes it, **Then** it uses `validation.allowed_values` from the template as today (no behavior change)
+5. **Given** a parameter with `allowed_values_source: null`, **When** the parameter extractor processes it, **Then** it uses `validation.allowed_values` from the template as today (no behavior change)
 
 ---
 

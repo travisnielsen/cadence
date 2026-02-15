@@ -396,38 +396,6 @@ def _parse_llm_response(response_text: str) -> dict[str, Any]:
     return {"status": "error", "error": f"Failed to parse LLM response: {text[:200]}"}
 
 
-def _substitute_parameters(sql_template: str, params: dict[str, Any]) -> str:
-    """
-    Substitute parameter tokens in the SQL template.
-
-    Args:
-        sql_template: The SQL template with %{{param}}% tokens
-        params: Dictionary of parameter name -> value
-
-    Returns:
-        SQL string with tokens replaced by values
-    """
-    result = sql_template
-    for name, value in params.items():
-        token = f"%{{{{{name}}}}}%"
-        # Convert value to string, handling different types
-        if value is None:
-            str_value = "NULL"
-        elif isinstance(value, bool):
-            str_value = "1" if value else "0"
-        elif isinstance(value, (int, float)):
-            str_value = str(value)
-        elif isinstance(value, str):
-            # Don't quote SQL keywords like ASC/DESC
-            str_value = value.upper() if value.upper() in {"ASC", "DESC", "NULL"} else str(value)
-        else:
-            str_value = str(value)
-
-        result = result.replace(token, str_value)
-
-    return result
-
-
 class ParameterExtractorExecutor(Executor):
     """
     Executor that extracts parameter values from user queries.

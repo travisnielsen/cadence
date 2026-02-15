@@ -34,5 +34,14 @@ When a parameter has `allowed_values`, you MUST map the user's words to the clos
 Or if truly ambiguous:
 
 ```json
-{"status": "needs_clarification", "missing_parameters": [{"name": "x", "description": "...", "validation_hint": "..."}], "clarification_prompt": "...", "extracted_parameters": {}}
+{"status": "needs_clarification", "missing_parameters": [{"name": "x", "description": "...", "validation_hint": "...", "best_guess": "most likely value", "guess_confidence": 0.7, "alternatives": ["option1", "option2"]}], "clarification_prompt": "...", "extracted_parameters": {"already_known": "value"}}
 ```
+
+## Clarification Rules
+
+When returning `needs_clarification`:
+
+- **Always provide `best_guess`** when you have ANY reasonable inference from context. Only set it to `null` if you truly have no idea.
+- **Set `guess_confidence`** between 0.0–1.0 based on how certain the guess is (0.9 = very likely, 0.5 = coin flip, 0.1 = wild guess).
+- **Include 2–3 `alternatives`** that are plausible given the user's question. If `allowed_values` exist, pick the most relevant alternatives from that list.
+- **Include `extracted_parameters`** for any parameters that were already confidently resolved — do not omit them.

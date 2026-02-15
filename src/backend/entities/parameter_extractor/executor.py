@@ -554,6 +554,19 @@ class ParameterExtractorExecutor(Executor):
             extracted_params = extraction_result.extracted
             defaults_used = extraction_result.defaults_used
 
+            # Merge previously extracted params (from prior clarification turns)
+            # These take priority since the user already confirmed them.
+            if request.previously_extracted:
+                for pname, pval in request.previously_extracted.items():
+                    if pname not in extracted_params:
+                        extracted_params[pname] = pval
+                        extraction_result.resolution_methods[pname] = "exact_match"
+                        logger.info(
+                            "  Preserved param '%s' -> '%s' from prior turn",
+                            pname,
+                            pval,
+                        )
+
             if extracted_params:
                 logger.info("Deterministic extraction found %d parameters:", len(extracted_params))
                 for param_name, param_value in extracted_params.items():
@@ -692,17 +705,32 @@ class ParameterExtractorExecutor(Executor):
                         )
                     ):
                         # Required param with ask_if_missing was not extracted
-                        allowed_values = []
+                        param_allowed: list[str] = []
                         if param.validation and hasattr(param.validation, "allowed_values"):
-                            allowed_values = param.validation.allowed_values or []
+                            param_allowed = param.validation.allowed_values or []
+
+                        # Try fuzzy match for best_guess
+                        best_guess: str | None = None
+                        guess_confidence = 0.0
+                        alternatives: list[str] | None = None
+                        if param_allowed:
+                            fuzzy = _fuzzy_match_allowed_value(user_query, param_allowed)
+                            if fuzzy:
+                                best_guess = fuzzy
+                                guess_confidence = 0.6
+                            remaining = [v for v in param_allowed if v != best_guess]
+                            alternatives = remaining[:5]
 
                         missing_required.append(
                             MissingParameter(
                                 name=param.name,
                                 description=f"Please provide a value for '{param.name}'",
-                                validation_hint=f"Allowed values: {', '.join(allowed_values)}"
-                                if allowed_values
+                                validation_hint=f"Allowed values: {', '.join(param_allowed)}"
+                                if param_allowed
                                 else "",
+                                best_guess=best_guess,
+                                guess_confidence=guess_confidence,
+                                alternatives=alternatives,
                             )
                         )
                         logger.warning(
@@ -747,15 +775,25 @@ class ParameterExtractorExecutor(Executor):
                     )
 
             elif parsed.get("status") == "needs_clarification":
-                # Build missing parameters list
+                # Build missing parameters list with hypothesis-first fields
                 missing = [
                     MissingParameter(
                         name=mp.get("name", ""),
                         description=mp.get("description", ""),
                         validation_hint=mp.get("validation_hint", ""),
+                        best_guess=mp.get("best_guess"),
+                        guess_confidence=float(mp.get("guess_confidence", 0.0)),
+                        alternatives=mp.get("alternatives"),
                     )
                     for mp in parsed.get("missing_parameters", [])
                 ]
+
+                # Merge any LLM-extracted params with deterministic extractions
+                llm_extracted = parsed.get("extracted_parameters") or {}
+                merged_extracted = dict(extraction_result.extracted)
+                merged_extracted.update({
+                    k: v for k, v in llm_extracted.items() if k not in merged_extracted
+                })
 
                 sql_draft = SQLDraft(
                     status="needs_clarification",
@@ -764,7 +802,7 @@ class ParameterExtractorExecutor(Executor):
                     reasoning=template.reasoning,
                     template_id=template.id,
                     template_json=template.model_dump_json(),
-                    extracted_parameters=parsed.get("extracted_parameters"),
+                    extracted_parameters=merged_extracted or None,
                     parameter_definitions=template.parameters,
                     missing_parameters=missing,
                     clarification_prompt=parsed.get("clarification_prompt"),
@@ -815,25 +853,40 @@ class ParameterExtractorExecutor(Executor):
                     )
 
                     # Get allowed values
-                    allowed_values = []
+                    clarify_allowed: list[str] = []
                     if clarify_param.validation and hasattr(
                         clarify_param.validation, "allowed_values"
                     ):
-                        allowed_values = clarify_param.validation.allowed_values or []
+                        clarify_allowed = clarify_param.validation.allowed_values or []
+
+                    # Try fuzzy match for best_guess
+                    err_best_guess: str | None = None
+                    err_confidence = 0.0
+                    err_alternatives: list[str] | None = None
+                    if clarify_allowed:
+                        fuzzy = _fuzzy_match_allowed_value(user_query, clarify_allowed)
+                        if fuzzy:
+                            err_best_guess = fuzzy
+                            err_confidence = 0.6
+                        remaining = [v for v in clarify_allowed if v != err_best_guess]
+                        err_alternatives = remaining[:5]
 
                     missing = [
                         MissingParameter(
                             name=clarify_param.name,
                             description=f"Please select a valid value for '{clarify_param.name}'",
-                            validation_hint=f"Allowed values: {', '.join(allowed_values)}"
-                            if allowed_values
+                            validation_hint=f"Allowed values: {', '.join(clarify_allowed)}"
+                            if clarify_allowed
                             else "",
+                            best_guess=err_best_guess,
+                            guess_confidence=err_confidence,
+                            alternatives=err_alternatives,
                         )
                     ]
 
                     clarification_prompt = (
-                        f"Please choose from: {', '.join(allowed_values)}"
-                        if allowed_values
+                        f"Please choose from: {', '.join(clarify_allowed)}"
+                        if clarify_allowed
                         else f"Please provide a value for '{clarify_param.name}'"
                     )
 

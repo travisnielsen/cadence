@@ -104,6 +104,10 @@ class ParameterExtractionRequest(BaseModel):
 
     user_query: str = Field(description="The user's original question")
     template: QueryTemplate = Field(description="The matched query template")
+    previously_extracted: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Parameters already extracted from prior turns (should not be re-extracted)",
+    )
 
 
 class NL2SQLRequest(BaseModel):

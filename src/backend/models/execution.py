@@ -87,3 +87,8 @@ class NL2SQLResponse(BaseModel):
     original_question: str = Field(
         default="", description="The original user question (for refinement context)"
     )
+
+    confirmation_note: str = Field(
+        default="",
+        description="Note about assumed parameter values that may need confirmation",
+    )

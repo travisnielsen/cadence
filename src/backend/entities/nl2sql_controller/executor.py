@@ -27,6 +27,7 @@ from pydantic import ValidationError
 AzureAIAgentClient = AzureAIClient
 
 import contextlib
+import operator
 
 from entities.shared.tools import execute_sql, search_query_templates, search_tables
 from models import (
@@ -58,6 +59,72 @@ NL2SQLOutputMessage = str | ExtractionRequestMessage | QueryBuilderRequestMessag
 
 # Key for storing pending clarification state
 CLARIFICATION_STATE_KEY = "pending_clarification"
+
+# Key for storing unresolved parameters across single-question turns
+UNRESOLVED_PARAMS_STATE_KEY = "unresolved_params"
+
+
+def _format_hypothesis_prompt(missing_params: list[MissingParameter]) -> str:
+    """Format a hypothesis-first clarification prompt from missing parameters.
+
+    When a best_guess is available, uses the format:
+        "It looks like you want **{best_guess}** for {name}. Is that correct,
+        or did you mean {alt1} or {alt2}?"
+
+    When no best_guess is available, falls back to:
+        "What value would you like for {name}? Options: {alternatives}"
+
+    Args:
+        missing_params: List of MissingParameter objects to format.
+
+    Returns:
+        Formatted clarification prompt string.
+    """
+    parts: list[str] = []
+    for mp in missing_params:
+        if mp.best_guess:
+            alt_text = ""
+            if mp.alternatives:
+                alt_text = " or ".join(f"**{a}**" for a in mp.alternatives[:3])
+                alt_text = f", or did you mean {alt_text}?"
+            else:
+                alt_text = "?"
+            parts.append(
+                f"It looks like you want **{mp.best_guess}** for {mp.name}"
+                f". Is that correct{alt_text}"
+            )
+        elif mp.alternatives:
+            opts = ", ".join(mp.alternatives[:5])
+            parts.append(f"What value would you like for {mp.name}? Options: {opts}")
+        else:
+            parts.append(f"What value would you like for {mp.name}?")
+    return " ".join(parts)
+
+
+def _format_confirmation_note(
+    parameter_confidences: dict[str, float],
+    extracted_parameters: dict[str, Any] | None,
+) -> str:
+    """Build a confirmation note for medium-confidence parameters.
+
+    Args:
+        parameter_confidences: Per-parameter confidence scores.
+        extracted_parameters: Resolved parameter values.
+
+    Returns:
+        A human-readable confirmation note, or empty string if nothing to confirm.
+    """
+    if not extracted_parameters:
+        return ""
+    confirm_parts: list[str] = []
+    for name, score in parameter_confidences.items():
+        if _CONFIDENCE_THRESHOLD_LOW <= score < _CONFIDENCE_THRESHOLD_HIGH:
+            value = extracted_parameters.get(name)
+            if value is not None:
+                confirm_parts.append(f"{name}=**{value}**")
+    if not confirm_parts:
+        return ""
+    return f"I assumed {', '.join(confirm_parts)} for these results. Want me to adjust?"
 
 
 def _substitute_parameters(sql_template: str, params: dict) -> str:
@@ -575,24 +642,58 @@ class NL2SQLController(Executor):
                         min_conf,
                         _CONFIDENCE_THRESHOLD_LOW,
                     )
-                    low_params = [
-                        name
-                        for name, score in sql_draft.parameter_confidences.items()
-                        if score < _CONFIDENCE_THRESHOLD_LOW
-                    ]
-                    missing = [
-                        MissingParameter(
-                            name=name,
-                            description=f"Low confidence ({sql_draft.parameter_confidences[name]:.2f}) — please confirm the value for '{name}'",
+                    low_params = sorted(
+                        [
+                            (name, score)
+                            for name, score in sql_draft.parameter_confidences.items()
+                            if score < _CONFIDENCE_THRESHOLD_LOW
+                        ],
+                        key=operator.itemgetter(1),
+                    )
+                    # Build enriched MissingParameter with best_guess from extracted values
+                    # and alternatives from parameter definitions
+                    param_defs = {p.name: p for p in sql_draft.parameter_definitions}
+
+                    # Single-question enforcement: ask only about the lowest-confidence
+                    # parameter per turn, store the rest for subsequent turns.
+                    ask_now = low_params[:1]
+                    deferred = low_params[1:]
+
+                    if deferred:
+                        logger.info(
+                            "Single-question enforcement: asking about %s, deferring %s",
+                            [n for n, _ in ask_now],
+                            [n for n, _ in deferred],
                         )
-                        for name in low_params
-                    ]
+                        deferred_data = [{"name": n, "score": s} for n, s in deferred]
+                        await ctx.set_shared_state(UNRESOLVED_PARAMS_STATE_KEY, deferred_data)
+
+                    missing: list[MissingParameter] = []
+                    for name, score in ask_now:
+                        current_value = (sql_draft.extracted_parameters or {}).get(name)
+                        pdef = param_defs.get(name)
+                        alternatives: list[str] | None = None
+                        if pdef and pdef.validation and pdef.validation.allowed_values:
+                            alternatives = [
+                                v for v in pdef.validation.allowed_values if v != str(current_value)
+                            ][:5]
+                        missing.append(
+                            MissingParameter(
+                                name=name,
+                                description=(
+                                    f"Low confidence ({score:.2f}) "
+                                    f"— please confirm the value for '{name}'"
+                                ),
+                                best_guess=str(current_value)
+                                if current_value is not None
+                                else None,
+                                guess_confidence=score,
+                                alternatives=alternatives,
+                            )
+                        )
                     sql_draft.status = "needs_clarification"
                     sql_draft.missing_parameters = missing
-                    sql_draft.clarification_prompt = (
-                        f"I'm not confident about: {', '.join(low_params)}. "
-                        "Could you confirm or correct these values?"
-                    )
+                    sql_draft.clarification_prompt = _format_hypothesis_prompt(missing)
                 elif min_conf < _CONFIDENCE_THRESHOLD_HIGH:
                     # Medium confidence — proceed but flag for confirmation
                     sql_draft.needs_confirmation = True
@@ -743,6 +844,14 @@ class NL2SQLController(Executor):
                         # Build human-readable defaults description
                         defaults_description = _format_defaults_for_display(sql_draft.defaults_used)
 
+                        # Build confirmation note for medium-confidence params
+                        confirmation_note = ""
+                        if sql_draft.needs_confirmation:
+                            confirmation_note = _format_confirmation_note(
+                                sql_draft.parameter_confidences,
+                                sql_draft.extracted_parameters,
+                            )
+
                         nl2sql_response = NL2SQLResponse(
                             sql_query=completed_sql,
                             sql_response=sql_result.get("rows", []),
@@ -755,6 +864,7 @@ class NL2SQLController(Executor):
                             if not sql_result.get("success")
                             else None,
                             defaults_used=defaults_description,
+                            confirmation_note=confirmation_note,
                             # Context tracking for template refinements
                             template_json=sql_draft.template_json,
                             extracted_params=sql_draft.extracted_parameters or {},
@@ -841,6 +951,19 @@ class NL2SQLController(Executor):
                 # Need clarification from user - use request_info to pause workflow
                 missing_params = sql_draft.missing_parameters or []
 
+                # Single-question enforcement: if there are multiple missing params
+                # from the LLM response, ask only about the first and defer the rest.
+                if len(missing_params) > 1:
+                    deferred_mp = [mp.model_dump() for mp in missing_params[1:]]
+                    logger.info(
+                        "Single-question enforcement (LLM path): asking about '%s', "
+                        "deferring %d params",
+                        missing_params[0].name,
+                        len(deferred_mp),
+                    )
+                    await ctx.set_shared_state(UNRESOLVED_PARAMS_STATE_KEY, deferred_mp)
+                    missing_params = missing_params[:1]
+
                 # Get allowed values from the first missing parameter (most common case)
                 allowed_values: list[str] = []
                 param_name = ""
@@ -855,8 +978,10 @@ class NL2SQLController(Executor):
                                 allowed_values = param_def.validation.allowed_values
                             break
 
-                # Build a friendly clarification prompt
-                if allowed_values:
+                # Build a friendly clarification prompt using hypothesis-first format
+                if missing_params and any(mp.best_guess for mp in missing_params):
+                    clarification_prompt = _format_hypothesis_prompt(missing_params)
+                elif allowed_values:
                     clarification_prompt = f"Please choose a category: {', '.join(allowed_values)}"
                 else:
                     clarification_prompt = (
@@ -881,6 +1006,17 @@ class NL2SQLController(Executor):
                     template_json=template_json,
                     extracted_parameters=sql_draft.extracted_parameters or {},
                 )
+
+                # Update clarification state with extracted params for handle_clarification path
+                try:
+                    existing_state = await ctx.get_shared_state(CLARIFICATION_STATE_KEY)
+                    if existing_state and isinstance(existing_state, dict):
+                        existing_state["extracted_parameters"] = (
+                            sql_draft.extracted_parameters or {}
+                        )
+                        await ctx.set_shared_state(CLARIFICATION_STATE_KEY, existing_state)
+                except (KeyError, TypeError):
+                    pass
 
                 logger.info(
                     "Requesting clarification from user via request_info: %s", clarification_prompt
@@ -955,19 +1091,28 @@ class NL2SQLController(Executor):
             # Reconstruct the template
             template = QueryTemplate.model_validate(template_data)
 
+            # Retrieve previously extracted parameters from clarification state
+            prev_extracted = clarification_state.get("extracted_parameters", {})
+
             # Combine original question with clarification
             enriched_query = f"{original_question} (Additional info: {clarification})"
+            if prev_extracted:
+                hints = ", ".join(f"{k}={v}" for k, v in prev_extracted.items())
+                enriched_query += f" (Already known: {hints})"
 
             logger.info(
-                "Re-submitting with clarification. Original: '%s', Clarification: '%s'",
+                "Re-submitting with clarification. Original: '%s', Clarification: '%s', "
+                "preserved params: %s",
                 original_question[:50],
                 clarification[:50],
+                list(prev_extracted),
             )
 
-            # Build new extraction request with enriched query
+            # Build new extraction request with enriched query and preserved params
             extraction_request = ParameterExtractionRequest(
                 user_query=enriched_query,
                 template=template,
+                previously_extracted=prev_extracted,
             )
 
             # Route to parameter extractor again
@@ -1020,29 +1165,39 @@ class NL2SQLController(Executor):
             template_data = json.loads(original_request.template_json)
             template = QueryTemplate.model_validate(template_data)
 
+            # Retrieve previously extracted parameters from the ClarificationRequest
+            prev_extracted = original_request.extracted_parameters or {}
+
             # Combine original question with clarification for better extraction
             enriched_query = f"{original_request.original_question} (Answer: {user_response})"
+            if prev_extracted:
+                hints = ", ".join(f"{k}={v}" for k, v in prev_extracted.items())
+                enriched_query += f" (Already known: {hints})"
 
             logger.info(
-                "Re-submitting with clarification. Original: '%s', User response: '%s'",
+                "Re-submitting with clarification. Original: '%s', User response: '%s', "
+                "preserved params: %s",
                 original_request.original_question[:50],
                 user_response[:50],
+                list(prev_extracted),
             )
 
-            # Store clarification state for the extraction
+            # Store clarification state for the extraction (include extracted params)
             await ctx.set_shared_state(
                 CLARIFICATION_STATE_KEY,
                 {
                     "original_question": original_request.original_question,
                     "template": template_data,
                     "clarification_response": user_response,
+                    "extracted_parameters": prev_extracted,
                 },
             )
 
-            # Build new extraction request with enriched query
+            # Build new extraction request with enriched query and preserved params
             extraction_request = ParameterExtractionRequest(
                 user_query=enriched_query,
                 template=template,
+                previously_extracted=prev_extracted,
             )
 
             # Route to parameter extractor again

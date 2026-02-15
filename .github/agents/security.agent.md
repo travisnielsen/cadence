@@ -2,7 +2,7 @@
 name: Security
 description: Security-focused code review using OWASP guidelines and Zero Trust principles
 tools: [read, edit, search, web, microsoftdocs/mcp/*]
-model: Claude Opus 4.5 (copilot)
+model: Claude Opus 4.6 (copilot)
 handoffs:
   - label: Fix Security Issues
     agent: Implementer

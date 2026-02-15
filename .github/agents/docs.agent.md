@@ -2,7 +2,7 @@
 name: Docs
 description: Technical writer for documentation, READMEs, guides, and API references
 tools: [read, edit, search, web, microsoftdocs/mcp/*, agent, todo, vscode.mermaid-chat-features/renderMermaidDiagram]
-model: Claude Opus 4.5 (copilot)
+model: Claude Opus 4.6 (copilot)
 handoffs:
   - label: Review Documentation
     agent: Reviewer

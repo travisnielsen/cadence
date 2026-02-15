@@ -13,7 +13,7 @@ tools:
     ms-python.python/installPythonPackage,
     ms-python.python/configurePythonEnvironment,
   ]
-model: Claude Opus 4.5 (copilot)
+model: Claude Opus 4.6 (copilot)
 handoffs:
   - label: Write Tests
     agent: Tester

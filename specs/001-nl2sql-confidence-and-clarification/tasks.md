@@ -134,7 +134,7 @@
 
 ### Tests for User Story 4
 
-- [ ] T030 [P] [US4] Create `tests/unit/test_allowed_values_provider.py` with tests:
+- [x] T030 [P] [US4] Create `tests/unit/test_allowed_values_provider.py` with tests:
   - Cache miss → triggers async DB query, returns values
   - Cache hit within TTL → returns cached values without DB query
   - Cache expired → returns stale values, triggers background refresh

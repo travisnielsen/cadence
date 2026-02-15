@@ -34,7 +34,7 @@
 
 ### Tests for User Story 2
 
-- [ ] T007 [P] [US2] Create `tests/unit/test_confidence_scoring.py` with tests:
+- [x] T007 [P] [US2] Create `tests/unit/test_confidence_scoring.py` with tests:
   - Exact match → confidence 1.0
   - Fuzzy match → confidence 0.85
   - Default value → confidence 0.7
@@ -67,7 +67,7 @@
 
 ### Tests for User Story 1
 
-- [ ] T013 [P] [US1] Create `tests/unit/test_clarification_format.py` with tests:
+- [x] T013 [P] [US1] Create `tests/unit/test_clarification_format.py` with tests:
   - Clarification with best_guess and alternatives → hypothesis-first format
   - Clarification with allowed_values → alternatives pulled from allowed_values list
   - Clarification without best_guess → graceful fallback to current prompt style
@@ -99,7 +99,7 @@
 
 ### Tests for User Story 3
 
-- [ ] T021 [P] [US3] Create `tests/unit/test_schema_area_context.py` with tests:
+- [x] T021 [P] [US3] Create `tests/unit/test_schema_area_context.py` with tests:
   - `Sales.Orders` → schema area "sales"
   - `Warehouse.StockItems` → schema area "warehouse"
   - Mixed tables (Sales + Application) → primary table determines area

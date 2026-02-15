@@ -151,21 +151,21 @@
 
 ### Implementation for User Story 4
 
-- [ ] T031 [US4] Create `src/backend/entities/shared/allowed_values_provider.py` with `AllowedValuesProvider` class:
+- [x] T031 [US4] Create `src/backend/entities/shared/allowed_values_provider.py` with `AllowedValuesProvider` class:
   - Async singleton with `get_allowed_values(table: str, column: str) -> list[str] | None`
   - Internal cache: `dict[tuple[str, str], CacheEntry]` where `CacheEntry` has `values`, `loaded_at`, `is_partial`
   - Configurable `ttl_seconds` (default 600) and `max_values` (default 500)
   - Background refresh via `asyncio.create_task()` on TTL expiry
   - Reuse `AzureSqlClient` from `src/backend/entities/shared/clients/sql_client.py` — do NOT duplicate SQL connection logic
-- [ ] T032 [US4] Add provider initialization in `src/backend/entities/workflow/workflow.py` — instantiate `AllowedValuesProvider` once alongside the existing client singletons, pass to `ParameterExtractorExecutor` constructor
-- [ ] T033 [US4] Modify `ParameterExtractorExecutor.__init__()` to accept optional `allowed_values_provider` parameter. Store as instance attribute.
-- [ ] T034 [US4] Add `_hydrate_database_allowed_values()` method to `ParameterExtractorExecutor` in `src/backend/entities/parameter_extractor/executor.py` — called at the **start** of `handle_extraction_request()`, before `_pre_extract_parameters()`. For each parameter where `allowed_values_source == "database"` and `table` + `column` are set:
+- [x] T032 [US4] Add provider initialization in `src/backend/entities/workflow/workflow.py` — instantiate `AllowedValuesProvider` once alongside the existing client singletons, pass to `ParameterExtractorExecutor` constructor
+- [x] T033 [US4] Modify `ParameterExtractorExecutor.__init__()` to accept optional `allowed_values_provider` parameter. Store as instance attribute.
+- [x] T034 [US4] Add `_hydrate_database_allowed_values()` method to `ParameterExtractorExecutor` in `src/backend/entities/parameter_extractor/executor.py` — called at the **start** of `handle_extraction_request()`, before `_pre_extract_parameters()`. For each parameter where `allowed_values_source == "database"` and `table` + `column` are set:
   - Call `provider.get_allowed_values(param.table, param.column)` to get cached values
   - Set `param.validation.allowed_values = db_values` (create `ParameterValidation(type="string", allowed_values=db_values)` if `param.validation` is None)
   - If provider returns `is_partial=True`, set a flag on the param so the validator skips strict `allowed_values` matching
   - Skip hydration for params where `allowed_values_source` is `null` — their `validation.allowed_values` (if any) are static structural enums and must not be overwritten
   - This "hydrate once" approach means **no changes** are needed in `_fuzzy_match_allowed_value()`, `_build_extraction_prompt()`, or `ParameterValidator._validate_string()` — they all read `param.validation.allowed_values` as normal
-- [ ] T035 [US4] Update `query_template_8.json` to use `allowed_values_source: "database"` for the `category_name` parameter: add `"table": "Sales.CustomerCategories"`, set `"allowed_values_source": "database"`, and **remove** `allowed_values` from the `validation` block (keep `"type": "string"` only). Update the corresponding AI Search index if the schema needs new fields for `allowed_values_source` and `table`.
+- [x] T035 [US4] Update `query_template_8.json` to use `allowed_values_source: "database"` for the `category_name` parameter: add `"table": "Sales.CustomerCategories"`, set `"allowed_values_source": "database"`, and **remove** `allowed_values` from the `validation` block (keep `"type": "string"` only). Update the corresponding AI Search index if the schema needs new fields for `allowed_values_source` and `table`.
 
 **Checkpoint**: Dynamic allowed values working for at least one parameter. Cache populated and refreshed.
 

@@ -46,11 +46,11 @@
 
 ### Implementation for User Story 2
 
-- [ ] T008 [US2] Add `_compute_confidence()` function to `src/backend/entities/parameter_extractor/executor.py` — accepts `resolution_method: str` and `confidence_weight: float`, returns `float`. Implements the score table from plan.md.
-- [ ] T009 [US2] Modify `_pre_extract_parameters()` in `src/backend/entities/parameter_extractor/executor.py` to record `resolution_method` for each parameter it resolves (exact_match, fuzzy_match, default_value). Return a `dict[str, str]` of `{param_name: resolution_method}` alongside the extracted values.
-- [ ] T010 [US2] Modify the LLM extraction path in `ParameterExtractorExecutor.handle_extraction_request()` to assign resolution methods (`llm_validated`, `llm_unvalidated`, `llm_failed_validation`) based on whether the parameter has validation rules and passes them.
-- [ ] T011 [US2] After extraction completes, compute `parameter_confidences` dict and set it on the `SQLDraft` before sending to NL2SQL controller. Use `_compute_confidence()` for each parameter.
-- [ ] T012 [US2] Modify `NL2SQLController.handle_sql_draft()` in `src/backend/entities/nl2sql_controller/executor.py` to check `min(draft.parameter_confidences.values())` and set routing:
+- [x] T008 [US2] Add `_compute_confidence()` function to `src/backend/entities/parameter_extractor/executor.py` — accepts `resolution_method: str` and `confidence_weight: float`, returns `float`. Implements the score table from plan.md.
+- [x] T009 [US2] Modify `_pre_extract_parameters()` in `src/backend/entities/parameter_extractor/executor.py` to record `resolution_method` for each parameter it resolves (exact_match, fuzzy_match, default_value). Return a `dict[str, str]` of `{param_name: resolution_method}` alongside the extracted values.
+- [x] T010 [US2] Modify the LLM extraction path in `ParameterExtractorExecutor.handle_extraction_request()` to assign resolution methods (`llm_validated`, `llm_unvalidated`, `llm_failed_validation`) based on whether the parameter has validation rules and passes them.
+- [x] T011 [US2] After extraction completes, compute `parameter_confidences` dict and set it on the `SQLDraft` before sending to NL2SQL controller. Use `_compute_confidence()` for each parameter.
+- [x] T012 [US2] Modify `NL2SQLController.handle_sql_draft()` in `src/backend/entities/nl2sql_controller/executor.py` to check `min(draft.parameter_confidences.values())` and set routing:
   - ≥ 0.85 → proceed to execution (existing path)
   - 0.6–0.85 → set `draft.needs_confirmation = True`, proceed to execution
   - < 0.6 → trigger clarification flow (existing path but with enriched data)

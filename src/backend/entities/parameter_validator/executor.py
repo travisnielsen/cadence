@@ -386,6 +386,16 @@ class ParameterValidatorExecutor(Executor):
             extracted_params = draft.extracted_parameters or {}
             param_definitions = draft.parameter_definitions or []
 
+            # For partial-cache params, temporarily clear allowed_values so the
+            # validator skips strict matching (the cache was capped at max_values
+            # and may not contain the user's value).  We restore them afterwards.
+            partial_names = set(draft.partial_cache_params)
+            saved_allowed: dict[str, list[str] | None] = {}
+            for pdef in param_definitions:
+                if pdef.name in partial_names and pdef.validation:
+                    saved_allowed[pdef.name] = pdef.validation.allowed_values
+                    pdef.validation.allowed_values = None
+
             if not param_definitions:
                 # No definitions to validate against - mark as validated and pass through
                 logger.info("No parameter definitions provided, skipping validation")
@@ -406,6 +416,7 @@ class ParameterValidatorExecutor(Executor):
                     params_validated=True,  # Mark as validated
                     parameter_definitions=draft.parameter_definitions,
                     parameter_violations=draft.parameter_violations,
+                    partial_cache_params=draft.partial_cache_params,
                     error=draft.error,
                 )
                 finish_step()
@@ -417,6 +428,11 @@ class ParameterValidatorExecutor(Executor):
 
             # Validate all parameters
             is_valid, violations = validate_all_parameters(extracted_params, param_definitions)
+
+            # Restore allowed_values that were cleared for partial-cache params
+            for pdef in param_definitions:
+                if pdef.name in saved_allowed and pdef.validation:
+                    pdef.validation.allowed_values = saved_allowed[pdef.name]
 
             if is_valid:
                 logger.info("All parameters validated successfully")
@@ -438,6 +454,7 @@ class ParameterValidatorExecutor(Executor):
                     params_validated=True,  # Mark as validated
                     parameter_definitions=draft.parameter_definitions,
                     parameter_violations=[],
+                    partial_cache_params=draft.partial_cache_params,
                     error=draft.error,
                 )
                 finish_step()
@@ -465,6 +482,7 @@ class ParameterValidatorExecutor(Executor):
                     tables_used=draft.tables_used,
                     parameter_definitions=draft.parameter_definitions,
                     parameter_violations=violations,
+                    partial_cache_params=draft.partial_cache_params,
                     error=f"Parameter validation failed: {'; '.join(violations)}",
                 )
 

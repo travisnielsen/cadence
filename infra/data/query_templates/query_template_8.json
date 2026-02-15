@@ -7,6 +7,8 @@
         {
             "name": "category_name",
             "column": "CustomerCategoryName",
+            "table": "Sales.CustomerCategories",
+            "allowed_values_source": "database",
             "required": true,
             "ask_if_missing": true,
             "default_value": null,
@@ -17,14 +19,7 @@
                 "strip": true
             },
             "validation": {
-                "type": "string",
-                "allowed_values": [
-                    "Supermarket",
-                    "Novelty Shop",
-                    "Corporate",
-                    "Computer Store",
-                    "Gift Store"
-                ]
+                "type": "string"
             }
         }
     ],

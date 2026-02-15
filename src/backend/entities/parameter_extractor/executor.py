@@ -24,6 +24,7 @@ from agent_framework import (
     handler,
 )
 from agent_framework_azure_ai import AzureAIClient
+from entities.shared.allowed_values_provider import AllowedValuesProvider
 
 # Type alias for V2 client
 AzureAIAgentClient = AzureAIClient
@@ -33,6 +34,7 @@ from models import (
     MissingParameter,
     ParameterDefinition,
     ParameterExtractionRequest,
+    ParameterValidation,
     QueryTemplate,
     SQLDraft,
     SQLDraftMessage,
@@ -440,7 +442,11 @@ class ParameterExtractorExecutor(Executor):
     agent: ChatAgent
 
     def __init__(
-        self, chat_client: AzureAIAgentClient, executor_id: str = "param_extractor"
+        self,
+        chat_client: AzureAIAgentClient,
+        executor_id: str = "param_extractor",
+        *,
+        allowed_values_provider: AllowedValuesProvider | None = None,
     ) -> None:
         """
         Initialize the Parameter Extractor executor.
@@ -448,6 +454,7 @@ class ParameterExtractorExecutor(Executor):
         Args:
             chat_client: The Azure AI agent client for creating the agent
             executor_id: Executor ID for workflow routing
+            allowed_values_provider: Optional provider for database-sourced allowed values
         """
         instructions = _load_prompt()
 
@@ -456,6 +463,9 @@ class ParameterExtractorExecutor(Executor):
             instructions=instructions,
             chat_client=chat_client,
         )
+
+        self._allowed_values_provider = allowed_values_provider
+        self._partial_cache_params: set[str] = set()
 
         super().__init__(id=executor_id)
         logger.info("ParameterExtractorExecutor initialized")
@@ -506,6 +516,55 @@ class ParameterExtractorExecutor(Executor):
             await ctx.set_shared_state(FOUNDRY_CONVERSATION_ID_KEY, thread.service_thread_id)
             logger.info("ParamExtractor stored Foundry thread ID: %s", thread.service_thread_id)
 
+    async def _hydrate_database_allowed_values(self, template: QueryTemplate) -> None:
+        """Hydrate allowed values from the database for parameters that need it.
+
+        Iterates ``template.parameters`` and, for each with
+        ``allowed_values_source == "database"``, fetches distinct values via
+        the ``AllowedValuesProvider``.  Results are written directly into
+        ``param.validation.allowed_values`` so that downstream prompt-building
+        and fuzzy-matching work transparently.
+
+        Args:
+            template: The query template whose parameters may need hydration.
+        """
+        if not self._allowed_values_provider:
+            return
+
+        self._partial_cache_params.clear()
+
+        for param in template.parameters:
+            if (
+                param.allowed_values_source != "database"
+                or param.table is None
+                or param.column is None
+            ):
+                continue
+
+            result = await self._allowed_values_provider.get_allowed_values(
+                param.table, param.column
+            )
+            if result is None:
+                logger.warning(
+                    "Could not load allowed values for %s.%s — falling back to LLM-only",
+                    param.table,
+                    param.column,
+                )
+                continue
+
+            if param.validation is None:
+                param.validation = ParameterValidation(type="string", allowed_values=result.values)
+            else:
+                param.validation.allowed_values = result.values
+
+            if result.is_partial:
+                self._partial_cache_params.add(param.name)
+                logger.info(
+                    "Param '%s' has partial cache (%d values) — will skip strict validation",
+                    param.name,
+                    len(result.values),
+                )
+
     @handler
     async def handle_extraction_request(
         self, request_msg: ExtractionRequestMessage, ctx: WorkflowContext[SQLDraftMessage]
@@ -540,6 +599,10 @@ class ParameterExtractorExecutor(Executor):
             request = ParameterExtractionRequest.model_validate(request_data)
             template = request.template
             user_query = request.user_query
+
+            # Hydrate database-sourced allowed values before extraction
+            if self._allowed_values_provider:
+                await self._hydrate_database_allowed_values(template)
 
             logger.info(
                 "Extracting parameters for template '%s' from query: %s",
@@ -595,6 +658,7 @@ class ParameterExtractorExecutor(Executor):
                     defaults_used=defaults_used,
                     parameter_definitions=template.parameters,
                     parameter_confidences=confidences,
+                    partial_cache_params=list(self._partial_cache_params),
                 )
 
                 finish_step()
@@ -759,6 +823,7 @@ class ParameterExtractorExecutor(Executor):
                         missing_parameters=missing_required,
                         clarification_prompt=f"Please provide a value for: {missing_required[0].name}",
                         parameter_confidences=confidences,
+                        partial_cache_params=list(self._partial_cache_params),
                     )
                 else:
                     sql_draft = SQLDraft(
@@ -772,6 +837,7 @@ class ParameterExtractorExecutor(Executor):
                         extracted_parameters=extracted_params,
                         parameter_definitions=template.parameters,
                         parameter_confidences=confidences,
+                        partial_cache_params=list(self._partial_cache_params),
                     )
 
             elif parsed.get("status") == "needs_clarification":
@@ -806,6 +872,7 @@ class ParameterExtractorExecutor(Executor):
                     parameter_definitions=template.parameters,
                     missing_parameters=missing,
                     clarification_prompt=parsed.get("clarification_prompt"),
+                    partial_cache_params=list(self._partial_cache_params),
                 )
 
             else:
@@ -901,6 +968,7 @@ class ParameterExtractorExecutor(Executor):
                         parameter_definitions=template.parameters,
                         missing_parameters=missing,
                         clarification_prompt=clarification_prompt,
+                        partial_cache_params=list(self._partial_cache_params),
                     )
                 else:
                     # Regular error - no clarification possible

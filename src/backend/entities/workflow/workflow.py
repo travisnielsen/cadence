@@ -37,6 +37,7 @@ from entities.parameter_extractor.executor import ParameterExtractorExecutor
 from entities.parameter_validator.executor import ParameterValidatorExecutor
 from entities.query_builder.executor import QueryBuilderExecutor
 from entities.query_validator.executor import QueryValidatorExecutor
+from entities.shared.allowed_values_provider import AllowedValuesProvider
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ logger = logging.getLogger(__name__)
 _nl2sql_client: AzureAIClient | None = None
 _param_extractor_client: AzureAIClient | None = None
 _query_builder_client: AzureAIClient | None = None
+_allowed_values_provider: AllowedValuesProvider | None = None
 
 
 def _get_clients() -> tuple[AzureAIClient, AzureAIClient, AzureAIClient]:
@@ -113,6 +115,15 @@ def _get_clients() -> tuple[AzureAIClient, AzureAIClient, AzureAIClient]:
     return _nl2sql_client, _param_extractor_client, _query_builder_client
 
 
+def _get_allowed_values_provider() -> AllowedValuesProvider:
+    """Get or create the allowed values provider (singleton pattern)."""
+    global _allowed_values_provider
+    if _allowed_values_provider is None:
+        _allowed_values_provider = AllowedValuesProvider()
+        logger.info("Created AllowedValuesProvider singleton")
+    return _allowed_values_provider
+
+
 def create_nl2sql_workflow() -> tuple[Workflow, NL2SQLController, AzureAIClient]:
     """
     Create the NL2SQL workflow for processing data queries.
@@ -133,7 +144,10 @@ def create_nl2sql_workflow() -> tuple[Workflow, NL2SQLController, AzureAIClient]
 
     # Create fresh executors for this request
     nl2sql_controller = NL2SQLController(nl2sql_client)
-    param_extractor_executor = ParameterExtractorExecutor(param_extractor_client)
+    provider = _get_allowed_values_provider()
+    param_extractor_executor = ParameterExtractorExecutor(
+        param_extractor_client, allowed_values_provider=provider
+    )
     param_validator_executor = ParameterValidatorExecutor()
     query_builder_executor = QueryBuilderExecutor(query_builder_client)
     query_validator_executor = QueryValidatorExecutor()

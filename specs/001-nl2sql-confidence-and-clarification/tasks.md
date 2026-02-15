@@ -175,11 +175,11 @@
 
 **Purpose**: Documentation, final integration, and cleanup
 
-- [ ] T036 [P] Update `src/backend/entities/nl2sql_controller/prompt.md` schema reference to include all 31 tables (currently lists a subset)
-- [ ] T037 [P] Update NL2SQL controller prompt to describe the confidence tiers and when to show confirmation text vs. trigger clarification
-- [ ] T038 [P] Add integration-level tests in `tests/integration/` that exercise the full workflow: query → confidence scoring → clarification → execution
-- [ ] T039 Run `uv run poe check` and fix any lint/type/format issues across all changed files
-- [ ] T040 Update `GLOSSARY.md` with new terms: effective confidence, hypothesis-first clarification, schema area, allowed values cache
+- [x] T036 [P] Update `src/backend/entities/nl2sql_controller/prompt.md` schema reference to include all 31 tables (currently lists a subset)
+- [x] T037 [P] Update NL2SQL controller prompt to describe the confidence tiers and when to show confirmation text vs. trigger clarification
+- [x] T038 [P] Add integration-level tests in `tests/integration/` that exercise the full workflow: query → confidence scoring → clarification → execution
+- [x] T039 Run `uv run poe check` and fix any lint/type/format issues across all changed files
+- [x] T040 Update `GLOSSARY.md` with new terms: effective confidence, hypothesis-first clarification, schema area, allowed values cache
 
 ---
 

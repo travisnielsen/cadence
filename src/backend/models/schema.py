@@ -46,7 +46,17 @@ class ParameterDefinition(BaseModel):
     default_policy: str | None = Field(
         default=None, description="Policy for computing default (e.g., 'current_date')"
     )
-    confidence_weight: float = Field(default=0.0, description="Weight for confidence scoring")
+    confidence_weight: float = Field(
+        default=1.0, description="Weight for confidence scoring (defaults to 1.0, pass-through)"
+    )
+    allowed_values_source: str | None = Field(
+        default=None,
+        description="Source for allowed values: 'database' or None. Structural enums use None with validation.allowed_values set.",
+    )
+    table: str | None = Field(
+        default=None,
+        description="Fully-qualified table name (e.g. 'Sales.CustomerCategories') for database-sourced allowed values",
+    )
     normalization: ParameterNormalization | None = Field(default=None)
     validation: ParameterValidation | None = Field(default=None)
 

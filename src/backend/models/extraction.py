@@ -6,6 +6,7 @@ and handling clarification requests.
 """
 
 from dataclasses import dataclass, field
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -44,6 +45,23 @@ class ClarificationRequest:
     """Parameters already extracted from the query."""
 
 
+class ParameterConfidence(BaseModel):
+    """Confidence score for a single resolved parameter."""
+
+    name: str = Field(description="Parameter name")
+    value: Any = Field(description="Resolved value")
+    confidence: float = Field(description="Confidence score 0.0-1.0")
+    resolution_method: Literal[
+        "exact_match",
+        "fuzzy_match",
+        "llm_validated",
+        "llm_unvalidated",
+        "default_value",
+        "default_policy",
+        "llm_failed_validation",
+    ] = Field(description="How the value was resolved")
+
+
 class MissingParameter(BaseModel):
     """A parameter that could not be inferred and requires clarification."""
 
@@ -51,6 +69,11 @@ class MissingParameter(BaseModel):
     description: str = Field(default="", description="Human-readable description of what's needed")
     validation_hint: str = Field(
         default="", description="Hint about valid values (e.g., 'Enter a number between 1 and 100')"
+    )
+    best_guess: str | None = Field(default=None, description="Best guess for the parameter value")
+    guess_confidence: float = Field(default=0.0, description="Confidence in the best guess 0.0-1.0")
+    alternatives: list[str] | None = Field(
+        default=None, description="Alternative values the user might mean"
     )
 
 

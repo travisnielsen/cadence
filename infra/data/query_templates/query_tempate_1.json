@@ -11,7 +11,7 @@
             "ask_if_missing": false,
             "default_value": 10,
             "default_policy": null,
-            "confidence_weight": 0.4,
+            "confidence_weight": 1.0,
             "normalization": null,
             "validation": {
                 "type": "integer",
@@ -26,14 +26,17 @@
             "ask_if_missing": false,
             "default_value": "DESC",
             "default_policy": null,
-            "confidence_weight": 0.4,
+            "confidence_weight": 1.0,
             "normalization": {
                 "lowercase": false,
                 "strip": true
             },
             "validation": {
                 "type": "string",
-                "allowed_values": ["ASC", "DESC"]
+                "allowed_values": [
+                    "ASC",
+                    "DESC"
+                ]
             }
         }
     ],

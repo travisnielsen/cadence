@@ -12,6 +12,7 @@ from .extraction import (
     ExtractionRequestMessage,
     MissingParameter,
     NL2SQLRequest,
+    ParameterConfidence,
     ParameterExtractionRequest,
 )
 from .generation import (
@@ -30,24 +31,21 @@ from .schema import (
 )
 
 __all__ = [
-    # Execution (query results)
     "ClarificationInfo",
     "ClarificationMessage",
     "ClarificationRequest",
     "ExtractionRequestMessage",
-    # Extraction (parameter extraction workflow)
     "MissingParameter",
     "NL2SQLRequest",
     "NL2SQLResponse",
+    "ParameterConfidence",
     "ParameterDefinition",
     "ParameterExtractionRequest",
     "ParameterNormalization",
-    # Schema (AI Search index models)
     "ParameterValidation",
     "QueryBuilderRequest",
     "QueryBuilderRequestMessage",
     "QueryTemplate",
-    # Generation (SQL construction and validation)
     "SQLDraft",
     "SQLDraftMessage",
     "TableColumn",

@@ -38,6 +38,10 @@ class ConversationContext:
     last_question: str = ""
     query_source: str = ""  # "template" or "dynamic"
 
+    # Schema area context
+    current_schema_area: str | None = None
+    schema_exploration_depth: int = 0
+
 
 @dataclass
 class ClassificationResult:

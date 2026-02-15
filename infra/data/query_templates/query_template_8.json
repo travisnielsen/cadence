@@ -11,14 +11,20 @@
             "ask_if_missing": true,
             "default_value": null,
             "default_policy": null,
-            "confidence_weight": 0.4,
+            "confidence_weight": 1.0,
             "normalization": {
                 "lowercase": false,
                 "strip": true
             },
             "validation": {
                 "type": "string",
-                "allowed_values": ["Supermarket", "Novelty Shop", "Corporate", "Computer Store", "Gift Store"]
+                "allowed_values": [
+                    "Supermarket",
+                    "Novelty Shop",
+                    "Corporate",
+                    "Computer Store",
+                    "Gift Store"
+                ]
             }
         }
     ],

@@ -31,6 +31,7 @@ AzureAIAgentClient = AzureAIClient
 from models import (
     ExtractionRequestMessage,
     MissingParameter,
+    ParameterDefinition,
     ParameterExtractionRequest,
     QueryTemplate,
     SQLDraft,
@@ -100,6 +101,104 @@ def _fuzzy_match_allowed_value(user_query: str, allowed_values: list[str]) -> st
     return None
 
 
+# ============================================================================
+# Confidence Scoring
+# ============================================================================
+
+# Maps resolution method to base confidence score (from plan.md D1)
+_RESOLUTION_CONFIDENCE: dict[str, float] = {
+    "exact_match": 1.0,
+    "fuzzy_match": 0.85,
+    "llm_validated": 0.75,
+    "default_value": 0.7,
+    "default_policy": 0.7,
+    "llm_unvalidated": 0.65,
+    "llm_failed_validation": 0.3,
+}
+
+
+def _compute_confidence(resolution_method: str, confidence_weight: float) -> float:
+    """Compute effective confidence for a resolved parameter.
+
+    Effective confidence = base_confidence * max(confidence_weight, 0.3).
+
+    Args:
+        resolution_method: How the value was resolved (e.g. "exact_match").
+        confidence_weight: Per-parameter weight from ParameterDefinition.
+
+    Returns:
+        Effective confidence score (0.0-1.0).
+
+    Raises:
+        ValueError: If resolution_method is not recognised.
+    """
+    base = _RESOLUTION_CONFIDENCE.get(resolution_method)
+    if base is None:
+        raise ValueError(
+            f"Unknown resolution method: {resolution_method!r}. "
+            f"Valid methods: {sorted(_RESOLUTION_CONFIDENCE)}"
+        )
+    return base * max(confidence_weight, 0.3)
+
+
+def _has_validation_rules(param: ParameterDefinition) -> bool:
+    """Check whether a parameter definition has any validation rules."""
+    if not param.validation:
+        return False
+    v = param.validation
+    return bool(v.allowed_values or v.min is not None or v.max is not None or v.regex)
+
+
+def _value_passes_validation(value: str | int | float, param: ParameterDefinition) -> bool:
+    """Check if a value passes a parameter's validation rules.
+
+    Returns True when there are no validation rules or
+    all applicable rules pass.
+    """
+    if not param.validation:
+        return True
+    v = param.validation
+
+    # Check allowed_values
+    if v.allowed_values:
+        str_val = str(value).lower()
+        if not any(a.lower() == str_val for a in v.allowed_values):
+            return False
+
+    # Check min/max for numeric types
+    if v.type == "integer":
+        try:
+            num = int(value)
+        except (ValueError, TypeError):
+            return False
+        in_range = (v.min is None or num >= int(v.min)) and (v.max is None or num <= int(v.max))
+        if not in_range:
+            return False
+
+    # Check regex
+    return not (v.regex and not re.search(v.regex, str(value)))
+
+
+def _build_parameter_confidences(
+    resolution_methods: dict[str, str],
+    template: QueryTemplate,
+) -> dict[str, float]:
+    """Compute per-parameter confidence scores.
+
+    Args:
+        resolution_methods: Mapping of param name → resolution method.
+        template: The query template (used for confidence_weight lookup).
+
+    Returns:
+        Mapping of param name → effective confidence score.
+    """
+    weight_by_name = {p.name: p.confidence_weight for p in template.parameters}
+    return {
+        name: _compute_confidence(method, weight_by_name.get(name, 1.0))
+        for name, method in resolution_methods.items()
+    }
+
+
 def _extract_number_from_query(user_query: str, param_name: str) -> int | None:
     """
     Extract a number from the user query for count-type parameters.
@@ -125,18 +224,20 @@ def _extract_number_from_query(user_query: str, param_name: str) -> int | None:
 
 
 class ExtractionResult:
-    """Result of parameter extraction with tracking for defaults used."""
+    """Result of parameter extraction with tracking for defaults and resolution methods."""
 
     def __init__(self) -> None:
         self.extracted: dict[str, Any] = {}
         self.defaults_used: dict[str, Any] = {}
+        self.resolution_methods: dict[str, str] = {}
 
 
 def _pre_extract_parameters(user_query: str, template: QueryTemplate) -> ExtractionResult:
     """
     Deterministically extract parameters before calling LLM.
 
-    Returns ExtractionResult with extracted values and which ones used defaults.
+    Returns ExtractionResult with extracted values, defaults used,
+    and resolution methods for each resolved parameter.
     """
     result = ExtractionResult()
 
@@ -146,6 +247,12 @@ def _pre_extract_parameters(user_query: str, template: QueryTemplate) -> Extract
             match = _fuzzy_match_allowed_value(user_query, param.validation.allowed_values)
             if match:
                 result.extracted[param.name] = match
+                # Determine if exact or fuzzy
+                query_lower = user_query.lower()
+                if match.lower() in query_lower:
+                    result.resolution_methods[param.name] = "exact_match"
+                else:
+                    result.resolution_methods[param.name] = "fuzzy_match"
                 continue
 
         # Try to extract numbers for integer params
@@ -160,12 +267,21 @@ def _pre_extract_parameters(user_query: str, template: QueryTemplate) -> Extract
                 if max_val is not None and num > int(max_val):
                     continue
                 result.extracted[param.name] = num
+                result.resolution_methods[param.name] = "exact_match"
                 continue
 
-        # Apply default if available
+        # Apply default_policy if available
+        if param.default_policy is not None and param.name not in result.extracted:
+            result.extracted[param.name] = param.default_policy
+            result.defaults_used[param.name] = param.default_policy
+            result.resolution_methods[param.name] = "default_policy"
+            continue
+
+        # Apply default_value if available
         if param.default_value is not None and param.name not in result.extracted:
             result.extracted[param.name] = param.default_value
             result.defaults_used[param.name] = param.default_value
+            result.resolution_methods[param.name] = "default_value"
 
     return result
 
@@ -450,6 +566,10 @@ class ParameterExtractorExecutor(Executor):
                     "All required parameters satisfied via deterministic matching - skipping LLM"
                 )
 
+                confidences = _build_parameter_confidences(
+                    extraction_result.resolution_methods, template
+                )
+
                 sql_draft = SQLDraft(
                     status="success",
                     source="template",
@@ -461,6 +581,7 @@ class ParameterExtractorExecutor(Executor):
                     extracted_parameters=extracted_params,
                     defaults_used=defaults_used,
                     parameter_definitions=template.parameters,
+                    parameter_confidences=confidences,
                 )
 
                 finish_step()
@@ -526,10 +647,38 @@ class ParameterExtractorExecutor(Executor):
                 # Return extracted parameters - SQL substitution happens in nl2sql_controller
                 extracted_params = parsed.get("extracted_parameters", {})
 
+                # Merge deterministic extractions (they take priority)
+                merged_params = dict(extraction_result.extracted)
+                merged_params.update({
+                    k: v for k, v in extracted_params.items() if k not in merged_params
+                })
+                extracted_params = merged_params
+
                 # Log each extracted parameter
                 logger.info("Extracted %d parameters:", len(extracted_params))
                 for param_name, param_value in extracted_params.items():
                     logger.info("  Parameter '%s' -> '%s'", param_name, param_value)
+
+                # Build param lookup for resolution method assignment
+                param_defs_by_name: dict[str, ParameterDefinition] = {
+                    p.name: p for p in template.parameters
+                }
+
+                # Carry forward deterministic resolution methods
+                resolution_methods = dict(extraction_result.resolution_methods)
+
+                # Assign LLM resolution methods for new params
+                for pname, pval in extracted_params.items():
+                    if pname in resolution_methods:
+                        continue  # already resolved deterministically
+                    pdef = param_defs_by_name.get(pname)
+                    if pdef and _has_validation_rules(pdef):
+                        if _value_passes_validation(pval, pdef):
+                            resolution_methods[pname] = "llm_validated"
+                        else:
+                            resolution_methods[pname] = "llm_failed_validation"
+                    else:
+                        resolution_methods[pname] = "llm_unvalidated"
 
                 # Safety check: verify required ask_if_missing params were actually extracted
                 missing_required = []
@@ -561,6 +710,9 @@ class ParameterExtractorExecutor(Executor):
                             param.name,
                         )
 
+                # Compute confidence scores for all resolved params
+                confidences = _build_parameter_confidences(resolution_methods, template)
+
                 if missing_required:
                     # Convert to needs_clarification
                     logger.info(
@@ -578,6 +730,7 @@ class ParameterExtractorExecutor(Executor):
                         parameter_definitions=template.parameters,
                         missing_parameters=missing_required,
                         clarification_prompt=f"Please provide a value for: {missing_required[0].name}",
+                        parameter_confidences=confidences,
                     )
                 else:
                     sql_draft = SQLDraft(
@@ -590,6 +743,7 @@ class ParameterExtractorExecutor(Executor):
                         template_json=template.model_dump_json(),
                         extracted_parameters=extracted_params,
                         parameter_definitions=template.parameters,
+                        parameter_confidences=confidences,
                     )
 
             elif parsed.get("status") == "needs_clarification":

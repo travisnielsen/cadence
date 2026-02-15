@@ -33,6 +33,7 @@ from models import (
     ClarificationMessage,
     ClarificationRequest,
     ExtractionRequestMessage,
+    MissingParameter,
     NL2SQLRequest,
     NL2SQLResponse,
     ParameterExtractionRequest,
@@ -45,6 +46,10 @@ from models import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Confidence routing thresholds
+_CONFIDENCE_THRESHOLD_HIGH = 0.85
+_CONFIDENCE_THRESHOLD_LOW = 0.6
 
 # Type alias for NL2SQL output messages
 # NL2SQL sends str (JSON) to chat, ExtractionRequestMessage to param_extractor,
@@ -548,6 +553,55 @@ class NL2SQLController(Executor):
             # Parse the SQLDraft
             draft_data = json.loads(sql_draft_msg.response_json)
             sql_draft = SQLDraft.model_validate(draft_data)
+
+            # ============================================================
+            # Confidence-tier routing (applies before validation pipeline)
+            # ============================================================
+            if (
+                sql_draft.status == "success"
+                and sql_draft.parameter_confidences
+                and sql_draft_msg.source == "param_extractor"
+            ):
+                min_conf = min(sql_draft.parameter_confidences.values())
+                logger.info(
+                    "Confidence routing: min=%.3f, scores=%s",
+                    min_conf,
+                    sql_draft.parameter_confidences,
+                )
+                if min_conf < _CONFIDENCE_THRESHOLD_LOW:
+                    # Too low — trigger clarification flow
+                    logger.info(
+                        "Min confidence %.3f < %.2f — converting to needs_clarification",
+                        min_conf,
+                        _CONFIDENCE_THRESHOLD_LOW,
+                    )
+                    low_params = [
+                        name
+                        for name, score in sql_draft.parameter_confidences.items()
+                        if score < _CONFIDENCE_THRESHOLD_LOW
+                    ]
+                    missing = [
+                        MissingParameter(
+                            name=name,
+                            description=f"Low confidence ({sql_draft.parameter_confidences[name]:.2f}) — please confirm the value for '{name}'",
+                        )
+                        for name in low_params
+                    ]
+                    sql_draft.status = "needs_clarification"
+                    sql_draft.missing_parameters = missing
+                    sql_draft.clarification_prompt = (
+                        f"I'm not confident about: {', '.join(low_params)}. "
+                        "Could you confirm or correct these values?"
+                    )
+                elif min_conf < _CONFIDENCE_THRESHOLD_HIGH:
+                    # Medium confidence — proceed but flag for confirmation
+                    sql_draft.needs_confirmation = True
+                    logger.info(
+                        "Min confidence %.3f in [%.2f, %.2f) — needs_confirmation=True",
+                        min_conf,
+                        _CONFIDENCE_THRESHOLD_LOW,
+                        _CONFIDENCE_THRESHOLD_HIGH,
+                    )
 
             if sql_draft.status == "success":
                 completed_sql = sql_draft.completed_sql

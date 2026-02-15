@@ -77,13 +77,13 @@
 
 ### Implementation for User Story 1
 
-- [ ] T014 [US1] Update parameter extractor prompt in `src/backend/entities/parameter_extractor/prompt.md` to instruct the LLM: when returning `needs_clarification`, also include `best_guess` and `alternatives` for each missing parameter
-- [ ] T015 [US1] Modify the clarification JSON parsing in `ParameterExtractorExecutor` (`src/backend/entities/parameter_extractor/executor.py`) to extract `best_guess`, `guess_confidence`, and `alternatives` from the LLM response and populate the enriched `MissingParameter` fields
-- [ ] T016 [US1] Modify the deterministic clarification path in `_pre_extract_parameters()` — when a required `ask_if_missing` parameter can't be resolved, populate `best_guess` from the closest fuzzy match (if any) and `alternatives` from remaining `allowed_values`
-- [ ] T017 [US1] Update `NL2SQLController._build_clarification_prompt()` in `src/backend/entities/nl2sql_controller/executor.py` to format hypothesis-first prompts using `best_guess` and `alternatives` from `MissingParameter`
-- [ ] T018 [US1] Add confirmation text rendering in `NL2SQLController` — when `draft.needs_confirmation == True`, prepend a confirmation note to the response: "I assumed {param}={value} for these results. Want to adjust?"
-- [ ] T019 [US1] Add single-question enforcement in `NL2SQLController` — when multiple `MissingParameter` entries exist, clarify only the lowest-confidence one per turn. Store remaining unresolved parameters on the `SQLDraft` for subsequent turns.
-- [ ] T020 [US1] Ensure `on_clarification_response()` in the NL2SQL controller preserves already-extracted parameters from the `SQLDraft.extracted_parameters` when re-routing to the parameter extractor (don't re-extract confirmed params)
+- [x] T014 [US1] Update parameter extractor prompt in `src/backend/entities/parameter_extractor/prompt.md` to instruct the LLM: when returning `needs_clarification`, also include `best_guess` and `alternatives` for each missing parameter
+- [x] T015 [US1] Modify the clarification JSON parsing in `ParameterExtractorExecutor` (`src/backend/entities/parameter_extractor/executor.py`) to extract `best_guess`, `guess_confidence`, and `alternatives` from the LLM response and populate the enriched `MissingParameter` fields
+- [x] T016 [US1] Modify the deterministic clarification path in `_pre_extract_parameters()` — when a required `ask_if_missing` parameter can't be resolved, populate `best_guess` from the closest fuzzy match (if any) and `alternatives` from remaining `allowed_values`
+- [x] T017 [US1] Update `NL2SQLController._build_clarification_prompt()` in `src/backend/entities/nl2sql_controller/executor.py` to format hypothesis-first prompts using `best_guess` and `alternatives` from `MissingParameter`
+- [x] T018 [US1] Add confirmation text rendering in `NL2SQLController` — when `draft.needs_confirmation == True`, prepend a confirmation note to the response: "I assumed {param}={value} for these results. Want to adjust?"
+- [x] T019 [US1] Add single-question enforcement in `NL2SQLController` — when multiple `MissingParameter` entries exist, clarify only the lowest-confidence one per turn. Store remaining unresolved parameters on the `SQLDraft` for subsequent turns.
+- [x] T020 [US1] Ensure `on_clarification_response()` in the NL2SQL controller preserves already-extracted parameters from the `SQLDraft.extracted_parameters` when re-routing to the parameter extractor (don't re-extract confirmed params)
 
 **Checkpoint**: Hypothesis-first clarification working end-to-end. Confirmation tier shows inline notes.
 

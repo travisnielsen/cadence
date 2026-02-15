@@ -8,6 +8,13 @@ after SQL execution.
 from pydantic import BaseModel, Field
 
 
+class SchemaSuggestion(BaseModel):
+    """A contextual follow-up suggestion anchored to a query result."""
+
+    title: str = Field(description="Short display label, e.g. 'Explore order trends'")
+    prompt: str = Field(description="Full query to send when clicked")
+
+
 class ClarificationInfo(BaseModel):
     """Information about a parameter that needs clarification."""
 
@@ -91,4 +98,9 @@ class NL2SQLResponse(BaseModel):
     confirmation_note: str = Field(
         default="",
         description="Note about assumed parameter values that may need confirmation",
+    )
+
+    suggestions: list[SchemaSuggestion] = Field(
+        default_factory=list,
+        description="Contextual follow-up suggestions based on schema area",
     )

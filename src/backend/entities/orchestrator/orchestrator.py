@@ -8,15 +8,106 @@ and handles conversational refinements.
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from agent_framework import AgentThread
 from agent_framework import ChatAgent as MAFChatAgent
 from agent_framework_azure_ai import AzureAIClient
-from models import NL2SQLRequest, NL2SQLResponse
+from models import NL2SQLRequest, NL2SQLResponse, SchemaSuggestion
 
 logger = logging.getLogger(__name__)
+
+SCHEMA_SUGGESTIONS: dict[str, list[SchemaSuggestion]] = {
+    "sales": [
+        SchemaSuggestion(
+            title="Order trends",
+            prompt="Show me order trends over the last 6 months",
+        ),
+        SchemaSuggestion(
+            title="Invoice details",
+            prompt="Drill into invoice line items for the most recent orders",
+        ),
+        SchemaSuggestion(
+            title="Customer categories",
+            prompt="Compare total revenue across customer buying groups",
+        ),
+        SchemaSuggestion(
+            title="Special deals",
+            prompt="Show active special deals and their discount percentages",
+        ),
+    ],
+    "purchasing": [
+        SchemaSuggestion(
+            title="PO status",
+            prompt="Track purchase order status and expected delivery dates",
+        ),
+        SchemaSuggestion(
+            title="Supplier performance",
+            prompt="Analyze supplier categories and order volumes",
+        ),
+        SchemaSuggestion(
+            title="Supplier transactions",
+            prompt="Review recent supplier transaction history",
+        ),
+    ],
+    "warehouse": [
+        SchemaSuggestion(
+            title="Stock levels",
+            prompt="Check current stock levels and holdings across warehouses",
+        ),
+        SchemaSuggestion(
+            title="Stock categories",
+            prompt="Explore stock groups and item categories",
+        ),
+        SchemaSuggestion(
+            title="Stock transactions",
+            prompt="Review stock transaction history for the last 30 days",
+        ),
+        SchemaSuggestion(
+            title="Package types",
+            prompt="Analyze color and package type distributions for stock items",
+        ),
+    ],
+    "application": [
+        SchemaSuggestion(
+            title="People & contacts",
+            prompt="Look up people, their roles, and contact information",
+        ),
+        SchemaSuggestion(
+            title="Geographic data",
+            prompt="Explore cities, states, and countries in the system",
+        ),
+        SchemaSuggestion(
+            title="Delivery methods",
+            prompt="Review available delivery and payment methods",
+        ),
+    ],
+}
+
+
+def _detect_schema_area(tables: list[str]) -> str | None:
+    """Detect schema area from fully-qualified table names.
+
+    Uses the FROM clause's primary table (first in list). Extracts the schema
+    prefix (e.g., 'Sales.Orders' -> 'sales').
+
+    Args:
+        tables: List of fully-qualified table names (e.g., ['Sales.Orders', 'Application.People'])
+
+    Returns:
+        Lowercase schema area name, or None if undetectable.
+    """
+    if not tables:
+        return None
+    first_table = tables[0]
+    if "." not in first_table:
+        return None
+    area = first_table.split(".")[0].lower()
+    if area not in SCHEMA_SUGGESTIONS:
+        return None
+    return area
 
 
 @dataclass
@@ -258,6 +349,56 @@ JSON response:"""
             is_refinement=False,
         )
 
+    _CROSS_AREA_DEPTH_THRESHOLD = 3
+
+    @staticmethod
+    def _build_suggestions(
+        schema_area: str | None,
+        depth: int,
+        *,
+        has_results: bool = True,
+    ) -> list[SchemaSuggestion]:
+        """Select contextual follow-up suggestions based on schema area and depth.
+
+        Args:
+            schema_area: Current schema area (e.g., 'sales') or None.
+            depth: How many consecutive queries in this area.
+            has_results: Whether the query returned data (for empty-result recovery).
+
+        Returns:
+            2-3 relevant suggestions, or empty list if area is None.
+        """
+        if schema_area is None:
+            return []
+
+        area_suggestions = SCHEMA_SUGGESTIONS.get(schema_area, [])
+        if not area_suggestions:
+            return []
+
+        # Rotate based on depth so repeated queries get varied suggestions
+        count = len(area_suggestions)
+        start = (depth - 1) % count
+        rotated = [*area_suggestions[start:], *area_suggestions[:start]]
+        selected = rotated[:3]
+
+        # At sufficient depth, replace last suggestion with cross-area suggestion
+        if depth >= ConversationOrchestrator._CROSS_AREA_DEPTH_THRESHOLD:
+            sorted_areas = sorted(SCHEMA_SUGGESTIONS.keys())
+            current_idx = sorted_areas.index(schema_area)
+            next_area = sorted_areas[(current_idx + 1) % len(sorted_areas)]
+            cross_suggestion = SCHEMA_SUGGESTIONS[next_area][0]
+            selected = [*selected[:2], cross_suggestion]
+
+        # Prepend recovery suggestion for empty results
+        if not has_results:
+            recovery = SchemaSuggestion(
+                title="Try broader filters",
+                prompt=f"Show me all data in the {schema_area} area",
+            )
+            selected = [recovery, *selected[:2]]
+
+        return selected
+
     def update_context(
         self, response: NL2SQLResponse, template_json: str | None, params: dict
     ) -> None:
@@ -296,9 +437,40 @@ JSON response:"""
                 self.context.last_defaults_used = {}
                 self.context.last_query = response.sql_query
 
+            # Detect schema area from tables used in the query
+            if response.tables_used:
+                tables = response.tables_used
+            else:
+                tables = re.findall(r"(?:FROM|JOIN)\s+([\w.]+)", response.sql_query, re.IGNORECASE)
+
+            detected_area = _detect_schema_area(tables)
+            if detected_area == self.context.current_schema_area:
+                self.context.schema_exploration_depth += 1
+            else:
+                self.context.schema_exploration_depth = 1
+            self.context.current_schema_area = detected_area
+
             logger.info(
-                "Updated conversation context for %s query refinement", self.context.query_source
+                "Updated conversation context for %s query refinement (schema_area=%s, depth=%d)",
+                self.context.query_source,
+                self.context.current_schema_area,
+                self.context.schema_exploration_depth,
             )
+
+    def enrich_response(self, response: NL2SQLResponse) -> NL2SQLResponse:
+        """Add contextual suggestions to the response based on schema area.
+
+        Called after update_context() so schema area is current.
+        """
+        if not response.error and not response.needs_clarification:
+            has_results = len(response.sql_response) > 0
+            suggestions = self._build_suggestions(
+                self.context.current_schema_area,
+                self.context.schema_exploration_depth,
+                has_results=has_results,
+            )
+            response.suggestions = suggestions
+        return response
 
     def render_response(self, response: NL2SQLResponse) -> dict:
         """
@@ -331,6 +503,7 @@ JSON response:"""
                     if response.clarification
                     else None,
                     "defaults_used": response.defaults_used,
+                    "suggestions": [s.model_dump() for s in response.suggestions],
                 },
             },
         }

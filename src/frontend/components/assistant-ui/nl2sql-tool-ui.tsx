@@ -39,6 +39,7 @@ interface NL2SQLResult {
   needs_clarification?: boolean;
   clarification?: ClarificationInfo;
   defaults_used?: Record<string, string>;
+  suggestions?: SchemaSuggestion[];
 }
 
 /**
@@ -194,6 +195,40 @@ function SQLQuerySection({ query }: { query: string }) {
           {query}
         </pre>
       )}
+    </div>
+  );
+}
+
+interface SchemaSuggestion {
+  title: string;
+  prompt: string;
+}
+
+/**
+ * Suggestion pills for follow-up schema-area exploration
+ */
+function SuggestionPills({ suggestions }: { suggestions: SchemaSuggestion[] }) {
+  const threadRuntime = useThreadRuntime();
+
+  const handleClick = useCallback((prompt: string) => {
+    threadRuntime.composer.setText(prompt);
+    threadRuntime.composer.send();
+  }, [threadRuntime]);
+
+  return (
+    <div className="mt-3 pt-3 border-t">
+      <p className="text-sm font-medium text-muted-foreground mb-2">You might also explore:</p>
+      <div className="flex flex-wrap gap-2">
+        {suggestions.map((s) => (
+          <button
+            key={s.title}
+            onClick={() => handleClick(s.prompt)}
+            className="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-green-200 dark:border-green-700 rounded-full text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900 cursor-pointer transition-colors"
+          >
+            {s.title}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -362,6 +397,11 @@ export const NL2SQLToolUI = makeAssistantToolUI<NL2SQLArgs, NL2SQLResult>({
               <Markdown remarkPlugins={[remarkGfm]}>{result.observations}</Markdown>
             </div>
           </div>
+        )}
+
+        {/* Suggestion Pills */}
+        {result.suggestions && result.suggestions.length > 0 && (
+          <SuggestionPills suggestions={result.suggestions} />
         )}
       </div>
     );

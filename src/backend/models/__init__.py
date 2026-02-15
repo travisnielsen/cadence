@@ -5,7 +5,7 @@ These models are used across multiple agents and the workflow.
 All models are re-exported here for backward compatibility.
 """
 
-from .execution import ClarificationInfo, NL2SQLResponse
+from .execution import ClarificationInfo, NL2SQLResponse, SchemaSuggestion
 from .extraction import (
     ClarificationMessage,
     ClarificationRequest,
@@ -48,6 +48,7 @@ __all__ = [
     "QueryTemplate",
     "SQLDraft",
     "SQLDraftMessage",
+    "SchemaSuggestion",
     "TableColumn",
     "TableMetadata",
 ]

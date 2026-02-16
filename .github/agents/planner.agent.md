@@ -14,7 +14,7 @@ tools:
     azure-mcp/*,
     vscode.mermaid-chat-features/renderMermaidDiagram,
   ]
-model: Claude Opus 4.5 (copilot)
+model: Claude Opus 4.6 (copilot)
 agents: [Security]
 handoffs:
   - label: Implement Design

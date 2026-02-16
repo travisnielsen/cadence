@@ -190,6 +190,8 @@ max-statements = 60
     "ANN",     # Don't require type annotations in tests
     "ARG001",  # Allow unused arguments (common in mock side effects)
     "PLC0415", # Allow inline imports in tests
+    "PLC2701", # Allow private imports in tests (testing internal helpers)
+    "E402",    # Allow late imports in tests (module-level mocking)
 ]
 # Executor files have complex handler methods by design (workflow routing logic)
 "**/executor.py" = [

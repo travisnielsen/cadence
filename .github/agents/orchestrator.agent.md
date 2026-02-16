@@ -19,7 +19,7 @@ tools:
     "ms-python.python/configurePythonEnvironment",
     "vscode.mermaid-chat-features/renderMermaidDiagram",
   ]
-model: "Claude Opus 4.5 (copilot)"
+model: "Claude Opus 4.6 (copilot)"
 user-invokable: true
 disable-model-invocation: true
 agents: ["*"]
@@ -111,6 +111,30 @@ When Spec Kit planning is complete (`specs/<feature>/tasks.md` exists), import t
 7. Run `bd sync` to persist
 
 After import, proceed with the **Feature** workflow starting from Implementer (since planning is done).
+
+### Task Completion Sync (Beads → tasks.md)
+
+When a subagent completes a task and you close it in beads, **always sync back to tasks.md**:
+
+1. **Close in beads**: `bd close <bead-id> --reason "<summary>"`
+2. **Update tasks.md**: Change the corresponding checkbox from `- [ ]` to `- [x]`:
+   - Match by task ID (e.g., `T001`) in the line
+   - Edit `specs/<feature>/tasks.md` directly
+3. **Commit the sync**: Include the tasks.md update in the same commit as the implementation work, or batch at phase boundaries
+
+**When to sync:**
+- After each individual task completion (preferred — keeps both systems current)
+- At minimum, after each phase checkpoint
+
+**Example flow:**
+```
+Implementer completes T001 →
+  bd close <T001-bead-id> --reason "Added ParameterConfidence model" →
+  Edit tasks.md: `- [ ] T001` → `- [x] T001` →
+  Commit includes both code changes and tasks.md update
+```
+
+This ensures `tasks.md` stays accurate for `/speckit.analyze` reruns and progress visibility.
 
 ### Feature (Default)
 
@@ -212,5 +236,6 @@ Pass relevant spec paths to subagents when invoking them so they have full conte
 - **ALWAYS** check `bd ready` before starting
 - **ALWAYS** pause at Reviewer/Security findings
 - **ALWAYS** specify expected output format when invoking subagents
+- **ALWAYS** sync tasks.md checkboxes when closing beads tasks (see Task Completion Sync)
 - **PREFER** Spec Kit planning for new features (suggest `/speckit.specify`)
 - **SKIP** `/speckit.implement` — use role-based subagents instead

@@ -100,6 +100,20 @@ class SQLDraft(BaseModel):
 
     error: str | None = Field(default=None, description="Error message if status is 'error'")
 
+    # Confidence scoring fields
+    parameter_confidences: dict[str, float] = Field(
+        default_factory=dict, description="Per-parameter confidence scores"
+    )
+    needs_confirmation: bool = Field(
+        default=False,
+        description="Whether low-confidence params need user confirmation",
+    )
+    partial_cache_params: list[str] = Field(
+        default_factory=list,
+        description="Param names with partial (capped) allowed-values cache; "
+        "validator should skip strict allowed_values matching for these",
+    )
+
 
 class SQLDraftMessage(BaseModel):
     """

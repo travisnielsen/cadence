@@ -5,13 +5,14 @@ These models are used across multiple agents and the workflow.
 All models are re-exported here for backward compatibility.
 """
 
-from .execution import ClarificationInfo, NL2SQLResponse
+from .execution import ClarificationInfo, NL2SQLResponse, SchemaSuggestion
 from .extraction import (
     ClarificationMessage,
     ClarificationRequest,
     ExtractionRequestMessage,
     MissingParameter,
     NL2SQLRequest,
+    ParameterConfidence,
     ParameterExtractionRequest,
 )
 from .generation import (
@@ -30,26 +31,24 @@ from .schema import (
 )
 
 __all__ = [
-    # Execution (query results)
     "ClarificationInfo",
     "ClarificationMessage",
     "ClarificationRequest",
     "ExtractionRequestMessage",
-    # Extraction (parameter extraction workflow)
     "MissingParameter",
     "NL2SQLRequest",
     "NL2SQLResponse",
+    "ParameterConfidence",
     "ParameterDefinition",
     "ParameterExtractionRequest",
     "ParameterNormalization",
-    # Schema (AI Search index models)
     "ParameterValidation",
     "QueryBuilderRequest",
     "QueryBuilderRequestMessage",
     "QueryTemplate",
-    # Generation (SQL construction and validation)
     "SQLDraft",
     "SQLDraftMessage",
+    "SchemaSuggestion",
     "TableColumn",
     "TableMetadata",
 ]

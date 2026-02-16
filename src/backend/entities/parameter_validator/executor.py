@@ -386,27 +386,21 @@ class ParameterValidatorExecutor(Executor):
             extracted_params = draft.extracted_parameters or {}
             param_definitions = draft.parameter_definitions or []
 
+            # For partial-cache params, temporarily clear allowed_values so the
+            # validator skips strict matching (the cache was capped at max_values
+            # and may not contain the user's value).  We restore them afterwards.
+            partial_names = set(draft.partial_cache_params)
+            saved_allowed: dict[str, list[str] | None] = {}
+            for pdef in param_definitions:
+                if pdef.name in partial_names and pdef.validation:
+                    saved_allowed[pdef.name] = pdef.validation.allowed_values
+                    pdef.validation.allowed_values = None
+
             if not param_definitions:
                 # No definitions to validate against - mark as validated and pass through
                 logger.info("No parameter definitions provided, skipping validation")
-                validated_draft = SQLDraft(
-                    status=draft.status,
-                    source=draft.source,
-                    completed_sql=draft.completed_sql,
-                    user_query=draft.user_query,
-                    reasoning=draft.reasoning,
-                    retry_count=draft.retry_count,
-                    template_id=draft.template_id,
-                    template_json=draft.template_json,
-                    extracted_parameters=draft.extracted_parameters,
-                    defaults_used=draft.defaults_used,
-                    missing_parameters=draft.missing_parameters,
-                    clarification_prompt=draft.clarification_prompt,
-                    tables_used=draft.tables_used,
-                    params_validated=True,  # Mark as validated
-                    parameter_definitions=draft.parameter_definitions,
-                    parameter_violations=draft.parameter_violations,
-                    error=draft.error,
+                validated_draft = draft.model_copy(
+                    update={"params_validated": True},
                 )
                 finish_step()
                 response_msg = SQLDraftMessage(
@@ -418,27 +412,15 @@ class ParameterValidatorExecutor(Executor):
             # Validate all parameters
             is_valid, violations = validate_all_parameters(extracted_params, param_definitions)
 
+            # Restore allowed_values that were cleared for partial-cache params
+            for pdef in param_definitions:
+                if pdef.name in saved_allowed and pdef.validation:
+                    pdef.validation.allowed_values = saved_allowed[pdef.name]
+
             if is_valid:
                 logger.info("All parameters validated successfully")
-                # Update draft with params_validated=True
-                validated_draft = SQLDraft(
-                    status=draft.status,
-                    source=draft.source,
-                    completed_sql=draft.completed_sql,
-                    user_query=draft.user_query,
-                    reasoning=draft.reasoning,
-                    retry_count=draft.retry_count,
-                    template_id=draft.template_id,
-                    template_json=draft.template_json,
-                    extracted_parameters=draft.extracted_parameters,
-                    defaults_used=draft.defaults_used,
-                    missing_parameters=draft.missing_parameters,
-                    clarification_prompt=draft.clarification_prompt,
-                    tables_used=draft.tables_used,
-                    params_validated=True,  # Mark as validated
-                    parameter_definitions=draft.parameter_definitions,
-                    parameter_violations=[],
-                    error=draft.error,
+                validated_draft = draft.model_copy(
+                    update={"params_validated": True, "parameter_violations": []},
                 )
                 finish_step()
                 response_msg = SQLDraftMessage(
@@ -449,23 +431,12 @@ class ParameterValidatorExecutor(Executor):
                 logger.warning("Parameter validation failed: %s", violations)
 
                 # Update the draft with violations
-                validated_draft = SQLDraft(
-                    status="error",
-                    source=draft.source,
-                    completed_sql=draft.completed_sql,
-                    user_query=draft.user_query,
-                    reasoning=draft.reasoning,
-                    retry_count=draft.retry_count,
-                    template_id=draft.template_id,
-                    template_json=draft.template_json,
-                    extracted_parameters=draft.extracted_parameters,
-                    defaults_used=draft.defaults_used,
-                    missing_parameters=draft.missing_parameters,
-                    clarification_prompt=draft.clarification_prompt,
-                    tables_used=draft.tables_used,
-                    parameter_definitions=draft.parameter_definitions,
-                    parameter_violations=violations,
-                    error=f"Parameter validation failed: {'; '.join(violations)}",
+                validated_draft = draft.model_copy(
+                    update={
+                        "status": "error",
+                        "parameter_violations": violations,
+                        "error": f"Parameter validation failed: {'; '.join(violations)}",
+                    },
                 )
 
                 finish_step()

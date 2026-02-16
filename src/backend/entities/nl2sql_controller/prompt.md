@@ -35,14 +35,33 @@ If the system needs more information from the user:
 - Include hints about valid values when appropriate
 - Once the user provides clarification, the system will retry with the additional context
 
+## Confidence-Based Routing
+
+After parameter extraction, the system computes a per-parameter confidence score (0.0–1.0):
+
+| Tier | Score Range | Behavior |
+|------|-------------|----------|
+| **High** | ≥ 0.85 | Execute immediately. Show a brief confirmation note for medium-ish parameters. |
+| **Medium** | 0.6 – 0.85 | Execute, but include a "Assuming X for Y" confirmation note so users can correct. |
+| **Low** | < 0.6 | Trigger clarification — ask the user a hypothesis-first question with best guess and alternatives. |
+
+**Hypothesis-first clarification**: When a parameter is missing or ambiguous, present the best guess as a hypothesis:
+- "I'll look up orders for **Supermarket** customers. Want a different category?"
+- Include clickable alternatives when valid values are known.
+- Ask only ONE question at a time (most uncertain parameter first).
+
+**Confirmation notes**: For medium-confidence results, append a note like:
+- "Assuming 'Supermarket' for customer category"
+- Users can follow up to correct if the assumption is wrong.
+
 ## Schema Reference
 
-**Sales**: Customers, CustomerCategories, Orders, OrderLines, Invoices, InvoiceLines
-**Warehouse**: StockItems, StockItemHoldings  
-**Purchasing**: Suppliers, PurchaseOrders
-**Application**: People, Cities
+**Application**: Cities, Countries, DeliveryMethods, PaymentMethods, People, StateProvinces, SystemParameters, TransactionTypes
+**Purchasing**: PurchaseOrderLines, PurchaseOrders, SupplierCategories, SupplierTransactions, Suppliers
+**Sales**: BuyingGroups, CustomerCategories, CustomerTransactions, Customers, InvoiceLines, Invoices, OrderLines, Orders, SpecialDeals
+**Warehouse**: ColdRoomTemperatures, Colors, PackageTypes, StockGroups, StockItemHoldings, StockItemStockGroups, StockItemTransactions, StockItems, VehicleTemperatures
 
-Key joins: Orders→Customers (CustomerID), OrderLines→Orders (OrderID), InvoiceLines→Invoices (InvoiceID), StockItems→Suppliers (SupplierID)
+Key joins: Orders→Customers (CustomerID), OrderLines→Orders (OrderID), InvoiceLines→Invoices (InvoiceID), StockItems→Suppliers (SupplierID), Customers→CustomerCategories (CustomerCategoryID), Suppliers→SupplierCategories (SupplierCategoryID), PurchaseOrderLines→PurchaseOrders (PurchaseOrderID), Cities→StateProvinces (StateProvinceID), StateProvinces→Countries (CountryID)
 
 ## Response Guidelines
 

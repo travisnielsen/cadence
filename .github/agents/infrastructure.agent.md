@@ -15,7 +15,7 @@ tools:
     ms-python.python/configurePythonEnvironment,
     vscode.mermaid-chat-features/renderMermaidDiagram,
   ]
-model: Claude Opus 4.5 (copilot)
+model: Claude Opus 4.6 (copilot)
 ---
 
 # Infrastructure Agent

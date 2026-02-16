@@ -2,7 +2,7 @@
 name: Reviewer
 description: Code review specialist focusing on quality, standards, and maintainability
 tools: [read, edit, search, azure-mcp/*, web, microsoftdocs/mcp/*]
-model: Claude Opus 4.5 (copilot)
+model: Claude Opus 4.6 (copilot)
 handoffs:
   - label: Security Review
     agent: Security

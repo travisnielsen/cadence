@@ -137,6 +137,7 @@ async def generate_clarification_response_stream(
                                 if response.clarification
                                 else None,
                                 "defaults_used": response.defaults_used,
+                                "suggestions": [],
                             },
                         }
 
@@ -381,6 +382,9 @@ async def generate_orchestrator_streaming_response(
                         orchestrator.update_context(
                             response, response.template_json, response.extracted_params
                         )
+
+                        # Enrich response with contextual suggestions
+                        orchestrator.enrich_response(response)
 
                         # Store orchestrator in session cache
                         if orchestrator.thread_id:

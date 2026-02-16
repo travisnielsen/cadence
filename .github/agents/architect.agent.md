@@ -2,7 +2,7 @@
 name: Architect
 description: Expert in architecture design, NFR analysis, and Architecture Decision Records (ADRs)
 tools: [read, edit, search, web, microsoftdocs/mcp/*, azure-mcp/*, vscode.mermaid-chat-features/renderMermaidDiagram]
-model: Claude Opus 4.5 (copilot)
+model: Claude Opus 4.6 (copilot)
 handoffs:
   - label: Create Design Doc
     agent: Planner

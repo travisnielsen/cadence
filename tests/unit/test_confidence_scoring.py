@@ -39,13 +39,37 @@ class TestComputeConfidence:
         assert _compute_confidence("llm_failed_validation", 1.0) == 0.3
 
     def test_with_weight(self) -> None:
-        result = _compute_confidence("exact_match", 0.7)
-        assert result == pytest.approx(0.7)
+        """LLM-validated has no floor, so weight applies directly."""
+        result = _compute_confidence("llm_validated", 0.7)
+        assert result == pytest.approx(0.525)
 
     def test_minimum_weight(self) -> None:
-        """Weight floors at 0.3, so exact_match (1.0) * 0.3 = 0.3."""
-        result = _compute_confidence("exact_match", 0.1)
-        assert result == pytest.approx(0.3)
+        """Weight floors at 0.3, so llm_unvalidated (0.65) * 0.3 = 0.195."""
+        result = _compute_confidence("llm_unvalidated", 0.1)
+        assert result == pytest.approx(0.195)
+
+    def test_exact_match_floor(self) -> None:
+        """Exact match has a floor of 0.85 regardless of low weight."""
+        assert _compute_confidence("exact_match", 0.4) == pytest.approx(0.85)
+        assert _compute_confidence("exact_match", 0.1) == pytest.approx(0.85)
+
+    def test_fuzzy_match_floor(self) -> None:
+        """Fuzzy match has a floor of 0.6 regardless of low weight."""
+        assert _compute_confidence("fuzzy_match", 0.4) == pytest.approx(0.6)
+
+    def test_default_value_floor(self) -> None:
+        """Default value has a floor of 0.6 regardless of low weight."""
+        assert _compute_confidence("default_value", 0.4) == pytest.approx(0.6)
+        assert _compute_confidence("default_value", 0.1) == pytest.approx(0.6)
+
+    def test_default_policy_floor(self) -> None:
+        """Default policy has a floor of 0.6 regardless of low weight."""
+        assert _compute_confidence("default_policy", 0.4) == pytest.approx(0.6)
+
+    def test_llm_methods_no_floor(self) -> None:
+        """LLM-based methods have no floor — weight fully applies."""
+        assert _compute_confidence("llm_unvalidated", 0.4) == pytest.approx(0.26)
+        assert _compute_confidence("llm_failed_validation", 0.4) == pytest.approx(0.12)
 
     def test_unknown_method_raises(self) -> None:
         with pytest.raises(ValueError, match="Unknown resolution method"):

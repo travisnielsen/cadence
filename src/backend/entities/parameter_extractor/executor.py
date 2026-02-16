@@ -118,6 +118,17 @@ _RESOLUTION_CONFIDENCE: dict[str, float] = {
     "llm_failed_validation": 0.3,
 }
 
+# Minimum effective confidence floor per resolution method.
+# Deterministic resolutions should never trigger clarification regardless
+# of the template's confidence_weight — the weight should primarily
+# penalise LLM-based extractions where ambiguity is real.
+_RESOLUTION_MIN_CONFIDENCE: dict[str, float] = {
+    "exact_match": 0.85,
+    "fuzzy_match": 0.6,
+    "default_value": 0.6,
+    "default_policy": 0.6,
+}
+
 
 def _compute_confidence(resolution_method: str, confidence_weight: float) -> float:
     """Compute effective confidence for a resolved parameter.
@@ -140,7 +151,9 @@ def _compute_confidence(resolution_method: str, confidence_weight: float) -> flo
             f"Unknown resolution method: {resolution_method!r}. "
             f"Valid methods: {sorted(_RESOLUTION_CONFIDENCE)}"
         )
-    return base * max(confidence_weight, 0.3)
+    effective = base * max(confidence_weight, 0.3)
+    floor = _RESOLUTION_MIN_CONFIDENCE.get(resolution_method, 0.0)
+    return max(effective, floor)
 
 
 def _has_validation_rules(param: ParameterDefinition) -> bool:

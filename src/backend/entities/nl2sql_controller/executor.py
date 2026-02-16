@@ -8,6 +8,7 @@ at class definition time, which is incompatible with PEP 563 stringified annotat
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,8 @@ AzureAIAgentClient = AzureAIClient
 import contextlib
 import operator
 
+from entities.shared.column_filter import refine_columns
+from entities.shared.error_recovery import build_error_recovery
 from entities.shared.substitution import substitute_parameters
 from entities.shared.tools import (
     execute_query_parameterized,
@@ -57,6 +60,10 @@ logger = logging.getLogger(__name__)
 # Confidence routing thresholds
 _CONFIDENCE_THRESHOLD_HIGH = 0.85
 _CONFIDENCE_THRESHOLD_LOW = 0.6
+
+# Confidence threshold for dynamic query confirmation gate
+# Dynamic queries below this threshold require user confirmation before execution
+_DYNAMIC_CONFIDENCE_THRESHOLD = float(os.getenv("DYNAMIC_CONFIDENCE_THRESHOLD", "0.7"))
 
 # Type alias for NL2SQL output messages
 # NL2SQL sends str (JSON) to chat, ExtractionRequestMessage to param_extractor,
@@ -252,6 +259,47 @@ class NL2SQLController(Executor):
         logger.info("NL2SQLController processing question: %s", question[:100])
 
         try:
+            # Check for pending confirmation (confidence gate acceptance)
+            try:
+                pending_state = await ctx.get_shared_state(CLARIFICATION_STATE_KEY)
+                if (
+                    pending_state
+                    and isinstance(pending_state, dict)
+                    and pending_state.get("pending_confirmation")
+                ):
+                    # Check if user is accepting or revising
+                    accept_keywords = {"yes", "run", "execute", "accept", "go", "ok", "confirm"}
+                    question_lower = question.strip().lower().rstrip(".")
+                    is_acceptance = question_lower in accept_keywords or question_lower.startswith(
+                        "run "
+                    )
+
+                    if is_acceptance:
+                        logger.info("Confidence gate acceptance — executing pending query")
+                        # Deserialize the stored SQLDraft and execute
+                        sql_draft_json = pending_state.get("sql_draft_json", "")
+                        if sql_draft_json:
+                            stored_draft = SQLDraft.model_validate_json(sql_draft_json)
+                            # Mark as refinement so the gate doesn't re-trigger
+                            stored_state = dict(pending_state)
+                            stored_state["is_refinement"] = True
+                            stored_state["pending_confirmation"] = False
+                            await ctx.set_shared_state(CLARIFICATION_STATE_KEY, stored_state)
+
+                            # Re-submit to query_validator for execution
+                            forward_msg = SQLDraftMessage(
+                                source="nl2sql_controller",
+                                response_json=stored_draft.model_dump_json(),
+                            )
+                            await ctx.send_message(forward_msg, target_id="query_validator")
+                            return
+
+                    # Not an acceptance — treat as a revision/new question
+                    logger.info("Confidence gate revision — treating as new question")
+                    # Clear the pending confirmation
+                    await ctx.set_shared_state(CLARIFICATION_STATE_KEY, None)
+            except (KeyError, TypeError):
+                pass
             # Step 1: Search for query templates
             # Note: AIFunction wrapper is awaitable but type checker doesn't understand it
             search_result = await search_query_templates(question)  # type: ignore[misc]
@@ -748,11 +796,14 @@ class NL2SQLController(Executor):
                                         for t in table_search_result["tables"]
                                     ]
                                 else:
-                                    violation_list = "; ".join(violations)
+                                    err_msg, err_suggestions = build_error_recovery(
+                                        violations, sql_draft.tables_used
+                                    )
                                     nl2sql_response = NL2SQLResponse(
                                         sql_query="",
-                                        error=f"Query validation failed: {violation_list}. Unable to retry - no table metadata available.",
+                                        error=err_msg,
                                         query_source="dynamic",
+                                        error_suggestions=err_suggestions,
                                     )
                                     await self._send_final_response(nl2sql_response, ctx)
                                     return
@@ -787,27 +838,85 @@ class NL2SQLController(Executor):
                             )
                             await ctx.send_message(request_msg, target_id="query_builder")
                         else:
-                            # Max retries exceeded
-                            violation_summary = "; ".join(violations)
-                            error_message = (
-                                f"I was unable to generate a valid query for your request. "
-                                f"Validation issues: {violation_summary}. "
-                                f"Please try rephrasing your question or be more specific about what data you need."
+                            # Max retries exceeded — build actionable error recovery
+                            error_message, recovery_suggestions = build_error_recovery(
+                                violations, sql_draft.tables_used
                             )
 
                             nl2sql_response = NL2SQLResponse(
                                 sql_query="",
                                 error=error_message,
                                 query_source="dynamic",
+                                error_suggestions=recovery_suggestions,
                             )
 
                             logger.error(
-                                "Query validation failed after retry: %s", violation_summary
+                                "Query validation failed after retry: %s",
+                                "; ".join(violations),
                             )
                             await self._send_final_response(nl2sql_response, ctx)
                     else:
-                        # Query is valid - execute the SQL
-                        logger.info("Validation passed. Executing SQL: %s", completed_sql[:200])
+                        # Query is valid - check confidence gate for dynamic queries
+                        logger.info("Validation passed. SQL: %s", completed_sql[:200])
+
+                        # Confidence gate: low-confidence dynamic queries need confirmation
+                        is_refinement = False
+                        try:
+                            existing_state = await ctx.get_shared_state(CLARIFICATION_STATE_KEY)
+                            if existing_state and isinstance(existing_state, dict):
+                                is_refinement = existing_state.get("is_refinement", False)
+                                # Also skip gate if this is an accepted pending query
+                                if existing_state.get("pending_confirmation"):
+                                    is_refinement = True
+                        except (KeyError, TypeError):
+                            pass
+
+                        if (
+                            sql_draft.source == "dynamic"
+                            and sql_draft.confidence < _DYNAMIC_CONFIDENCE_THRESHOLD
+                            and not is_refinement
+                        ):
+                            # Build summary from reasoning or fall back to SQL description
+                            query_summary = sql_draft.reasoning or f"Execute: {completed_sql[:150]}"
+
+                            logger.info(
+                                "Confidence gate triggered: %.2f < %.2f for dynamic query",
+                                sql_draft.confidence,
+                                _DYNAMIC_CONFIDENCE_THRESHOLD,
+                            )
+
+                            # Store pending query for acceptance
+                            await ctx.set_shared_state(
+                                CLARIFICATION_STATE_KEY,
+                                {
+                                    "original_question": sql_draft.user_query,
+                                    "pending_confirmation": True,
+                                    "dynamic_query": True,
+                                    "sql_draft_json": sql_draft.model_dump_json(),
+                                    "tables": (
+                                        json.loads(sql_draft.tables_metadata_json)
+                                        if sql_draft.tables_metadata_json
+                                        else []
+                                    ),
+                                },
+                            )
+
+                            # Return confirmation response (no execution)
+                            nl2sql_response = NL2SQLResponse(
+                                sql_query=completed_sql,
+                                needs_clarification=True,
+                                query_summary=query_summary,
+                                query_confidence=sql_draft.confidence,
+                                query_source="dynamic",
+                                tables_used=sql_draft.tables_used,
+                                tables_metadata_json=sql_draft.tables_metadata_json,
+                                original_question=sql_draft.user_query,
+                            )
+                            await self._send_final_response(nl2sql_response, ctx)
+                            return
+
+                        # Execute the SQL
+                        logger.info("Executing SQL: %s", completed_sql[:200])
 
                         # Prefer parameterized execution when bind params are available
                         exec_query = sql_draft.exec_sql or completed_sql
@@ -822,7 +931,12 @@ class NL2SQLController(Executor):
                         confidence = (
                             _CONFIDENCE_THRESHOLD_HIGH
                             if sql_draft.template_id
-                            else _CONFIDENCE_THRESHOLD_LOW + 0.1
+                            else max(sql_draft.confidence, _CONFIDENCE_THRESHOLD_LOW + 0.1)
+                        )
+
+                        # Pass QueryBuilder confidence to response for dynamic queries
+                        query_confidence = (
+                            sql_draft.confidence if sql_draft.source == "dynamic" else 0.0
                         )
 
                         # Build human-readable defaults description
@@ -836,12 +950,29 @@ class NL2SQLController(Executor):
                                 sql_draft.extracted_parameters,
                             )
 
+                        # Apply column refinement for dynamic queries
+                        result_columns = sql_result.get("columns", [])
+                        result_rows = sql_result.get("rows", [])
+                        hidden_columns: list[str] = []
+
+                        if sql_draft.source == "dynamic" and sql_result.get("success"):
+                            refinement = refine_columns(
+                                columns=result_columns,
+                                rows=result_rows,
+                                user_query=sql_draft.user_query,
+                                sql=completed_sql,
+                            )
+                            result_columns = refinement.columns
+                            hidden_columns = refinement.hidden_columns
+
                         nl2sql_response = NL2SQLResponse(
                             sql_query=completed_sql,
-                            sql_response=sql_result.get("rows", []),
-                            columns=sql_result.get("columns", []),
+                            sql_response=result_rows,
+                            columns=result_columns,
                             row_count=sql_result.get("row_count", 0),
                             confidence_score=confidence,
+                            query_confidence=query_confidence,
+                            hidden_columns=hidden_columns,
                             used_cached_query=bool(sql_draft.template_id),
                             query_source=query_source,
                             error=sql_result.get("error")

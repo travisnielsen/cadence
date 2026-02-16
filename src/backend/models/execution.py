@@ -104,3 +104,26 @@ class NL2SQLResponse(BaseModel):
         default_factory=list,
         description="Contextual follow-up suggestions based on schema area",
     )
+
+    # Dynamic query enhancement fields
+    hidden_columns: list[str] = Field(
+        default_factory=list,
+        description="Column names hidden by the display cap (available for client-side expansion)",
+    )
+
+    query_summary: str = Field(
+        default="",
+        description="Natural-language summary for confidence gate confirmation",
+    )
+
+    query_confidence: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="QueryBuilder confidence score passed through for frontend",
+    )
+
+    error_suggestions: list[SchemaSuggestion] = Field(
+        default_factory=list,
+        description="Actionable example questions on error (rendered as recovery pills)",
+    )

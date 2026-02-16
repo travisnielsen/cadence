@@ -505,6 +505,10 @@ JSON response:"""
                     else None,
                     "defaults_used": response.defaults_used,
                     "suggestions": [s.model_dump() for s in response.suggestions],
+                    "hidden_columns": response.hidden_columns,
+                    "query_summary": response.query_summary or None,
+                    "query_confidence": response.query_confidence,
+                    "error_suggestions": [s.model_dump() for s in response.error_suggestions],
                 },
             },
         }

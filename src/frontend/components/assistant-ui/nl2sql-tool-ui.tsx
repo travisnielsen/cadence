@@ -40,6 +40,11 @@ interface NL2SQLResult {
   clarification?: ClarificationInfo;
   defaults_used?: Record<string, string>;
   suggestions?: SchemaSuggestion[];
+  // Dynamic query enhancement fields
+  hidden_columns?: string[];
+  query_summary?: string;
+  query_confidence?: number;
+  error_suggestions?: SchemaSuggestion[];
 }
 
 /**
@@ -96,9 +101,19 @@ type SortState = {
 };
 
 function NL2SQLDataTable({ result }: { result: NL2SQLResult }) {
+  const [showAllColumns, setShowAllColumns] = useState(false);
+
+  // Determine visible columns: when expanded, include hidden columns
+  const visibleColumns = useMemo(() => {
+    if (showAllColumns && result.hidden_columns && result.hidden_columns.length > 0) {
+      return [...result.columns, ...result.hidden_columns];
+    }
+    return result.columns;
+  }, [result.columns, result.hidden_columns, showAllColumns]);
+
   const columns = useMemo(
-    () => buildColumns(result.columns, result.sql_response),
-    [result.columns, result.sql_response],
+    () => buildColumns(visibleColumns, result.sql_response),
+    [visibleColumns, result.sql_response],
   );
   const allData = useMemo(() => coerceRows(result.sql_response), [result.sql_response]);
 
@@ -138,6 +153,19 @@ function NL2SQLDataTable({ result }: { result: NL2SQLResult }) {
         onSortChange={handleSortChange}
         emptyMessage="No data returned"
       />
+      {/* Hidden columns toggle */}
+      {result.hidden_columns && result.hidden_columns.length > 0 && (
+        <div className="border-t px-2 py-2">
+          <button
+            onClick={() => setShowAllColumns(!showAllColumns)}
+            className="text-sm text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+          >
+            {showAllColumns
+              ? "Show fewer columns"
+              : `Show ${result.hidden_columns.length} more column${result.hidden_columns.length === 1 ? "" : "s"}`}
+          </button>
+        </div>
+      )}
       {totalPages > 1 && (
         <div className="flex items-center justify-between border-t px-2 py-2 text-sm text-muted-foreground">
           <span>
@@ -276,6 +304,62 @@ function ClarificationOptions({ prompt, allowedValues }: { prompt: string; allow
 }
 
 /**
+ * Confidence gate confirmation card.
+ *
+ * Shown when the backend returns a low-confidence dynamic query that needs
+ * user approval before execution. Offers "Run this query" / "Revise" actions
+ * using the same SSE composer pattern as ClarificationOptions.
+ */
+function ConfirmationCard({ summary, confidence }: { summary: string; confidence?: number }) {
+  const threadRuntime = useThreadRuntime();
+
+  const handleAccept = useCallback(() => {
+    threadRuntime.composer.setText("yes");
+    threadRuntime.composer.send();
+  }, [threadRuntime]);
+
+  const handleRevise = useCallback(() => {
+    threadRuntime.composer.setText("");
+    threadRuntime.composer.focus();
+  }, [threadRuntime]);
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/30 p-4">
+      <div className="flex items-start gap-3">
+        <ShieldQuestionIcon className="size-5 text-amber-500 mt-0.5" />
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <p className="font-medium text-amber-700 dark:text-amber-300">
+              Confirm query
+            </p>
+            {confidence !== undefined && confidence > 0 && (
+              <span className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-0.5 rounded">
+                {Math.round(confidence * 100)}% confidence
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-muted-foreground mt-1">{summary}</p>
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={handleAccept}
+              className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-md hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-600 cursor-pointer transition-colors"
+            >
+              Run this query
+            </button>
+            <button
+              onClick={handleRevise}
+              className="px-3 py-1.5 text-sm bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-700 rounded-md text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900 cursor-pointer transition-colors"
+            >
+              Revise
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * NL2SQL Tool UI Component
  *
  * Renders the results of an NL2SQL query with:
@@ -327,15 +411,26 @@ export const NL2SQLToolUI = makeAssistantToolUI<NL2SQLArgs, NL2SQLResult>({
       );
     }
 
+    // Confidence gate confirmation — low-confidence dynamic query awaiting approval
+    if (result.needs_clarification && result.query_summary) {
+      return (
+        <ConfirmationCard summary={result.query_summary} confidence={result.query_confidence} />
+      );
+    }
+
     // Error in result
     if (result.error) {
       return (
         <div className="flex items-start gap-3 p-4 rounded-lg border border-destructive/50 bg-destructive/10">
           <DatabaseIcon className="size-5 text-destructive mt-0.5" />
-          <div>
+          <div className="flex-1">
             <p className="font-medium text-destructive">Query Error</p>
             <p className="text-sm text-muted-foreground mt-1">{result.error}</p>
             {result.sql_query && <SQLQuerySection query={result.sql_query} />}
+            {/* Error recovery suggestions */}
+            {result.error_suggestions && result.error_suggestions.length > 0 && (
+              <SuggestionPills suggestions={result.error_suggestions} />
+            )}
           </div>
         </div>
       );

@@ -40,18 +40,6 @@
       "synonymMaps": []
     },
     {
-      "name": "confidence_threshold",
-      "type": "Edm.Double",
-      "searchable": false,
-      "filterable": true,
-      "retrievable": true,
-      "stored": true,
-      "sortable": true,
-      "facetable": false,
-      "key": false,
-      "synonymMaps": []
-    },
-    {
       "name": "sql_template",
       "type": "Edm.String",
       "searchable": true,
@@ -87,32 +75,6 @@
       "sortable": false,
       "facetable": false,
       "key": false,
-      "synonymMaps": []
-    },
-    {
-      "name": "allowed_tables",
-      "type": "Collection(Edm.String)",
-      "searchable": true,
-      "filterable": true,
-      "retrievable": true,
-      "stored": true,
-      "sortable": false,
-      "facetable": true,
-      "key": false,
-      "analyzer": "standard.lucene",
-      "synonymMaps": []
-    },
-    {
-      "name": "allowed_columns",
-      "type": "Collection(Edm.String)",
-      "searchable": true,
-      "filterable": true,
-      "retrievable": true,
-      "stored": true,
-      "sortable": false,
-      "facetable": true,
-      "key": false,
-      "analyzer": "standard.lucene",
       "synonymMaps": []
     },
     {

@@ -77,12 +77,6 @@ class QueryTemplate(BaseModel):
     parameters: list[ParameterDefinition] = Field(
         default_factory=list, description="Parameter definitions for token substitution"
     )
-    allowed_tables: list[str] = Field(
-        default_factory=list, description="Tables this query is allowed to access"
-    )
-    allowed_columns: list[str] = Field(
-        default_factory=list, description="Columns this query is allowed to access"
-    )
     score: float = Field(default=0.0, description="Search relevance score")
 
 

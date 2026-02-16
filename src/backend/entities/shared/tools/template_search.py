@@ -86,8 +86,6 @@ def _hydrate_query_template(raw_result: dict[str, Any]) -> QueryTemplate:
         sql_template=raw_result.get("sql_template", ""),
         reasoning=raw_result.get("reasoning", ""),
         parameters=parameters,
-        allowed_tables=raw_result.get("allowed_tables", []),
-        allowed_columns=raw_result.get("allowed_columns", []),
         score=raw_result.get("score", 0.0),
     )
 
@@ -158,8 +156,6 @@ async def search_query_templates(user_question: str) -> dict[str, Any]:
                     "sql_template",
                     "reasoning",
                     "parameters",
-                    "allowed_tables",
-                    "allowed_columns",
                 ],
                 top=3,
             )

@@ -34,16 +34,5 @@
                 "max": "2016-05-31"
             }
         }
-    ],
-    "allowed_tables": [
-        "Sales.Orders",
-        "Sales.Invoices",
-        "Sales.InvoiceLines"
-    ],
-    "allowed_columns": [
-        "Sales.Orders.OrderID",
-        "Sales.Orders.OrderDate",
-        "Sales.Invoices.InvoiceID",
-        "Sales.InvoiceLines.ExtendedPrice"
     ]
 }

@@ -1,7 +1,8 @@
 """
 SQL execution tool for the data agent.
 
-Provides an AI-callable function for executing read-only SQL queries.
+Provides an AI-callable function for executing read-only SQL queries
+and an internal helper for parameterized execution.
 """
 
 import logging
@@ -11,6 +12,47 @@ from agent_framework import tool
 from entities.shared.clients import AzureSqlClient
 
 logger = logging.getLogger(__name__)
+
+
+async def execute_query_parameterized(
+    query: str, params: list[Any] | None = None
+) -> dict[str, Any]:
+    """Execute a SQL query with optional bind parameters.
+
+    This is the internal execution path used by the workflow executor when
+    parameterized queries are available.  It is **not** exposed as an LLM tool.
+
+    Args:
+        query: SQL SELECT query, optionally containing ``?`` placeholders.
+        params: Ordered values matching the ``?`` placeholders.
+
+    Returns:
+        Result dict with ``success``, ``columns``, ``rows``, ``row_count``,
+        and ``error`` keys.
+    """
+    step_name = "Executing SQL query..."
+    emit_step_end_fn = None
+    try:
+        from api.step_events import emit_step_end, emit_step_start  # noqa: PLC0415
+
+        emit_step_start(step_name)
+        emit_step_end_fn = emit_step_end
+    except ImportError:
+        pass  # Step events not available (e.g., running outside API context)
+
+    def finish_step() -> None:
+        if emit_step_end_fn:
+            emit_step_end_fn(step_name)
+
+    try:
+        async with AzureSqlClient(read_only=True) as client:
+            result = await client.execute_query(query, params)
+            finish_step()
+            return result
+    except Exception as e:
+        logger.exception("SQL execution error")
+        finish_step()
+        return {"success": False, "error": str(e), "columns": [], "rows": [], "row_count": 0}
 
 
 @tool
@@ -32,27 +74,4 @@ async def execute_sql(query: str) -> dict[str, Any]:
         - row_count: Number of rows returned
         - error: Error message if the query failed
     """
-    # Emit step start event for UI progress
-    step_name = "Executing SQL query..."
-    emit_step_end_fn = None
-    try:
-        from api.step_events import emit_step_end, emit_step_start  # noqa: PLC0415
-
-        emit_step_start(step_name)
-        emit_step_end_fn = emit_step_end
-    except ImportError:
-        pass  # Step events not available (e.g., running outside API context)
-
-    def finish_step() -> None:
-        if emit_step_end_fn:
-            emit_step_end_fn(step_name)
-
-    try:
-        async with AzureSqlClient(read_only=True) as client:
-            result = await client.execute_query(query)
-            finish_step()
-            return result
-    except Exception as e:
-        logger.exception("SQL execution error")
-        finish_step()
-        return {"success": False, "error": str(e), "columns": [], "rows": [], "row_count": 0}
+    return await execute_query_parameterized(query)

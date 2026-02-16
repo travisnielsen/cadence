@@ -39,14 +39,5 @@
                 ]
             }
         }
-    ],
-    "allowed_tables": [
-        "Warehouse.StockItems",
-        "Sales.InvoiceLines"
-    ],
-    "allowed_columns": [
-        "Warehouse.StockItems.StockItemID",
-        "Warehouse.StockItems.StockItemName",
-        "Sales.InvoiceLines.Quantity"
     ]
 }

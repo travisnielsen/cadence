@@ -39,15 +39,5 @@
                 ]
             }
         }
-    ],
-    "allowed_tables": [
-        "Sales.Customers",
-        "Sales.Invoices",
-        "Sales.InvoiceLines"
-    ],
-    "allowed_columns": [
-        "Sales.Customers.CustomerID",
-        "Sales.Customers.CustomerName",
-        "Sales.InvoiceLines.ExtendedPrice"
     ]
 }

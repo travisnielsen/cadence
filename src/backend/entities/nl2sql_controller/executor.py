@@ -29,7 +29,13 @@ AzureAIAgentClient = AzureAIClient
 import contextlib
 import operator
 
-from entities.shared.tools import execute_sql, search_query_templates, search_tables
+from entities.shared.substitution import substitute_parameters
+from entities.shared.tools import (
+    execute_query_parameterized,
+    execute_sql,
+    search_query_templates,
+    search_tables,
+)
 from models import (
     ClarificationMessage,
     ClarificationRequest,
@@ -125,38 +131,6 @@ def _format_confirmation_note(
     if not confirm_parts:
         return ""
     return f"I assumed {', '.join(confirm_parts)} for these results. Want me to adjust?"
-
-
-def _substitute_parameters(sql_template: str, params: dict) -> str:
-    """
-    Substitute parameter tokens in the SQL template.
-
-    Args:
-        sql_template: The SQL template with %{{param}}% tokens
-        params: Dictionary of parameter name -> value
-
-    Returns:
-        SQL string with tokens replaced by values
-    """
-    result = sql_template
-    for name, value in params.items():
-        token = f"%{{{{{name}}}}}%"
-        # Convert value to string, handling different types
-        if value is None:
-            str_value = "NULL"
-        elif isinstance(value, bool):
-            str_value = "1" if value else "0"
-        elif isinstance(value, (int, float)):
-            str_value = str(value)
-        elif isinstance(value, str):
-            # Don't quote SQL keywords like ASC/DESC
-            str_value = value.upper() if value.upper() in {"ASC", "DESC", "NULL"} else str(value)
-        else:
-            str_value = str(value)
-
-        result = result.replace(token, str_value)
-
-    return result
 
 
 def _format_defaults_for_display(defaults_used: dict[str, Any]) -> dict[str, str]:
@@ -721,10 +695,13 @@ class NL2SQLController(Executor):
                         if template_data:
                             sql_template = template_data.get("sql_template")
                             if sql_template:
-                                completed_sql = _substitute_parameters(
+                                pq = substitute_parameters(
                                     sql_template, sql_draft.extracted_parameters
                                 )
+                                completed_sql = pq.display_sql
                                 sql_draft.completed_sql = completed_sql
+                                sql_draft.exec_sql = pq.exec_sql
+                                sql_draft.exec_params = list(pq.exec_params)
                                 logger.info("Built SQL from template: %s", completed_sql[:200])
                     except (KeyError, TypeError):
                         logger.exception("Failed to get template for SQL substitution")
@@ -832,7 +809,10 @@ class NL2SQLController(Executor):
                         # Query is valid - execute the SQL
                         logger.info("Validation passed. Executing SQL: %s", completed_sql[:200])
 
-                        sql_result = await execute_sql(completed_sql)  # type: ignore[misc]
+                        # Prefer parameterized execution when bind params are available
+                        exec_query = sql_draft.exec_sql or completed_sql
+                        exec_params = sql_draft.exec_params or None
+                        sql_result = await execute_query_parameterized(exec_query, exec_params)
 
                         # Clear clarification state
                         with contextlib.suppress(Exception):

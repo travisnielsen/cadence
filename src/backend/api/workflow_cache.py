@@ -9,6 +9,8 @@ instances, consider using Agent Framework's checkpointing with external storage.
 """
 
 import logging
+import os
+from collections import OrderedDict
 from datetime import datetime, timedelta
 from threading import Lock
 from typing import TYPE_CHECKING
@@ -19,11 +21,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Cache entries with timestamp for cleanup
-_workflow_cache: dict[str, tuple["Workflow", datetime]] = {}
+_workflow_cache: OrderedDict[str, tuple["Workflow", datetime]] = OrderedDict()
 _cache_lock = Lock()
 
 # How long to keep paused workflows before cleanup (5 minutes)
 WORKFLOW_TTL = timedelta(minutes=5)
+
+# Maximum number of cached paused workflows (LRU eviction when exceeded)
+MAX_WORKFLOWS = int(os.getenv("MAX_WORKFLOW_CACHE_SIZE", "100"))
 
 
 def store_paused_workflow(request_id: str, workflow: "Workflow") -> None:
@@ -36,6 +41,7 @@ def store_paused_workflow(request_id: str, workflow: "Workflow") -> None:
     """
     with _cache_lock:
         _workflow_cache[request_id] = (workflow, datetime.now())
+        _workflow_cache.move_to_end(request_id)
         logger.info(
             "Stored paused workflow for request_id=%s (cache size: %d)",
             request_id,
@@ -44,6 +50,11 @@ def store_paused_workflow(request_id: str, workflow: "Workflow") -> None:
 
         # Opportunistic cleanup of expired entries
         _cleanup_expired_unlocked()
+
+        # Evict oldest entries if over max size
+        while len(_workflow_cache) > MAX_WORKFLOWS:
+            evicted_rid, _ = _workflow_cache.popitem(last=False)
+            logger.info("Evicted LRU workflow: request_id=%s", evicted_rid)
 
 
 def get_paused_workflow(request_id: str) -> "Workflow | None":

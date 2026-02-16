@@ -1,0 +1,14 @@
+[
+    "Application.Cities",
+    "Application.People",
+    "Purchasing.PurchaseOrders",
+    "Purchasing.Suppliers",
+    "Sales.CustomerCategories",
+    "Sales.Customers",
+    "Sales.InvoiceLines",
+    "Sales.Invoices",
+    "Sales.OrderLines",
+    "Sales.Orders",
+    "Warehouse.StockItemHoldings",
+    "Warehouse.StockItems"
+]

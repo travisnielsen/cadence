@@ -69,7 +69,7 @@ class TestSubstituteParametersBindValues:
         template = "SELECT TOP %{{count}}% * FROM T"
         pq = substitute_parameters(template, {"count": 10})
         assert pq.display_sql == "SELECT TOP 10 * FROM T"
-        assert pq.exec_sql == "SELECT TOP ? * FROM T"
+        assert pq.exec_sql == "SELECT TOP (?) * FROM T"
         assert pq.exec_params == [10]
 
     def test_float(self) -> None:
@@ -117,7 +117,7 @@ class TestSubstituteParametersMixed:
         template = "SELECT TOP %{{count}}% * FROM T ORDER BY col %{{order}}%"
         pq = substitute_parameters(template, {"count": 5, "order": "DESC"})
         assert pq.display_sql == "SELECT TOP 5 * FROM T ORDER BY col DESC"
-        assert pq.exec_sql == "SELECT TOP ? * FROM T ORDER BY col DESC"
+        assert pq.exec_sql == "SELECT TOP (?) * FROM T ORDER BY col DESC"
         assert pq.exec_params == [5]
 
     def test_template_with_expression_and_integer(self) -> None:
@@ -134,7 +134,7 @@ class TestSubstituteParametersMixed:
             "WHERE OrderDate >= DATEADD(YEAR, -12, GETDATE()) ORDER BY col ASC"
         )
         assert pq.exec_sql == (
-            "SELECT TOP ? * FROM T "
+            "SELECT TOP (?) * FROM T "
             "WHERE OrderDate >= DATEADD(YEAR, -12, GETDATE()) ORDER BY col ASC"
         )
         assert pq.exec_params == [10]
@@ -142,6 +142,7 @@ class TestSubstituteParametersMixed:
     def test_multiple_bind_params_preserve_order(self) -> None:
         template = "SELECT TOP %{{count}}% * FROM T WHERE days > %{{days}}%"
         pq = substitute_parameters(template, {"count": 5, "days": 30})
+        assert pq.exec_sql == "SELECT TOP (?) * FROM T WHERE days > ?"
         assert pq.exec_params == [5, 30]
 
     def test_all_types_combined(self) -> None:
@@ -156,7 +157,7 @@ class TestSubstituteParametersMixed:
             {"count": 3, "cat": "Toys", "dt": "GETDATE()", "order": "ASC"},
         )
         assert pq.exec_sql == (
-            "SELECT TOP ? col FROM T WHERE cat = ? AND dt >= GETDATE() ORDER BY col ASC"
+            "SELECT TOP (?) col FROM T WHERE cat = ? AND dt >= GETDATE() ORDER BY col ASC"
         )
         assert pq.exec_params == [3, "Toys"]
 

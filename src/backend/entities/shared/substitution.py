@@ -12,6 +12,9 @@ from typing import Any
 _SQL_KEYWORDS: frozenset[str] = frozenset({"ASC", "DESC", "NULL"})
 _SQL_FUNC_RE: re.Pattern[str] = re.compile(r"[A-Z_]+\s*\(", re.IGNORECASE)
 
+# SQL Server requires parentheses around parameterized TOP values: TOP (?) not TOP ?
+_TOP_PARAM_RE: re.Pattern[str] = re.compile(r"\bTOP\s+\?", re.IGNORECASE)
+
 
 @dataclass(frozen=True, slots=True)
 class ParameterizedQuery:
@@ -87,5 +90,8 @@ def substitute_parameters(sql_template: str, params: dict[str, Any]) -> Paramete
             display = display.replace(token, str(value))
             executed = executed.replace(token, "?")
             ordered_params.append(value)
+
+    # SQL Server requires parentheses around parameterized TOP: TOP (?) not TOP ?
+    executed = _TOP_PARAM_RE.sub("TOP (?)", executed)
 
     return ParameterizedQuery(display_sql=display, exec_sql=executed, exec_params=ordered_params)

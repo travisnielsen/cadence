@@ -6,7 +6,9 @@ that maintains conversation context for refinements.
 """
 
 import logging
+import os
 import time
+from collections import OrderedDict
 from threading import Lock
 from typing import TYPE_CHECKING
 
@@ -17,11 +19,14 @@ logger = logging.getLogger(__name__)
 
 # In-memory cache for orchestrator sessions
 # In production, consider Redis or similar for multi-instance deployments
-_orchestrator_cache: dict[str, tuple["ConversationOrchestrator", float]] = {}
+_orchestrator_cache: OrderedDict[str, tuple["ConversationOrchestrator", float]] = OrderedDict()
 _cache_lock = Lock()
 
 # Session TTL: 30 minutes
 SESSION_TTL_SECONDS = 30 * 60
+
+# Maximum number of cached sessions (LRU eviction when exceeded)
+MAX_SESSIONS = int(os.getenv("MAX_SESSION_CACHE_SIZE", "1000"))
 
 
 def get_orchestrator(thread_id: str | None) -> "ConversationOrchestrator | None":
@@ -49,6 +54,8 @@ def get_orchestrator(thread_id: str | None) -> "ConversationOrchestrator | None"
             logger.info("Session expired for thread_id=%s", thread_id)
             return None
 
+        # Move to end (most recently used)
+        _orchestrator_cache.move_to_end(thread_id)
         logger.info("Retrieved cached orchestrator for thread_id=%s", thread_id)
         return orchestrator
 
@@ -66,6 +73,7 @@ def store_orchestrator(thread_id: str, orchestrator: "ConversationOrchestrator")
 
     with _cache_lock:
         _orchestrator_cache[thread_id] = (orchestrator, time.time())
+        _orchestrator_cache.move_to_end(thread_id)
         logger.info(
             "Stored orchestrator for thread_id=%s (cache size: %d)",
             thread_id,
@@ -74,6 +82,11 @@ def store_orchestrator(thread_id: str, orchestrator: "ConversationOrchestrator")
 
         # Cleanup old sessions periodically
         _cleanup_expired_sessions()
+
+        # Evict oldest entries if over max size
+        while len(_orchestrator_cache) > MAX_SESSIONS:
+            evicted_tid, _ = _orchestrator_cache.popitem(last=False)
+            logger.info("Evicted LRU session: thread_id=%s", evicted_tid)
 
 
 def _cleanup_expired_sessions() -> None:

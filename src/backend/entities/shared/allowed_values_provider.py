@@ -54,6 +54,7 @@ class AllowedValuesProvider:
         database: Database name (falls back to ``AZURE_SQL_DATABASE``).
         ttl_seconds: Cache time-to-live. Also checks ``ALLOWED_VALUES_TTL_SECONDS``.
         max_values: Maximum distinct values to cache per (table, column) pair.
+        max_entries: Maximum number of (table, column) cache entries (LRU eviction).
     """
 
     def __init__(
@@ -62,6 +63,7 @@ class AllowedValuesProvider:
         database: str | None = None,
         ttl_seconds: int | None = None,
         max_values: int = 500,
+        max_entries: int | None = None,
     ) -> None:
         self._server = server or os.getenv("AZURE_SQL_SERVER", "")
         self._database = database or os.getenv("AZURE_SQL_DATABASE", "")
@@ -75,7 +77,15 @@ class AllowedValuesProvider:
 
         self._max_values = max_values
 
+        # Max cache entries: explicit arg > env var > default 200
+        if max_entries is not None:
+            self._max_entries = max_entries
+        else:
+            env_max = os.getenv("ALLOWED_VALUES_MAX_CACHE_ENTRIES")
+            self._max_entries = int(env_max) if env_max else 200
+
         self._cache: dict[tuple[str, str], _CacheEntry] = {}
+        self._cache_order: list[tuple[str, str]] = []  # LRU order (oldest first)
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._global_lock = asyncio.Lock()
         self._background_tasks: WeakSet[asyncio.Task[None]] = WeakSet()
@@ -89,6 +99,18 @@ class AllowedValuesProvider:
                 if key not in self._locks:
                     self._locks[key] = asyncio.Lock()
         return self._locks[key]
+
+    def _touch_lru(self, key: tuple[str, str]) -> None:
+        """Move *key* to the end of the LRU order list and evict if over limit."""
+        if key in self._cache_order:
+            self._cache_order.remove(key)
+        self._cache_order.append(key)
+
+        while len(self._cache_order) > self._max_entries:
+            evicted = self._cache_order.pop(0)
+            self._cache.pop(evicted, None)
+            self._locks.pop(evicted, None)
+            logger.info("Evicted LRU cache entry: %s.%s", evicted[0], evicted[1])
 
     async def get_allowed_values(self, table: str, column: str) -> AllowedValuesResult | None:
         """Return cached allowed values, refreshing in the background when stale.
@@ -157,6 +179,7 @@ class AllowedValuesProvider:
             self._cache[key] = _CacheEntry(
                 values=values, loaded_at=time.monotonic(), is_partial=is_partial
             )
+            self._touch_lru(key)
             logger.info(
                 "Loaded %d allowed values for %s.%s (partial=%s)",
                 len(values),

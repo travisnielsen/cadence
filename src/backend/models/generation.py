@@ -100,6 +100,16 @@ class SQLDraft(BaseModel):
 
     error: str | None = Field(default=None, description="Error message if status is 'error'")
 
+    # Parameterized query fields (populated by _substitute_parameters)
+    exec_sql: str | None = Field(
+        default=None,
+        description="Parameterized SQL with ? placeholders for safe execution",
+    )
+    exec_params: list[Any] = Field(
+        default_factory=list,
+        description="Ordered parameter values matching ? placeholders in exec_sql",
+    )
+
     # Confidence scoring fields
     parameter_confidences: dict[str, float] = Field(
         default_factory=dict, description="Per-parameter confidence scores"

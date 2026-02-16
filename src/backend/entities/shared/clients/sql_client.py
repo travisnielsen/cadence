@@ -139,12 +139,15 @@ class AzureSqlClient:
 
         return True, None
 
-    async def execute_query(self, query: str) -> dict[str, Any]:
+    async def execute_query(self, query: str, params: list[Any] | None = None) -> dict[str, Any]:
         """
         Execute a SQL query and return results.
 
         Args:
-            query: The SQL query to execute
+            query: The SQL query to execute.  May contain ``?`` placeholders when
+                *params* is provided.
+            params: Ordered bind-parameter values matching ``?`` placeholders in
+                *query*.  When ``None``, the query is executed without parameters.
 
         Returns:
             A dictionary containing:
@@ -172,7 +175,10 @@ class AzureSqlClient:
                 }
 
             async with self._connection.cursor() as cursor:
-                await cursor.execute(query)
+                if params:
+                    await cursor.execute(query, params)
+                else:
+                    await cursor.execute(query)
 
                 # Extract column names from cursor.description
                 # PEP 249: (name, type_code, display_size, internal_size, precision, scale, null_ok)

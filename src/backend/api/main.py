@@ -11,6 +11,7 @@ The API uses a hybrid architecture:
 """
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -19,8 +20,11 @@ from api.middleware import AzureADAuthMiddleware, azure_ad_settings, azure_schem
 from api.monitoring import configure_observability, is_observability_enabled
 from api.routers import chat_router, threads_router
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.responses import Response
 
 load_dotenv()
 
@@ -38,6 +42,29 @@ logging.getLogger("agent_framework").setLevel(logging.WARNING)
 
 # Check if Azure AD authentication is configured
 AUTH_ENABLED = bool(azure_ad_settings.AZURE_AD_CLIENT_ID and azure_ad_settings.AZURE_AD_TENANT_ID)
+
+# Explicit opt-in for anonymous access (development only)
+ALLOW_ANONYMOUS = os.getenv("ALLOW_ANONYMOUS", "").lower() in {"true", "1", "yes"}
+
+# Paths that are always accessible regardless of auth configuration
+_ALWAYS_PUBLIC_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
+
+
+class _FailClosedMiddleware(BaseHTTPMiddleware):
+    """Return 503 on all non-health endpoints when auth is not configured."""
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:  # noqa: PLR6301
+        if request.url.path in _ALWAYS_PUBLIC_PATHS:
+            return await call_next(request)
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "detail": "Authentication is not configured. "
+                "Set AZURE_AD_CLIENT_ID and AZURE_AD_TENANT_ID, "
+                "or set ALLOW_ANONYMOUS=true for development."
+            },
+        )
+
 
 # Configure observability before creating the app
 configure_observability()
@@ -68,11 +95,17 @@ async def lifespan(_application: FastAPI) -> AsyncIterator[None]:
         logger.info("Azure AD authentication is ENABLED")
         if azure_scheme:
             await azure_scheme.openid_config.load_config()
+    elif ALLOW_ANONYMOUS:
+        logger.warning("=" * 60)
+        logger.warning("WARNING: Running with ALLOW_ANONYMOUS=true")
+        logger.warning("All endpoints accept unauthenticated requests.")
+        logger.warning("DO NOT use this setting in production.")
+        logger.warning("=" * 60)
     else:
         logger.warning("=" * 60)
         logger.warning("WARNING: Azure AD authentication is NOT configured!")
-        logger.warning("The API will respond to ANONYMOUS connections.")
-        logger.warning("Set AZURE_AD_CLIENT_ID and AZURE_AD_TENANT_ID to enable auth.")
+        logger.warning("Non-health endpoints will return 503.")
+        logger.warning("Set ALLOW_ANONYMOUS=true for local development.")
         logger.warning("=" * 60)
 
     yield
@@ -93,9 +126,11 @@ app = FastAPI(
     else None,
 )
 
-# Add Azure AD authentication middleware
+# Add Azure AD authentication middleware (or fail-closed middleware)
 if AUTH_ENABLED:
     app.add_middleware(AzureADAuthMiddleware, settings=azure_ad_settings)
+elif not ALLOW_ANONYMOUS:
+    app.add_middleware(_FailClosedMiddleware)
 
 # Add CORS middleware
 app.add_middleware(

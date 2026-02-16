@@ -95,11 +95,6 @@ class AzureADAuthMiddleware(BaseHTTPMiddleware):
         if request.method == "OPTIONS":
             return await call_next(request)
 
-        # Skip if auth is not configured
-        if not self.settings.AZURE_AD_CLIENT_ID or not self.settings.AZURE_AD_TENANT_ID:
-            logger.warning("Azure AD auth not configured, allowing request without validation")
-            return await call_next(request)
-
         # Get the Authorization header
         auth_header = request.headers.get("Authorization")
         if not auth_header:

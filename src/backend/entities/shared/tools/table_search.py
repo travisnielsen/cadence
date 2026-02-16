@@ -33,7 +33,16 @@ def _hydrate_table_metadata(raw_result: dict[str, Any]) -> TableMetadata:
     # Parse columns from the result
     raw_columns = raw_result.get("columns", [])
     columns = [
-        TableColumn(name=col.get("name", ""), description=col.get("description", ""))
+        TableColumn(
+            name=col.get("name", ""),
+            description=col.get("description", ""),
+            data_type=col.get("data_type", ""),
+            is_nullable=col.get("is_nullable", True),
+            is_primary_key=col.get("is_primary_key", False),
+            is_foreign_key=col.get("is_foreign_key", False),
+            foreign_key_table=col.get("foreign_key_table", ""),
+            foreign_key_column=col.get("foreign_key_column", ""),
+        )
         for col in raw_columns
         if isinstance(col, dict)
     ]

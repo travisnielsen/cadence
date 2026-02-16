@@ -83,7 +83,23 @@ def _build_generation_prompt(user_query: str, tables: list[TableMetadata]) -> st
     # Format table metadata for the prompt
     tables_info = []
     for table in tables:
-        columns_info = [{"name": col.name, "description": col.description} for col in table.columns]
+        columns_info = []
+        for col in table.columns:
+            col_entry: dict[str, str | bool] = {
+                "name": col.name,
+                "description": col.description,
+            }
+            if col.data_type:
+                col_entry["data_type"] = col.data_type
+            if col.is_primary_key:
+                col_entry["is_primary_key"] = True
+            if col.is_foreign_key:
+                col_entry["is_foreign_key"] = True
+                if col.foreign_key_table:
+                    col_entry["references"] = f"{col.foreign_key_table}.{col.foreign_key_column}"
+            if not col.is_nullable:
+                col_entry["nullable"] = False
+            columns_info.append(col_entry)
         tables_info.append({
             "table": table.table,
             "description": table.description,
@@ -304,6 +320,13 @@ class QueryBuilderExecutor(Executor):
 
             # Build the response based on LLM output
             if parsed.get("status") == "success":
+                # Parse confidence, default to 0.5 if omitted or invalid
+                raw_confidence = parsed.get("confidence", 0.5)
+                try:
+                    confidence = max(0.0, min(1.0, float(raw_confidence)))
+                except (TypeError, ValueError):
+                    confidence = 0.5
+
                 sql_draft = SQLDraft(
                     status="success",
                     source="dynamic",
@@ -313,6 +336,7 @@ class QueryBuilderExecutor(Executor):
                     reasoning=parsed.get("reasoning"),
                     tables_used=parsed.get("tables_used", []),
                     tables_metadata_json=tables_metadata_json,
+                    confidence=confidence,
                 )
             else:
                 sql_draft = SQLDraft(

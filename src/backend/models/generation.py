@@ -110,6 +110,14 @@ class SQLDraft(BaseModel):
         description="Ordered parameter values matching ? placeholders in exec_sql",
     )
 
+    # Dynamic query confidence (source="dynamic")
+    confidence: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="QueryBuilder self-assessed confidence (0.0-1.0)",
+    )
+
     # Confidence scoring fields
     parameter_confidences: dict[str, float] = Field(
         default_factory=dict, description="Per-parameter confidence scores"

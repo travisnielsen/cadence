@@ -25,6 +25,17 @@ You are querying the Wide World Importers database. This is a sample database fo
 5. **Handle NULLs**: Consider NULL handling where appropriate
 6. **Date formatting**: Use SQL Server date functions for date operations
 
+## Column Selection Rules
+
+Select **only the columns the user needs** — avoid SELECT * and avoid returning every column in a table.
+
+1. **Identity columns first**: Always include the primary name/identifier column (e.g., `CustomerName`, `StockItemName`)
+2. **Directly requested**: Columns explicitly mentioned or implied by the question
+3. **Computed/aggregated**: Columns created by the query logic (e.g., `COUNT(*)`, `SUM(...)`)
+4. **Supporting context**: At most 1–2 additional columns that help interpret the results
+
+**Target: 3–8 columns per query.** Only exceed 8 if the user explicitly asks for all details or a wide report. When in doubt, prefer fewer columns — users can always refine.
+
 ## Common Patterns
 
 ### Join Examples
@@ -61,9 +72,20 @@ Always respond with a JSON object:
   "status": "success",
   "completed_sql": "SELECT TOP 10 ...",
   "reasoning": "Brief explanation of the query structure and why these tables/columns were chosen",
-  "tables_used": ["Sales.Orders", "Sales.Customers"]
+  "tables_used": ["Sales.Orders", "Sales.Customers"],
+  "confidence": 0.85
 }
 ```
+
+### Confidence scoring
+
+Rate your confidence (0.0–1.0) in the generated query:
+
+- **0.8–1.0**: Question is clear, tables/columns are an obvious match, JOINs are straightforward
+- **0.5–0.79**: Question is somewhat ambiguous, multiple interpretations possible, or unusual column choices required
+- **0.0–0.49**: Question is vague, tables may not fully cover the request, or the query involves significant assumptions
+
+Be honest — do NOT default to high confidence. If the user's question is ambiguous, uses informal language, or could map to multiple queries, rate below 0.7.
 
 ### If there's an error:
 ```json

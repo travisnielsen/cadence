@@ -11,6 +11,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from agent_framework import AgentThread
 from agent_framework import ChatAgent as MAFChatAgent
@@ -118,13 +119,13 @@ class ConversationContext:
 
     # Template-based query context
     last_template_json: str | None = None
-    last_params: dict = field(default_factory=dict)
-    last_defaults_used: dict = field(default_factory=dict)
+    last_params: dict[str, Any] = field(default_factory=dict)
+    last_defaults_used: dict[str, Any] = field(default_factory=dict)
     last_query: str = ""
 
     # Dynamic query context
     last_sql: str | None = None
-    last_tables: list = field(default_factory=list)  # Table names for logging
+    last_tables: list[str] = field(default_factory=list)  # Table names for logging
     last_tables_json: str | None = None  # Full TableMetadata JSON for reuse
     last_question: str = ""
     query_source: str = ""  # "template" or "dynamic"

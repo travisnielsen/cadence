@@ -839,7 +839,11 @@ class NL2SQLController(Executor):
                             await ctx.set_shared_state(CLARIFICATION_STATE_KEY, None)
 
                         query_source = "template" if sql_draft.template_id else "dynamic"
-                        confidence = 0.85 if sql_draft.template_id else 0.7
+                        confidence = (
+                            _CONFIDENCE_THRESHOLD_HIGH
+                            if sql_draft.template_id
+                            else _CONFIDENCE_THRESHOLD_LOW + 0.1
+                        )
 
                         # Build human-readable defaults description
                         defaults_description = _format_defaults_for_display(sql_draft.defaults_used)

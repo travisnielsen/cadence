@@ -82,6 +82,8 @@ class AllowedValuesProvider:
 
     async def _get_lock(self, key: tuple[str, str]) -> asyncio.Lock:
         """Get or create a per-key lock to prevent thundering-herd on first load."""
+        # Fast-path (safe: asyncio is single-threaded within the event loop).
+        # The double-check inside _global_lock guards against concurrent coroutines.
         if key not in self._locks:
             async with self._global_lock:
                 if key not in self._locks:

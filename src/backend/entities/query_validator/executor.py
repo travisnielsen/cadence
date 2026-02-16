@@ -13,6 +13,7 @@ at class definition time, which is incompatible with PEP 563 stringified annotat
 import json
 import logging
 import re
+from pathlib import Path
 
 from agent_framework import (
     Executor,
@@ -26,22 +27,40 @@ from models import (
 
 logger = logging.getLogger(__name__)
 
+# --------------------------------------------------------------------------- #
+# Allowed-tables configuration (loaded from external config file)
+# --------------------------------------------------------------------------- #
 
-# Hardcoded allowlist of tables
-ALLOWED_TABLES = {
-    "Application.Cities",
-    "Application.People",
-    "Purchasing.PurchaseOrders",
-    "Purchasing.Suppliers",
-    "Sales.CustomerCategories",
-    "Sales.Customers",
-    "Sales.InvoiceLines",
-    "Sales.Invoices",
-    "Sales.OrderLines",
-    "Sales.Orders",
-    "Warehouse.StockItemHoldings",
-    "Warehouse.StockItems",
-}
+_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "allowed_tables.json"
+
+
+def _load_allowed_tables(path: Path = _CONFIG_PATH) -> set[str]:
+    """Load allowed tables from the config file.
+
+    Fails fast with a clear error if the file is missing or malformed.
+    """
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Allowed tables config not found: {path}. "
+            "Create config/allowed_tables.json with a JSON array of table names."
+        )
+
+    raw = path.read_text(encoding="utf-8")
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Malformed allowed_tables.json: {exc}") from exc
+
+    if not isinstance(data, list) or not all(isinstance(t, str) for t in data):
+        raise TypeError("allowed_tables.json must contain a JSON array of strings")
+
+    if not data:
+        raise ValueError("allowed_tables.json must not be empty")
+
+    return set(data)
+
+
+ALLOWED_TABLES: set[str] = _load_allowed_tables()
 
 # Allowed schemas derived from tables
 ALLOWED_SCHEMAS = {table.split(".")[0] for table in ALLOWED_TABLES if "." in table}

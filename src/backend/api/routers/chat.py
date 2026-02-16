@@ -11,6 +11,7 @@ This module provides the chat streaming endpoint using the ConversationOrchestra
 import asyncio
 import json
 import logging
+import uuid
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING
 
@@ -40,6 +41,22 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 # Get tracer for workflow-level spans
 tracer = trace.get_tracer(__name__)
+
+
+def _sanitized_error_event(error: Exception) -> str:
+    """Build a sanitized SSE error payload with a correlation ID.
+
+    Logs the full exception server-side and returns a generic message
+    to the client so internal details are never leaked.
+    """
+    correlation_id = uuid.uuid4().hex[:12]
+    logger.error("SSE error [%s]: %s", correlation_id, error, exc_info=True)
+    payload = {
+        "error": "An internal error occurred. Please try again.",
+        "correlation_id": correlation_id,
+        "done": True,
+    }
+    return f"data: {json.dumps(payload)}\n\n"
 
 
 async def generate_clarification_response_stream(
@@ -221,7 +238,7 @@ async def generate_clarification_response_stream(
 
     except (ValueError, RuntimeError, OSError, TypeError) as e:
         logger.error("Clarification workflow error: %s", e, exc_info=True)
-        yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
+        yield _sanitized_error_event(e)
 
         workflow_span.set_status(trace.StatusCode.ERROR, str(e))
         workflow_span.record_exception(e)
@@ -474,7 +491,7 @@ async def generate_orchestrator_streaming_response(
 
     except Exception as e:
         logger.error("Orchestrator error: %s", e, exc_info=True)
-        yield f"data: {json.dumps({'error': str(e), 'done': True})}\n\n"
+        yield _sanitized_error_event(e)
 
     finally:
         clear_step_queue()

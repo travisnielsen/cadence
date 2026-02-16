@@ -219,7 +219,7 @@ function DataTableLayout({
                 <div className="relative">
                     <div
                         className={cn(
-                            "bg-card relative w-full overflow-clip overflow-y-auto rounded-lg border",
+                            "bg-card relative w-full overflow-auto rounded-lg border",
                             "touch-pan-x",
                             maxHeight && "max-h-[--max-height]",
                         )}
@@ -230,7 +230,7 @@ function DataTableLayout({
                         }
                     >
                         <DataTableErrorBoundary>
-                            <Table className="table-fixed">
+                            <Table className="table-auto">
                                 {columns.length > 0 && (
                                     <colgroup>
                                         {columns.map((col) => (

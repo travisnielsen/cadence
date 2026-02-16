@@ -8,7 +8,7 @@ import {
 } from "@/components/tool-ui/data-table";
 import { buildColumn } from "@/lib/column-format-rules";
 import { makeAssistantToolUI, useThreadRuntime } from "@assistant-ui/react";
-import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, DatabaseIcon, LightbulbIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ChevronUpIcon, DatabaseIcon, LightbulbIcon, ShieldQuestionMark } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -319,14 +319,14 @@ function ConfirmationCard({ summary, confidence }: { summary: string; confidence
   }, [threadRuntime]);
 
   const handleRevise = useCallback(() => {
-    threadRuntime.composer.setText("");
-    threadRuntime.composer.focus();
+    threadRuntime.composer.setText("revise");
+    threadRuntime.composer.send();
   }, [threadRuntime]);
 
   return (
     <div className="rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/30 p-4">
       <div className="flex items-start gap-3">
-        <ShieldQuestionIcon className="size-5 text-amber-500 mt-0.5" />
+        <ShieldQuestionMark className="size-5 text-amber-500 mt-0.5" />
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <p className="font-medium text-amber-700 dark:text-amber-300">

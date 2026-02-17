@@ -1,0 +1,73 @@
+{
+    "intent": "top_bottom_suppliers_by_spend",
+    "question": "Which suppliers have we spent the most with in the last 90 days?",
+    "sql_template": "SELECT TOP %{{count}}% s.SupplierName, SUM(st.AmountExcludingTax) AS TotalSpend, COUNT(st.SupplierTransactionID) AS TransactionCount FROM Purchasing.Suppliers s JOIN Purchasing.SupplierTransactions st ON s.SupplierID = st.SupplierID WHERE st.TransactionDate >= DATEADD(day, -%{{days}}%, %{{from_date}}%) GROUP BY s.SupplierID, s.SupplierName ORDER BY TotalSpend %{{order}}%",
+    "reasoning": "Aggregates supplier transaction amounts over a time window to identify top or bottom suppliers by spend. Useful for procurement analysis and supplier relationship management.",
+    "parameters": [
+        {
+            "name": "days",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": 90,
+            "default_policy": null,
+            "confidence_weight": 0.7,
+            "normalization": null,
+            "validation": {
+                "type": "integer",
+                "min": 1,
+                "max": 730
+            }
+        },
+        {
+            "name": "from_date",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": "DATEADD(YEAR, -10, GETDATE())",
+            "default_policy": null,
+            "confidence_weight": 0.7,
+            "normalization": null,
+            "validation": {
+                "type": "date",
+                "min": "2013-01-01",
+                "max": "2016-05-31"
+            }
+        },
+        {
+            "name": "count",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": 10,
+            "default_policy": null,
+            "confidence_weight": 1.0,
+            "normalization": null,
+            "validation": {
+                "type": "integer",
+                "min": 1,
+                "max": 100
+            }
+        },
+        {
+            "name": "order",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": "DESC",
+            "default_policy": null,
+            "confidence_weight": 1.0,
+            "normalization": {
+                "lowercase": false,
+                "strip": true
+            },
+            "validation": {
+                "type": "string",
+                "allowed_values": [
+                    "ASC",
+                    "DESC"
+                ]
+            }
+        }
+    ]
+}

@@ -32,8 +32,7 @@ interface NL2SQLResult {
   columns: string[];
   row_count: number;
   confidence_score: number;
-  used_cached_query: boolean;
-  query_source?: "template" | "cached" | "dynamic";
+  query_source?: "template" | "dynamic";
   error?: string;
   observations?: string;
   needs_clarification?: boolean;
@@ -449,7 +448,7 @@ export const NL2SQLToolUI = makeAssistantToolUI<NL2SQLArgs, NL2SQLResult>({
             ({result.row_count} {result.row_count === 1 ? "row" : "rows"})
           </span>
           {/* Query source badge */}
-          {(result.query_source === "template" || result.query_source === "cached") && (
+          {result.query_source === "template" && (
             <span className="ml-auto text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded">
               Verified Query
             </span>
@@ -457,12 +456,6 @@ export const NL2SQLToolUI = makeAssistantToolUI<NL2SQLArgs, NL2SQLResult>({
           {result.query_source === "dynamic" && (
             <span className="ml-auto text-xs bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-0.5 rounded">
               Custom Query
-            </span>
-          )}
-          {/* Fallback for backward compatibility when query_source is not set */}
-          {!result.query_source && result.used_cached_query && (
-            <span className="ml-auto text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 px-2 py-0.5 rounded">
-              Verified Query
             </span>
           )}
         </div>

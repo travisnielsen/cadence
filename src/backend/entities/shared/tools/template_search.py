@@ -107,7 +107,7 @@ async def search_query_templates(user_question: str) -> dict[str, Any]:
     - If gap < threshold: results are too similar (ambiguous)
     - If gap >= threshold: single dominant match, proceed to extraction
 
-    Unlike cached queries (which are exact SQL), templates contain tokens
+    Unlike exact SQL queries, templates contain tokens
     like %{{parameter_name}}% that need to be substituted with actual values.
 
     Args:

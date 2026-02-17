@@ -1,6 +1,0 @@
-{
-    "datasource": "wideworldimporters",
-    "question": "What products are running low on stock and need to be reordered?",
-    "query": "SELECT si.StockItemID, si.StockItemName, sih.QuantityOnHand, sih.ReorderLevel, sih.TargetStockLevel, s.SupplierName FROM Warehouse.StockItems si JOIN Warehouse.StockItemHoldings sih ON si.StockItemID = sih.StockItemID JOIN Purchasing.Suppliers s ON si.SupplierID = s.SupplierID WHERE sih.QuantityOnHand <= sih.ReorderLevel ORDER BY (sih.QuantityOnHand - sih.ReorderLevel)",
-    "reasoning": "This query identifies items where current quantity on hand is at or below the reorder level. It includes supplier information to help with reordering and orders by how far below reorder level the stock is."
-}

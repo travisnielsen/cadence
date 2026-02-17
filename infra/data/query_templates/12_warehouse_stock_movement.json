@@ -1,0 +1,73 @@
+{
+    "intent": "top_bottom_items_by_stock_movement",
+    "question": "What are the most active stock items by movement volume in the last 90 days?",
+    "sql_template": "SELECT TOP %{{count}}% si.StockItemName, COUNT(sit.StockItemTransactionID) AS TransactionCount, SUM(ABS(sit.Quantity)) AS TotalUnitsMoved FROM Warehouse.StockItems si JOIN Warehouse.StockItemTransactions sit ON si.StockItemID = sit.StockItemID WHERE sit.TransactionOccurredWhen >= DATEADD(day, -%{{days}}%, %{{from_date}}%) GROUP BY si.StockItemID, si.StockItemName ORDER BY TotalUnitsMoved %{{order}}%",
+    "reasoning": "Aggregates stock item transaction volumes over a time window. Shows which items have the highest or lowest movement, useful for identifying fast-movers and dead stock.",
+    "parameters": [
+        {
+            "name": "days",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": 90,
+            "default_policy": null,
+            "confidence_weight": 0.7,
+            "normalization": null,
+            "validation": {
+                "type": "integer",
+                "min": 1,
+                "max": 730
+            }
+        },
+        {
+            "name": "from_date",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": "DATEADD(YEAR, -10, GETDATE())",
+            "default_policy": null,
+            "confidence_weight": 0.7,
+            "normalization": null,
+            "validation": {
+                "type": "date",
+                "min": "2013-01-01",
+                "max": "2016-05-31"
+            }
+        },
+        {
+            "name": "count",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": 10,
+            "default_policy": null,
+            "confidence_weight": 1.0,
+            "normalization": null,
+            "validation": {
+                "type": "integer",
+                "min": 1,
+                "max": 100
+            }
+        },
+        {
+            "name": "order",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": "DESC",
+            "default_policy": null,
+            "confidence_weight": 1.0,
+            "normalization": {
+                "lowercase": false,
+                "strip": true
+            },
+            "validation": {
+                "type": "string",
+                "allowed_values": [
+                    "ASC",
+                    "DESC"
+                ]
+            }
+        }
+    ]
+}

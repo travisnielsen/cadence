@@ -1,0 +1,56 @@
+{
+    "intent": "recent_orders_for_customer",
+    "question": "Show recent orders for a specific customer",
+    "sql_template": "SELECT o.OrderDate, o.ExpectedDeliveryDate, c.CustomerName, p.FullName AS Salesperson, COUNT(ol.OrderLineID) AS LineItemCount, SUM(ol.Quantity * ol.UnitPrice) AS OrderTotal FROM Sales.Orders o JOIN Sales.Customers c ON o.CustomerID = c.CustomerID JOIN Application.People p ON o.SalespersonPersonID = p.PersonID JOIN Sales.OrderLines ol ON o.OrderID = ol.OrderID WHERE c.CustomerName = '%{{customer_name}}%' AND o.OrderDate >= DATEADD(day, -%{{days}}%, %{{from_date}}%) GROUP BY o.OrderID, o.OrderDate, o.ExpectedDeliveryDate, c.CustomerName, p.FullName ORDER BY o.OrderDate DESC",
+    "reasoning": "Retrieves recent sales orders for a named customer with line item counts and totals. Useful for account review and understanding ordering patterns.",
+    "parameters": [
+        {
+            "name": "customer_name",
+            "column": "CustomerName",
+            "table": "Sales.Customers",
+            "allowed_values_source": "database",
+            "required": true,
+            "ask_if_missing": true,
+            "default_value": null,
+            "default_policy": null,
+            "confidence_weight": 1.0,
+            "normalization": {
+                "lowercase": false,
+                "strip": true
+            },
+            "validation": {
+                "type": "string"
+            }
+        },
+        {
+            "name": "days",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": 180,
+            "default_policy": null,
+            "confidence_weight": 0.7,
+            "normalization": null,
+            "validation": {
+                "type": "integer",
+                "min": 1,
+                "max": 730
+            }
+        },
+        {
+            "name": "from_date",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": "DATEADD(YEAR, -10, GETDATE())",
+            "default_policy": null,
+            "confidence_weight": 0.7,
+            "normalization": null,
+            "validation": {
+                "type": "date",
+                "min": "2013-01-01",
+                "max": "2016-05-31"
+            }
+        }
+    ]
+}

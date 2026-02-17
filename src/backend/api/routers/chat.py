@@ -145,7 +145,6 @@ async def generate_clarification_response_stream(
                                 "columns": response.columns,
                                 "row_count": response.row_count,
                                 "confidence_score": response.confidence_score,
-                                "used_cached_query": response.used_cached_query,
                                 "query_source": response.query_source,
                                 "error": response.error,
                                 "observations": None,

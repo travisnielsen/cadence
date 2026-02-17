@@ -1,0 +1,38 @@
+{
+    "intent": "revenue_by_customer_category",
+    "question": "What is total revenue by customer category in the last 90 days?",
+    "sql_template": "SELECT cc.CustomerCategoryName, COUNT(DISTINCT c.CustomerID) AS CustomerCount, COUNT(DISTINCT i.InvoiceID) AS InvoiceCount, SUM(il.ExtendedPrice) AS TotalRevenue, SUM(il.LineProfit) AS TotalProfit FROM Sales.CustomerCategories cc JOIN Sales.Customers c ON cc.CustomerCategoryID = c.CustomerCategoryID JOIN Sales.Invoices i ON c.CustomerID = i.CustomerID JOIN Sales.InvoiceLines il ON i.InvoiceID = il.InvoiceID WHERE i.InvoiceDate >= DATEADD(day, -%{{days}}%, %{{from_date}}%) GROUP BY cc.CustomerCategoryName ORDER BY TotalRevenue DESC",
+    "reasoning": "Breaks down revenue and profit by customer category over a time window. Helps identify which customer segments drive the most business value.",
+    "parameters": [
+        {
+            "name": "days",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": 90,
+            "default_policy": null,
+            "confidence_weight": 0.7,
+            "normalization": null,
+            "validation": {
+                "type": "integer",
+                "min": 1,
+                "max": 730
+            }
+        },
+        {
+            "name": "from_date",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": "DATEADD(YEAR, -10, GETDATE())",
+            "default_policy": null,
+            "confidence_weight": 0.7,
+            "normalization": null,
+            "validation": {
+                "type": "date",
+                "min": "2013-01-01",
+                "max": "2016-05-31"
+            }
+        }
+    ]
+}

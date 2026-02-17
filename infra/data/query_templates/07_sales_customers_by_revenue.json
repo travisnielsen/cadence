@@ -1,0 +1,73 @@
+{
+    "intent": "top_bottom_customers_by_revenue",
+    "question": "Who are our top customers by revenue in the last 90 days?",
+    "sql_template": "SELECT TOP %{{count}}% c.CustomerName, SUM(il.ExtendedPrice) AS TotalRevenue, COUNT(DISTINCT i.InvoiceID) AS InvoiceCount FROM Sales.Customers c JOIN Sales.Invoices i ON c.CustomerID = i.CustomerID JOIN Sales.InvoiceLines il ON i.InvoiceID = il.InvoiceID WHERE i.InvoiceDate >= DATEADD(day, -%{{days}}%, %{{from_date}}%) GROUP BY c.CustomerID, c.CustomerName ORDER BY TotalRevenue %{{order}}%",
+    "reasoning": "Aggregates invoice revenue per customer within a time window. Identifies highest-value or lowest-value customers for account management and sales strategy.",
+    "parameters": [
+        {
+            "name": "days",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": 90,
+            "default_policy": null,
+            "confidence_weight": 0.7,
+            "normalization": null,
+            "validation": {
+                "type": "integer",
+                "min": 1,
+                "max": 730
+            }
+        },
+        {
+            "name": "from_date",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": "DATEADD(YEAR, -10, GETDATE())",
+            "default_policy": null,
+            "confidence_weight": 0.7,
+            "normalization": null,
+            "validation": {
+                "type": "date",
+                "min": "2013-01-01",
+                "max": "2016-05-31"
+            }
+        },
+        {
+            "name": "count",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": 10,
+            "default_policy": null,
+            "confidence_weight": 1.0,
+            "normalization": null,
+            "validation": {
+                "type": "integer",
+                "min": 1,
+                "max": 100
+            }
+        },
+        {
+            "name": "order",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": "DESC",
+            "default_policy": null,
+            "confidence_weight": 1.0,
+            "normalization": {
+                "lowercase": false,
+                "strip": true
+            },
+            "validation": {
+                "type": "string",
+                "allowed_values": [
+                    "ASC",
+                    "DESC"
+                ]
+            }
+        }
+    ]
+}

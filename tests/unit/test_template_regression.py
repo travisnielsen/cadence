@@ -28,7 +28,6 @@ class TestTemplateDraftPassthrough:
             columns=["OrderID", "OrderDate"],
             row_count=2,
             confidence_score=0.95,
-            used_cached_query=True,
             query_source="template",
         )
 

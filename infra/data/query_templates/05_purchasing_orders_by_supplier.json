@@ -1,0 +1,56 @@
+{
+    "intent": "purchase_orders_by_supplier",
+    "question": "Show recent purchase orders for a specific supplier",
+    "sql_template": "SELECT po.OrderDate, po.ExpectedDeliveryDate, po.IsOrderFinalized, s.SupplierName, COUNT(pol.PurchaseOrderLineID) AS LineItemCount, SUM(pol.OrderedOuters * pol.ExpectedUnitPricePerOuter) AS EstimatedTotal FROM Purchasing.PurchaseOrders po JOIN Purchasing.Suppliers s ON po.SupplierID = s.SupplierID JOIN Purchasing.PurchaseOrderLines pol ON po.PurchaseOrderID = pol.PurchaseOrderID WHERE s.SupplierName = '%{{supplier_name}}%' AND po.OrderDate >= DATEADD(day, -%{{days}}%, %{{from_date}}%) GROUP BY po.PurchaseOrderID, po.OrderDate, po.ExpectedDeliveryDate, po.IsOrderFinalized, s.SupplierName ORDER BY po.OrderDate DESC",
+    "reasoning": "Shows purchase orders for a named supplier within a time window, including line item counts and estimated totals. Useful for reviewing supplier order history and tracking delivery timelines.",
+    "parameters": [
+        {
+            "name": "supplier_name",
+            "column": "SupplierName",
+            "table": "Purchasing.Suppliers",
+            "allowed_values_source": "database",
+            "required": true,
+            "ask_if_missing": true,
+            "default_value": null,
+            "default_policy": null,
+            "confidence_weight": 1.0,
+            "normalization": {
+                "lowercase": false,
+                "strip": true
+            },
+            "validation": {
+                "type": "string"
+            }
+        },
+        {
+            "name": "days",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": 180,
+            "default_policy": null,
+            "confidence_weight": 0.7,
+            "normalization": null,
+            "validation": {
+                "type": "integer",
+                "min": 1,
+                "max": 730
+            }
+        },
+        {
+            "name": "from_date",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": "DATEADD(YEAR, -10, GETDATE())",
+            "default_policy": null,
+            "confidence_weight": 0.7,
+            "normalization": null,
+            "validation": {
+                "type": "date",
+                "min": "2013-01-01",
+                "max": "2016-05-31"
+            }
+        }
+    ]
+}

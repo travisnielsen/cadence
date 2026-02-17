@@ -115,18 +115,6 @@ resource "time_sleep" "wait_for_storage_rbac" {
   create_duration = "60s"
 }
 
-# Upload query files from infra/data/queries
-resource "azurerm_storage_blob" "nl2sql_queries" {
-  for_each               = fileset("${path.module}/../data/queries", "*.json")
-  name                   = "queries/${each.value}"
-  storage_account_name   = module.ai_storage.name
-  storage_container_name = "nl2sql"
-  type                   = "Block"
-  source                 = "${path.module}/../data/queries/${each.value}"
-  content_type           = "application/json"
-
-  depends_on = [time_sleep.wait_for_storage_rbac]
-}
 
 # Upload table schema files from infra/data/tables
 resource "azurerm_storage_blob" "nl2sql_tables" {
@@ -572,7 +560,6 @@ resource "null_resource" "search_config" {
     module.ai_search,
     module.ai_storage,
     module.ai_foundry,
-    azurerm_storage_blob.nl2sql_queries,
     azurerm_storage_blob.nl2sql_tables,
     azurerm_storage_blob.nl2sql_query_templates
   ]
@@ -629,23 +616,6 @@ resource "null_resource" "search_config" {
       echo "Getting access token for Search..."
       TOKEN=$(az account get-access-token --resource https://search.azure.com --query accessToken -o tsv)
 
-      echo "Creating data source: agentic-queries..."
-      curl -s -X PUT "$${SEARCH_URL}/datasources/agentic-queries?api-version=$${API_VERSION}" \
-        -H "Authorization: Bearer $${TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d '{
-          "name": "agentic-queries",
-          "type": "azureblob",
-          "credentials": {
-            "connectionString": "ResourceId='"$${STORAGE_RESOURCE_ID}"';"
-          },
-          "container": {
-            "name": "nl2sql",
-            "query": "queries"
-          }
-        }'
-
-      echo ""
       echo "Creating data source: agentic-tables..."
       curl -s -X PUT "$${SEARCH_URL}/datasources/agentic-tables?api-version=$${API_VERSION}" \
         -H "Authorization: Bearer $${TOKEN}" \
@@ -680,13 +650,6 @@ resource "null_resource" "search_config" {
         }'
 
       echo ""
-      echo "Creating index: queries..."
-      curl -s -X PUT "$${SEARCH_URL}/indexes/queries?api-version=$${API_VERSION}" \
-        -H "Authorization: Bearer $${TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d @${path.module}/../search-config/queries_index.json
-
-      echo ""
       echo "Creating index: tables..."
       curl -s -X PUT "$${SEARCH_URL}/indexes/tables?api-version=$${API_VERSION}" \
         -H "Authorization: Bearer $${TOKEN}" \
@@ -699,40 +662,6 @@ resource "null_resource" "search_config" {
         -H "Authorization: Bearer $${TOKEN}" \
         -H "Content-Type: application/json" \
         -d @${path.module}/../search-config/query_templates_index.json
-
-      echo ""
-      echo "Creating skillset: query-embed-skill..."
-      curl -s -X PUT "$${SEARCH_URL}/skillsets/query-embed-skill?api-version=$${API_VERSION}" \
-        -H "Authorization: Bearer $${TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d '{
-          "name": "query-embed-skill",
-          "description": "OpenAI Embedding skill for queries",
-          "skills": [
-            {
-              "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
-              "name": "vector-embed-field-question",
-              "description": "vector embedding for the question field",
-              "context": "/document",
-              "resourceUri": "https://'"$${AI_SERVICES_NAME}"'.openai.azure.com",
-              "deploymentId": "embedding-large",
-              "dimensions": 3072,
-              "modelName": "text-embedding-3-large",
-              "inputs": [
-                {
-                  "name": "text",
-                  "source": "/document/question"
-                }
-              ],
-              "outputs": [
-                {
-                  "name": "embedding",
-                  "targetName": "content_embeddings"
-                }
-              ]
-            }
-          ]
-        }'
 
       echo ""
       echo "Creating skillset: table-embed-skill..."
@@ -798,31 +727,6 @@ resource "null_resource" "search_config" {
                   "targetName": "content_embeddings"
                 }
               ]
-            }
-          ]
-        }'
-
-      echo ""
-      echo "Creating indexer: indexer-queries..."
-      curl -s -X PUT "$${SEARCH_URL}/indexers/indexer-queries?api-version=$${API_VERSION}" \
-        -H "Authorization: Bearer $${TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d '{
-          "name": "indexer-queries",
-          "dataSourceName": "agentic-queries",
-          "skillsetName": "query-embed-skill",
-          "targetIndexName": "queries",
-          "parameters": {
-            "configuration": {
-              "dataToExtract": "contentAndMetadata",
-              "parsingMode": "json"
-            }
-          },
-          "fieldMappings": [],
-          "outputFieldMappings": [
-            {
-              "sourceFieldName": "/document/content_embeddings",
-              "targetFieldName": "content_vector"
             }
           ]
         }'
@@ -1063,10 +967,6 @@ resource "azurerm_container_app" "api" {
       env {
         name  = "AZURE_SEARCH_ENDPOINT"
         value = "https://${module.ai_search.resource.name}.search.windows.net"
-      }
-      env {
-        name  = "AZURE_SEARCH_INDEX_QUERIES"
-        value = "queries"
       }
       env {
         name  = "AZURE_SEARCH_INDEX_TABLES"

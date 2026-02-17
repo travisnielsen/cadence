@@ -41,10 +41,10 @@ The Terraform deployment automatically configures AI Search with vector indexes 
 
 | Component | Name | Description |
 | --------- | ---- | ----------- |
-| **Data Sources** | `agentic-queries`, `agentic-tables` | Connect to blob storage containers for query examples and table schemas |
-| **Indexes** | `queries`, `tables` | Vector-enabled indexes with 3072-dimension embeddings using HNSW algorithm |
-| **Skillsets** | `query-embed-skill`, `table-embed-skill` | Generate embeddings via `text-embedding-3-large` model |
-| **Indexers** | `indexer-queries`, `indexer-tables` | Process JSON documents and populate vector indexes |
+| **Data Sources** | `agentic-tables`, `agentic-query-templates` | Connect to blob storage containers for table schemas and query templates |
+| **Indexes** | `tables`, `query_templates` | Vector-enabled indexes with 3072-dimension embeddings using HNSW algorithm |
+| **Skillsets** | `table-embed-skill`, `query-template-embed-skill` | Generate embeddings via `text-embedding-3-large` model |
+| **Indexers** | `indexer-tables`, `indexer-query-templates` | Process JSON documents and populate vector indexes |
 
 The Search service uses managed identity authentication to access storage and AI Foundry for embedding generation. Sample data is uploaded from the `search-config/` folder during deployment.
 

@@ -1,6 +1,0 @@
-{
-    "datasource": "wideworldimporters",
-    "question": "Which customers have spent the most money in total?",
-    "query": "SELECT TOP 10 c.CustomerID, c.CustomerName, SUM(il.ExtendedPrice) AS TotalSpent FROM Sales.Customers c JOIN Sales.Invoices i ON c.CustomerID = i.CustomerID JOIN Sales.InvoiceLines il ON i.InvoiceID = il.InvoiceID GROUP BY c.CustomerID, c.CustomerName ORDER BY TotalSpent DESC",
-    "reasoning": "This query joins Customers, Invoices, and InvoiceLines to calculate total spending per customer. It groups by customer and orders by total spent descending to find the top spenders."
-}

@@ -1,0 +1,7 @@
+{
+    "intent": "salesperson_directory",
+    "question": "Who are the salespeople at Wide World Importers?",
+    "sql_template": "SELECT FullName, PreferredName, PhoneNumber, EmailAddress FROM Application.People WHERE IsSalesperson = 1 ORDER BY FullName ASC",
+    "reasoning": "Lists all people flagged as salespeople in the system. A common starting point to understand the sales team before drilling into their performance.",
+    "parameters": []
+}

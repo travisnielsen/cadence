@@ -95,7 +95,7 @@ flowchart TB
 | Agent | Purpose |
 |-------|---------|
 | **Chat Agent** | User-facing agent that receives messages, triages them (data vs. general questions), and renders the final response with helpful context |
-| **Data Agent (NL2SQL)** | Searches for cached query templates matching user intent, executes SQL against the database, and returns structured results |
+| **Data Agent (NL2SQL)** | Searches for query templates matching user intent, executes SQL against the database, and returns structured results |
 | **Parameter Extractor** | When a query template is matched, extracts parameter values from the user's natural language input to fill SQL template tokens |
 
 ### Agent Components

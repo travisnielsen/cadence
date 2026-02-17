@@ -1,6 +1,0 @@
-{
-    "datasource": "wideworldimporters",
-    "question": "What are the top 10 best-selling products by total quantity sold?",
-    "query": "SELECT TOP 10 si.StockItemID, si.StockItemName, SUM(il.Quantity) AS TotalQuantitySold FROM Warehouse.StockItems si JOIN Sales.InvoiceLines il ON si.StockItemID = il.StockItemID GROUP BY si.StockItemID, si.StockItemName ORDER BY TotalQuantitySold DESC",
-    "reasoning": "This query joins StockItems with InvoiceLines to calculate the total quantity sold for each product. It groups by product and orders by total quantity in descending order to find the best sellers."
-}

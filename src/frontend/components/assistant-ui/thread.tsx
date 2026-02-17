@@ -21,20 +21,20 @@ import {
   ThreadPrimitive,
 } from "@assistant-ui/react";
 
-import type { FC } from "react";
 import { LazyMotion, MotionConfig, domAnimation } from "motion/react";
 import * as m from "motion/react-m";
+import type { FC } from "react";
 
-import { Button } from "@/components/ui/button";
-import { MarkdownText } from "@/components/assistant-ui/markdown-text";
-import { StepIndicator } from "@/components/assistant-ui/step-indicator";
-import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
-import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import {
   ComposerAddAttachment,
   ComposerAttachments,
   UserMessageAttachments,
 } from "@/components/assistant-ui/attachment";
+import { MarkdownText } from "@/components/assistant-ui/markdown-text";
+import { StepIndicator } from "@/components/assistant-ui/step-indicator";
+import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
+import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
+import { Button } from "@/components/ui/button";
 
 import { cn } from "@/lib/utils";
 
@@ -121,24 +121,24 @@ const ThreadSuggestions: FC = () => {
     <div className="aui-thread-welcome-suggestions grid w-full gap-2 pb-4 @md:grid-cols-2">
       {[
         {
-          title: "Top 10 best-selling products",
-          label: "by total quantity sold",
-          action: "What are the top 10 best-selling products by total quantity sold?",
+          title: "Population by sales territory",
+          label: "top regions by headcount",
+          action: "Which sales territories have the largest population?",
         },
         {
-          title: "Top customers",
-          label: "by total spending",
-          action: "Which customers have spent the most money in total?",
+          title: "Top suppliers by spend",
+          label: "over the last 90 days",
+          action: "Which suppliers have we spent the most with recently?",
         },
         {
-          title: "Orders placed last month",
-          label: "for last 30 days",
-          action: "How many orders were placed in the last 30 days from today and what is the total revenue?",
+          title: "Top customers by revenue",
+          label: "over the last 90 days",
+          action: "Who are our top customers by revenue?",
         },
         {
-          title: "Average order value",
-          label: "for supermarkets",
-          action: "What is the average order value for supermarkets?",
+          title: "Items below reorder level",
+          label: "needing replenishment",
+          action: "Which stock items are below their reorder level?",
         },
       ].map((suggestedAction, index) => (
         <m.div

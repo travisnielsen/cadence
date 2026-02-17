@@ -1,22 +1,22 @@
 {
-    "intent": "list_customers_by_total_spent",
-    "question": "Which customers have spent the most money in total?",
-    "sql_template": "SELECT TOP %{{count}}% Sales.Customers.CustomerID, Sales.Customers.CustomerName, SUM(Sales.InvoiceLines.ExtendedPrice) AS TotalSpent FROM Sales.Customers JOIN Sales.Invoices ON Sales.Customers.CustomerID = Sales.Invoices.CustomerID JOIN Sales.InvoiceLines ON Sales.Invoices.InvoiceID = Sales.InvoiceLines.InvoiceID GROUP BY Sales.Customers.CustomerID, Sales.Customers.CustomerName ORDER BY TotalSpent %{{order}}%",
-    "reasoning": "This query joins Customers, Invoices, and InvoiceLines to calculate total spending per customer. It groups by customer and orders by total spent ascending or descending to find the top or least spenders.",
+    "intent": "stock_items_below_reorder_level",
+    "question": "Which items are below their reorder level?",
+    "sql_template": "SELECT TOP %{{count}}% si.StockItemName, sih.QuantityOnHand, sih.ReorderLevel, sih.TargetStockLevel, sih.BinLocation, (sih.ReorderLevel - sih.QuantityOnHand) AS QuantityBelowReorder FROM Warehouse.StockItems si JOIN Warehouse.StockItemHoldings sih ON si.StockItemID = sih.StockItemID WHERE sih.QuantityOnHand <= sih.ReorderLevel ORDER BY QuantityBelowReorder %{{order}}%",
+    "reasoning": "Identifies stock items where current quantity on hand has fallen at or below the reorder level. Orders by how far below reorder level they are (worst first by default). Critical for inventory replenishment planning.",
     "parameters": [
         {
             "name": "count",
             "column": null,
             "required": true,
             "ask_if_missing": false,
-            "default_value": 30,
+            "default_value": 20,
             "default_policy": null,
             "confidence_weight": 1.0,
             "normalization": null,
             "validation": {
                 "type": "integer",
                 "min": 1,
-                "max": 100
+                "max": 200
             }
         },
         {

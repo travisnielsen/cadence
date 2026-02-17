@@ -1,0 +1,43 @@
+{
+    "intent": "supplier_order_fulfillment_status",
+    "question": "Which suppliers have the most outstanding unfinalized purchase order lines?",
+    "sql_template": "SELECT TOP %{{count}}% s.SupplierName, COUNT(pol.PurchaseOrderLineID) AS UnfinalizedLines, SUM(pol.OrderedOuters - pol.ReceivedOuters) AS TotalOutstandingOuters FROM Purchasing.Suppliers s JOIN Purchasing.PurchaseOrders po ON s.SupplierID = po.SupplierID JOIN Purchasing.PurchaseOrderLines pol ON po.PurchaseOrderID = pol.PurchaseOrderID WHERE pol.IsOrderLineFinalized = 0 GROUP BY s.SupplierID, s.SupplierName ORDER BY UnfinalizedLines %{{order}}%",
+    "reasoning": "Identifies suppliers with the most unfinalized purchase order lines and outstanding quantities. Helps procurement teams prioritize follow-ups on delayed deliveries.",
+    "parameters": [
+        {
+            "name": "count",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": 10,
+            "default_policy": null,
+            "confidence_weight": 1.0,
+            "normalization": null,
+            "validation": {
+                "type": "integer",
+                "min": 1,
+                "max": 100
+            }
+        },
+        {
+            "name": "order",
+            "column": null,
+            "required": true,
+            "ask_if_missing": false,
+            "default_value": "DESC",
+            "default_policy": null,
+            "confidence_weight": 1.0,
+            "normalization": {
+                "lowercase": false,
+                "strip": true
+            },
+            "validation": {
+                "type": "string",
+                "allowed_values": [
+                    "ASC",
+                    "DESC"
+                ]
+            }
+        }
+    ]
+}

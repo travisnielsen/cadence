@@ -973,7 +973,6 @@ class NL2SQLController(Executor):
                             confidence_score=confidence,
                             query_confidence=query_confidence,
                             hidden_columns=hidden_columns,
-                            used_cached_query=bool(sql_draft.template_id),
                             query_source=query_source,
                             error=sql_result.get("error")
                             if not sql_result.get("success")
@@ -1341,7 +1340,6 @@ class NL2SQLController(Executor):
         columns: list[str] = []
         row_count = 0
         confidence_score = 0.0
-        used_cached_query = False
         query_source = "dynamic"  # Default to dynamic, update if cached match found
         error = None
 
@@ -1364,16 +1362,6 @@ class NL2SQLController(Executor):
                                 sql_response = result.get("rows", [])
                                 columns = result.get("columns", [])
                                 row_count = result.get("row_count", len(sql_response))
-
-                            # Check for search result with confidence
-                            if "has_high_confidence_match" in result:
-                                used_cached_query = result.get("has_high_confidence_match", False)
-                                if result.get("best_match"):
-                                    best_match = result["best_match"]
-                                    confidence_score = best_match.get("score", 0.0)
-                                    if used_cached_query:
-                                        sql_query = best_match.get("query", "")
-                                        query_source = "cached"  # Query from cached queries
 
                             # Check for error
                             if not result.get("success", True) and "error" in result:
@@ -1400,7 +1388,6 @@ class NL2SQLController(Executor):
             columns=columns,
             row_count=row_count,
             confidence_score=confidence_score,
-            used_cached_query=used_cached_query,
             query_source=query_source,
             error=error,
         )

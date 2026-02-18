@@ -133,10 +133,10 @@
 
 ### Implementation
 
-- [ ] T030 [US5] Update imports in all existing test files under tests/unit/ and tests/integration/ to use new function paths (validator.py, extractor.py, builder.py, pipeline.py, session.py). Remove any WorkflowContext, Executor, or `sys.modules` mocks.
-- [ ] T031 [US5] Update tests/integration/test_workflow_integration.py to test `process_query()` directly with `PipelineClients` constructed from fakes. Remove Workflow setup.
-- [ ] T032 [US5+US6] Create tests/unit/test_sse_endpoint.py: test the chat streaming endpoint using `httpx.AsyncClient` with FastAPI test client. Inject `PipelineClients` with fakes via dependency override. Verify SSE event structure, ordering, and clarification flow.
-- [ ] T033 [US5] Verify all tests pass: `uv run poe test`. Confirm no test file contains `sys.modules.setdefault("agent_framework"` or `importlib.util.spec_from_file_location`.
+- [x] T030 [US5] Update imports in all existing test files under tests/unit/ and tests/integration/ to use new function paths (validator.py, extractor.py, builder.py, pipeline.py, session.py). Remove any WorkflowContext, Executor, or `sys.modules` mocks.
+- [x] T031 [US5] Update tests/integration/test_workflow_integration.py to test `process_query()` directly with `PipelineClients` constructed from fakes. Remove Workflow setup.
+- [x] T032 [US5+US6] Create tests/unit/test_sse_endpoint.py: test the chat streaming endpoint using `httpx.AsyncClient` with FastAPI test client. Inject `PipelineClients` with fakes via dependency override. Verify SSE event structure, ordering, and clarification flow.
+- [x] T033 [US5] Verify all tests pass: `uv run poe test`. Confirm no test file contains `sys.modules.setdefault("agent_framework"` or `importlib.util.spec_from_file_location`.
 
 **Checkpoint**: `uv run poe test` exits with code 0. Zero test files reference Executor/Workflow/WorkflowContext. All tests CI-safe.
 

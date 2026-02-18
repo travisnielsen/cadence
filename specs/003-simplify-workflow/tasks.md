@@ -76,12 +76,12 @@
 
 - [x] T014 [US1+US6] Create `PipelineClients` frozen dataclass in src/backend/entities/workflow/clients.py with fields: `param_extractor_agent`, `query_builder_agent`, `allowed_values_provider`, `template_search: TemplateSearchService`, `table_search: TableSearchService`, `sql_executor: SqlExecutor`, `reporter: ProgressReporter`, `allowed_tables: set[str]`.
 - [x] T015 [US6] Create `create_pipeline_clients(settings: Settings) -> PipelineClients` factory in clients.py. Loads prompts once from disk, creates agents via updated factories, wraps Azure clients in Protocol adapters, loads `allowed_tables` from config file. No module-level singletons.
-- [ ] T016 [US1+US2] Create `process_query(request, clients) -> NL2SQLResponse | ClarificationRequest` in src/backend/entities/nl2sql_controller/pipeline.py. Routing via `clients.template_search.search()` (not direct `@tool` call) → (extract_parameters | build_query) → validate_parameters → validate_query → `clients.sql_executor.execute()` → refine columns. Step events via `clients.reporter`. All plain if/else.
-- [ ] T017 [US2] Update src/backend/entities/workflow/__init__.py to export `process_query` and `PipelineClients` instead of `create_nl2sql_workflow`.
+- [x] T016 [US1+US2] Create `process_query(request, clients) -> NL2SQLResponse | ClarificationRequest` in src/backend/entities/nl2sql_controller/pipeline.py. Routing via `clients.template_search.search()` (not direct `@tool` call) → (extract_parameters | build_query) → validate_parameters → validate_query → `clients.sql_executor.execute()` → refine columns. Step events via `clients.reporter`. All plain if/else.
+- [x] T017 [US2] Update src/backend/entities/workflow/**init**.py to export `process_query` and `PipelineClients` instead of `create_nl2sql_workflow`.
 
 ### Tests
 
-- [ ] T018 [US1+US2+US5+US6] Create pipeline integration test in tests/unit/test_process_query.py. Construct `PipelineClients` with `FakeTemplateSearch`, `FakeSqlExecutor`, `SpyReporter`, mocked ChatAgent. Cover template-match path, dynamic-query path, clarification path, validation failure, error recovery. **No Azure credentials, no network, no filesystem** — CI-safe.
+- [x] T018 [US1+US2+US5+US6] Create pipeline integration test in tests/unit/test_process_query.py. Construct `PipelineClients` with `FakeTemplateSearch`, `FakeSqlExecutor`, `SpyReporter`, mocked ChatAgent. Cover template-match path, dynamic-query path, clarification path, validation failure, error recovery. **No Azure credentials, no network, no filesystem** — CI-safe.
 
 **Checkpoint**: `process_query()` works with injected fakes. Fully testable without Azure.
 
@@ -120,7 +120,7 @@
 - [ ] T025 [US4] Delete executor files: src/backend/entities/nl2sql_controller/executor.py, src/backend/entities/parameter_extractor/executor.py, src/backend/entities/parameter_validator/executor.py, src/backend/entities/query_builder/executor.py, src/backend/entities/query_validator/executor.py.
 - [ ] T026 [US4] Delete src/backend/entities/workflow/workflow.py.
 - [ ] T027 [US4] Delete src/backend/entities/orchestrator/ directory (replaced by entities/assistant/).
-- [ ] T028 [US4] Remove message wrapper types: `SQLDraftMessage`, `ExtractionRequestMessage`, `QueryBuilderRequestMessage`, `ClarificationMessage` from src/backend/models/generation.py and src/backend/models/extraction.py. Update src/backend/models/__init__.py re-exports.
+- [ ] T028 [US4] Remove message wrapper types: `SQLDraftMessage`, `ExtractionRequestMessage`, `QueryBuilderRequestMessage`, `ClarificationMessage` from src/backend/models/generation.py and src/backend/models/extraction.py. Update src/backend/models/**init**.py re-exports.
 - [ ] T029 [US4] Run import audit: `grep -r "from agent_framework import.*Executor\|WorkflowBuilder\|WorkflowContext\|handler\|response_handler" src/backend/` must return zero. `grep -r "ConversationOrchestrator" src/backend/` must return zero. `grep -r "try:.*from api.step_events" src/backend/entities/` must return zero. Fix any remaining references.
 
 **Checkpoint**: All MAF orchestration code is removed. DataAssistant replaces old orchestrator. Only ChatAgent/AzureAIClient/AgentThread/@tool remain.
@@ -214,9 +214,9 @@ Phase 2 validators and Phase 2 protocols can start concurrently
 
 ### Full Cleanup (Phase 6–8)
 
-7. Complete Phase 6: Remove all dead code
-8. Complete Phase 7: Final test updates
-9. Complete Phase 8: Quality gates and measurements
+1. Complete Phase 6: Remove all dead code
+2. Complete Phase 7: Final test updates
+3. Complete Phase 8: Quality gates and measurements
 
 ### Task Count Summary
 

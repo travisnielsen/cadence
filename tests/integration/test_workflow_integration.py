@@ -38,11 +38,6 @@ _mock_af.response_handler = lambda fn: fn
 sys.modules.setdefault("agent_framework", _mock_af)
 sys.modules.setdefault("agent_framework_azure_ai", MagicMock())
 
-# Stub the nl2sql_controller package to avoid Azure init side-effects
-_pkg = "entities.nl2sql_controller"
-if _pkg not in sys.modules:
-    sys.modules[_pkg] = MagicMock()  # type: ignore[assignment]
-
 # Import parameter_extractor executor via importlib to avoid __init__ side-effects
 _pe_path = (
     Path(__file__).resolve().parents[2]

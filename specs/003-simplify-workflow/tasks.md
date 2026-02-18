@@ -95,15 +95,15 @@
 
 ### Implementation
 
-- [ ] T019 [US6] Rename `ConversationOrchestrator` → `DataAssistant` in new file src/backend/entities/assistant/assistant.py (moved from orchestrator/orchestrator.py). Accept `agent: ChatAgent` as constructor parameter instead of `AzureAIClient`. Move prompt to src/backend/entities/assistant/assistant_prompt.md.
-- [ ] T020 [US2+US3] Rewrite `generate_orchestrator_streaming_response()` in src/backend/api/routers/chat.py: replace `workflow.run_stream()` with `result = await process_query(request, clients)`. Step events handled by `clients.reporter` (QueueReporter). Use `DataAssistant` instead of `ConversationOrchestrator`.
-- [ ] T021 [US2+US3] Rewrite `generate_clarification_response_stream()` in src/backend/api/routers/chat.py: replace `workflow.send_responses_streaming()` with recalled context + `process_query()`. Convert workflow_cache.py to store pending extraction context (SQLDraft + template + params) instead of a Workflow object.
-- [ ] T022 [US3] Remove MAF event imports from chat.py: `ExecutorCompletedEvent`, `ExecutorInvokedEvent`, `RequestInfoEvent`, `WorkflowOutputEvent`, `WorkflowRunState`, `WorkflowStatusEvent`. Remove `TYPE_CHECKING` block for `Workflow`.
-- [ ] T023 [US6] Update src/backend/api/session_manager.py imports and cache references from `ConversationOrchestrator` → `DataAssistant`.
+- [x] T019 [US6] Rename `ConversationOrchestrator` → `DataAssistant` in new file src/backend/entities/assistant/assistant.py (moved from orchestrator/orchestrator.py). Accept `agent: ChatAgent` as constructor parameter instead of `AzureAIClient`. Move prompt to src/backend/entities/assistant/assistant_prompt.md.
+- [x] T020 [US2+US3] Rewrite `generate_orchestrator_streaming_response()` in src/backend/api/routers/chat.py: replace `workflow.run_stream()` with `result = await process_query(request, clients)`. Step events handled by `clients.reporter` (QueueReporter). Use `DataAssistant` instead of `ConversationOrchestrator`.
+- [x] T021 [US2+US3] Rewrite `generate_clarification_response_stream()` in src/backend/api/routers/chat.py: replace `workflow.send_responses_streaming()` with recalled context + `process_query()`. Convert workflow_cache.py to store pending extraction context (SQLDraft + template + params) instead of a Workflow object.
+- [x] T022 [US3] Remove MAF event imports from chat.py: `ExecutorCompletedEvent`, `ExecutorInvokedEvent`, `RequestInfoEvent`, `WorkflowOutputEvent`, `WorkflowRunState`, `WorkflowStatusEvent`. Remove `TYPE_CHECKING` block for `Workflow`.
+- [x] T023 [US6] Update src/backend/api/session_manager.py imports and cache references from `ConversationOrchestrator` → `DataAssistant`.
 
 ### Tests
 
-- [ ] T024 [US5+US6] Create tests/unit/test_data_assistant.py: test `DataAssistant` with mocked ChatAgent injected via constructor. Test `classify_intent()`, `build_nl2sql_request()`, `update_context()`, `enrich_response()`, `render_response()`. No AzureAIClient needed.
+- [x] T024 [US5+US6] Create tests/unit/test_data_assistant.py: test `DataAssistant` with mocked ChatAgent injected via constructor. Test `classify_intent()`, `build_nl2sql_request()`, `update_context()`, `enrich_response()`, `render_response()`. No AzureAIClient needed.
 
 **Checkpoint**: SSE streaming works via `process_query()`. DataAssistant is testable. Workflow is no longer invoked anywhere.
 

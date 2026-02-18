@@ -42,27 +42,22 @@ from entities.shared.allowed_values_provider import AllowedValuesProvider
 logger = logging.getLogger(__name__)
 
 # Module-level clients - reused across requests
-_nl2sql_client: AzureAIClient | None = None
 _param_extractor_client: AzureAIClient | None = None
 _query_builder_client: AzureAIClient | None = None
 _allowed_values_provider: AllowedValuesProvider | None = None
 
 
-def _get_clients() -> tuple[AzureAIClient, AzureAIClient, AzureAIClient]:
+def _get_clients() -> tuple[AzureAIClient, AzureAIClient]:
     """
     Get or create the agent clients (singleton pattern).
 
     V2 AzureAIClient uses agent versioning - with use_latest_version=True,
     it automatically finds or creates the latest version of named agents.
     """
-    global _nl2sql_client, _param_extractor_client, _query_builder_client
+    global _param_extractor_client, _query_builder_client
 
-    if (
-        _nl2sql_client is not None
-        and _param_extractor_client is not None
-        and _query_builder_client is not None
-    ):
-        return _nl2sql_client, _param_extractor_client, _query_builder_client
+    if _param_extractor_client is not None and _query_builder_client is not None:
+        return _param_extractor_client, _query_builder_client
 
     # Get Azure AI Foundry endpoint from environment
     endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT", "")
@@ -80,22 +75,14 @@ def _get_clients() -> tuple[AzureAIClient, AzureAIClient, AzureAIClient]:
         credential = DefaultAzureCredential()
 
     # Get model deployment names (with fallback to default)
-    nl2sql_model = os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME", "gpt-4o")
-    param_extractor_model = os.getenv("PARAM_EXTRACTOR_MODEL_DEPLOYMENT_NAME", nl2sql_model)
-    query_builder_model = os.getenv("QUERY_BUILDER_MODEL_DEPLOYMENT_NAME", nl2sql_model)
+    default_model = os.getenv("AZURE_AI_MODEL_DEPLOYMENT_NAME", "gpt-4o")
+    param_extractor_model = os.getenv("PARAM_EXTRACTOR_MODEL_DEPLOYMENT_NAME", default_model)
+    query_builder_model = os.getenv("QUERY_BUILDER_MODEL_DEPLOYMENT_NAME", default_model)
 
     logger.info(
-        "Creating agent clients: NL2SQL=%s, ParamExtractor=%s, QueryBuilder=%s",
-        nl2sql_model,
+        "Creating agent clients: ParamExtractor=%s, QueryBuilder=%s",
         param_extractor_model,
         query_builder_model,
-    )
-
-    _nl2sql_client = AzureAIClient(
-        project_endpoint=endpoint,
-        credential=credential,
-        model_deployment_name=nl2sql_model,
-        use_latest_version=True,
     )
 
     _param_extractor_client = AzureAIClient(
@@ -112,7 +99,7 @@ def _get_clients() -> tuple[AzureAIClient, AzureAIClient, AzureAIClient]:
         use_latest_version=True,
     )
 
-    return _nl2sql_client, _param_extractor_client, _query_builder_client
+    return _param_extractor_client, _query_builder_client
 
 
 def _get_allowed_values_provider() -> AllowedValuesProvider:
@@ -124,7 +111,7 @@ def _get_allowed_values_provider() -> AllowedValuesProvider:
     return _allowed_values_provider
 
 
-def create_nl2sql_workflow() -> tuple[Workflow, NL2SQLController, AzureAIClient]:
+def create_nl2sql_workflow() -> tuple[Workflow, NL2SQLController]:
     """
     Create the NL2SQL workflow for processing data queries.
 
@@ -138,12 +125,12 @@ def create_nl2sql_workflow() -> tuple[Workflow, NL2SQLController, AzureAIClient]
     - SQL execution
 
     Returns:
-        Tuple of (workflow, nl2sql_controller, nl2sql_client)
+        Tuple of (workflow, nl2sql_controller)
     """
-    nl2sql_client, param_extractor_client, query_builder_client = _get_clients()
+    param_extractor_client, query_builder_client = _get_clients()
 
     # Create fresh executors for this request
-    nl2sql_controller = NL2SQLController(nl2sql_client)
+    nl2sql_controller = NL2SQLController()
     provider = _get_allowed_values_provider()
     param_extractor_executor = ParameterExtractorExecutor(
         param_extractor_client, allowed_values_provider=provider
@@ -169,4 +156,4 @@ def create_nl2sql_workflow() -> tuple[Workflow, NL2SQLController, AzureAIClient]
     )
 
     logger.info("Created NL2SQL workflow")
-    return workflow, nl2sql_controller, nl2sql_client
+    return workflow, nl2sql_controller

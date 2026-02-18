@@ -344,7 +344,7 @@ async def generate_orchestrator_streaming_response(
             nl2sql_request = orchestrator.build_nl2sql_request(classification)
 
             # Create fresh NL2SQL workflow
-            workflow, _, _ = create_nl2sql_workflow()
+            workflow, _ = create_nl2sql_workflow()
 
             logger.info(
                 "Invoking NL2SQL workflow: is_refinement=%s, query=%s",

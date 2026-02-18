@@ -146,12 +146,12 @@
 
 **Purpose**: Final validation across all user stories
 
-- [ ] T034 Run `uv run poe check` — all quality gates pass (lint, typecheck, test)
-- [ ] T035 Run `uv run poe metrics` — verify reduced complexity scores
-- [ ] T036 Compare SSE stream output for template-based and dynamic queries against baseline (T001). Verify structure-identical.
-- [ ] T037 Record final line counts of pipeline files. Calculate reduction vs baseline. Verify ≥ 40%.
-- [ ] T038 Run import audit: confirm zero Executor/Workflow/WorkflowContext/handler/response_handler/ConversationOrchestrator imports in src/backend/. Confirm zero `try: from api.step_events` in entities/. Confirm zero `os.getenv` in entities/.
-- [ ] T039 Verify no test file contains `sys.modules.setdefault("agent_framework"` or `importlib.util.spec_from_file_location`. Verify all test files run without Azure credentials.
+- [x] T034 Run `uv run poe check` — all quality gates pass (lint, typecheck, test)
+- [x] T035 Run `uv run poe metrics` — verify reduced complexity scores
+- [x] T036 Compare SSE stream output for template-based and dynamic queries against baseline (T001). Verify structure-identical.
+- [x] T037 Record final line counts of pipeline files. Calculate reduction vs baseline. Verify ≥ 40%.
+- [x] T038 Run import audit: confirm zero Executor/Workflow/WorkflowContext/handler/response_handler/ConversationOrchestrator imports in src/backend/. Confirm zero `try: from api.step_events` in entities/. Confirm zero `os.getenv` in entities/.
+- [x] T039 Verify no test file contains `sys.modules.setdefault("agent_framework"` or `importlib.util.spec_from_file_location`. Verify all test files run without Azure credentials.
 
 ---
 

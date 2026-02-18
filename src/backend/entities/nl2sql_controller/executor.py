@@ -6,36 +6,24 @@ The Agent Framework's @handler decorator validates WorkflowContext type annotati
 at class definition time, which is incompatible with PEP 563 stringified annotations.
 """
 
+import contextlib
 import json
 import logging
+import operator
 import os
-from pathlib import Path
 from typing import Any
 
 from agent_framework import (
-    AgentResponse,
-    ChatAgent,
     Executor,
-    Role,
     WorkflowContext,
     handler,
     response_handler,
 )
-from agent_framework_azure_ai import AzureAIClient
-from pydantic import ValidationError
-
-# Type alias for V2 client
-AzureAIAgentClient = AzureAIClient
-
-import contextlib
-import operator
-
 from entities.shared.column_filter import refine_columns
 from entities.shared.error_recovery import build_error_recovery
 from entities.shared.substitution import substitute_parameters
 from entities.shared.tools import (
     execute_query_parameterized,
-    execute_sql,
     search_query_templates,
     search_tables,
 )
@@ -54,6 +42,7 @@ from models import (
     SQLDraftMessage,
     TableMetadata,
 )
+from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -171,16 +160,6 @@ def _format_defaults_for_display(defaults_used: dict[str, Any]) -> dict[str, str
     return descriptions
 
 
-def _load_prompt() -> str:
-    """Load prompt from prompt.md in this folder."""
-    prompt_path = Path(__file__).parent / "prompt.md"
-
-    if not prompt_path.exists():
-        raise FileNotFoundError(f"Prompt template not found: {prompt_path}")
-
-    return prompt_path.read_text(encoding="utf-8")
-
-
 class NL2SQLController(Executor):
     """
     Controller that orchestrates NL2SQL query processing.
@@ -194,36 +173,20 @@ class NL2SQLController(Executor):
     If no high confidence template match is found, asks for clarification.
     """
 
-    agent: ChatAgent
-
-    def __init__(self, chat_client: AzureAIAgentClient, executor_id: str = "nl2sql") -> None:
+    def __init__(self, executor_id: str = "nl2sql") -> None:
         """
         Initialize the NL2SQL executor.
 
         Args:
-            chat_client: The Azure AI agent client for creating the agent
             executor_id: Executor ID for workflow routing
         """
-        instructions = _load_prompt()
-
-        # Agent uses search_query_templates to understand intent
-        # SQL execution happens directly in the executor after parameter extraction
-        self.agent = ChatAgent(
-            name="nl2sql-agent",
-            instructions=instructions,
-            chat_client=chat_client,
-            tools=[search_query_templates, execute_sql],
-        )
-
         super().__init__(id=executor_id)
 
         # Track if we're acting as the workflow entry point (for orchestrator pattern)
         # When True, final responses use yield_output instead of send_message
         self._is_entry_point = False
 
-        logger.info(
-            "NL2SQLController initialized with tools: ['search_query_templates', 'execute_sql']"
-        )
+        logger.info("NL2SQLController initialized")
 
     async def _send_final_response(
         self, response: NL2SQLResponse, ctx: WorkflowContext[NL2SQLOutputMessage]
@@ -232,7 +195,7 @@ class NL2SQLController(Executor):
         Send the final NL2SQL response.
 
         Uses yield_output when acting as entry point (orchestrator pattern),
-        otherwise uses send_message (v1 workflow with ChatAgent).
+        otherwise uses send_message (workflow with other executors).
         """
         response_json = response.model_dump_json()
         if self._is_entry_point:
@@ -1331,63 +1294,3 @@ class NL2SQLController(Executor):
             logger.exception("Error handling clarification response")
             nl2sql_response = NL2SQLResponse(sql_query="", error=str(e))
             await self._send_final_response(nl2sql_response, ctx)
-
-    @staticmethod
-    def _parse_agent_response(response: AgentResponse) -> NL2SQLResponse:
-        """Parse the agent's response to extract structured data."""
-        sql_query = ""
-        sql_response: list[dict] = []
-        columns: list[str] = []
-        row_count = 0
-        confidence_score = 0.0
-        query_source = "dynamic"  # Default to dynamic, update if cached match found
-        error = None
-
-        # Extract data from tool call results in the messages
-        for message in response.messages:
-            if message.role == Role.TOOL:
-                for content in message.contents:
-                    if hasattr(content, "result"):
-                        result = content.result
-                        # Parse JSON string if needed
-                        if isinstance(result, str):
-                            try:
-                                result = json.loads(result)
-                            except json.JSONDecodeError:
-                                continue
-
-                        if isinstance(result, dict):
-                            # Check for execute_sql result
-                            if "rows" in result and result.get("success", False):
-                                sql_response = result.get("rows", [])
-                                columns = result.get("columns", [])
-                                row_count = result.get("row_count", len(sql_response))
-
-                            # Check for error
-                            if not result.get("success", True) and "error" in result:
-                                error = result["error"]
-
-            # Look for function calls to get the SQL query
-            if message.role == Role.ASSISTANT:
-                for content in message.contents:
-                    if (
-                        hasattr(content, "name")
-                        and content.name == "execute_sql"
-                        and hasattr(content, "arguments")
-                    ):
-                        args = content.arguments
-                        if isinstance(args, str):
-                            with contextlib.suppress(json.JSONDecodeError):
-                                args = json.loads(args)
-                        if isinstance(args, dict) and "query" in args:
-                            sql_query = args["query"]
-
-        return NL2SQLResponse(
-            sql_query=sql_query,
-            sql_response=sql_response,
-            columns=columns,
-            row_count=row_count,
-            confidence_score=confidence_score,
-            query_source=query_source,
-            error=error,
-        )

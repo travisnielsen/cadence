@@ -177,6 +177,7 @@ class TestAllowedValuesProviderCore:
         assert second.values == ["Stale"]
         assert len(provider._background_tasks) >= 0  # task was created (may have finished)
 
+    @pytest.mark.filterwarnings("ignore::ResourceWarning")
     async def test_exceeding_max_values_caps_and_sets_partial(self) -> None:
         """When the DB returns more than max_values rows, cap at max and set is_partial."""
         rows = [{"Col": v} for v in ["A", "B", "C", "D"]]  # 4 rows

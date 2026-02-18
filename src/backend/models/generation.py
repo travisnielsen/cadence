@@ -133,21 +133,6 @@ class SQLDraft(BaseModel):
     )
 
 
-class SQLDraftMessage(BaseModel):
-    """
-    A wrapper for SQL draft responses.
-
-    This type is used by the workflow to distinguish SQL draft responses
-    from other message types.
-    """
-
-    source: str = Field(
-        default="",
-        description="The executor that sent this message (e.g., 'param_extractor', 'param_validator', 'query_validator')",
-    )
-    response_json: str = Field(description="The JSON-encoded SQLDraft")
-
-
 class QueryBuilderRequest(BaseModel):
     """Request to build a SQL query from table metadata."""
 
@@ -156,14 +141,3 @@ class QueryBuilderRequest(BaseModel):
     retry_count: int = Field(
         default=0, description="Number of retry attempts (used for validation retry flow)"
     )
-
-
-class QueryBuilderRequestMessage(BaseModel):
-    """
-    A wrapper for query builder requests.
-
-    This type is used by the workflow to distinguish query builder requests
-    from other message types.
-    """
-
-    request_json: str = Field(description="The JSON-encoded QueryBuilderRequest")

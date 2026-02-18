@@ -117,11 +117,11 @@
 
 ### Implementation
 
-- [ ] T025 [US4] Delete executor files: src/backend/entities/nl2sql_controller/executor.py, src/backend/entities/parameter_extractor/executor.py, src/backend/entities/parameter_validator/executor.py, src/backend/entities/query_builder/executor.py, src/backend/entities/query_validator/executor.py.
-- [ ] T026 [US4] Delete src/backend/entities/workflow/workflow.py.
-- [ ] T027 [US4] Delete src/backend/entities/orchestrator/ directory (replaced by entities/assistant/).
-- [ ] T028 [US4] Remove message wrapper types: `SQLDraftMessage`, `ExtractionRequestMessage`, `QueryBuilderRequestMessage`, `ClarificationMessage` from src/backend/models/generation.py and src/backend/models/extraction.py. Update src/backend/models/**init**.py re-exports.
-- [ ] T029 [US4] Run import audit: `grep -r "from agent_framework import.*Executor\|WorkflowBuilder\|WorkflowContext\|handler\|response_handler" src/backend/` must return zero. `grep -r "ConversationOrchestrator" src/backend/` must return zero. `grep -r "try:.*from api.step_events" src/backend/entities/` must return zero. Fix any remaining references.
+- [x] T025 [US4] Delete executor files: src/backend/entities/nl2sql_controller/executor.py, src/backend/entities/parameter_extractor/executor.py, src/backend/entities/parameter_validator/executor.py, src/backend/entities/query_builder/executor.py, src/backend/entities/query_validator/executor.py.
+- [x] T026 [US4] Delete src/backend/entities/workflow/workflow.py.
+- [x] T027 [US4] Delete src/backend/entities/orchestrator/ directory (replaced by entities/assistant/).
+- [x] T028 [US4] Remove message wrapper types: `SQLDraftMessage`, `ExtractionRequestMessage`, `QueryBuilderRequestMessage`, `ClarificationMessage` from src/backend/models/generation.py and src/backend/models/extraction.py. Update src/backend/models/**init**.py re-exports.
+- [x] T029 [US4] Run import audit: `grep -r "from agent_framework import.*Executor\|WorkflowBuilder\|WorkflowContext\|handler\|response_handler" src/backend/` must return zero. `grep -r "ConversationOrchestrator" src/backend/` must return zero. `grep -r "try:.*from api.step_events" src/backend/entities/` must return zero. Fix any remaining references.
 
 **Checkpoint**: All MAF orchestration code is removed. DataAssistant replaces old orchestrator. Only ChatAgent/AzureAIClient/AgentThread/@tool remain.
 

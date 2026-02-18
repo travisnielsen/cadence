@@ -1,5 +1,5 @@
 """Query Builder package for dynamic SQL generation."""
 
-from .executor import QueryBuilderExecutor
+from .builder import build_query
 
-__all__ = ["QueryBuilderExecutor"]
+__all__ = ["build_query"]

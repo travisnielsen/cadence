@@ -1,13 +1,13 @@
-"""
-NL2SQL Controller - Orchestrates NL2SQL query processing.
+"""NL2SQL Controller - Orchestrates NL2SQL query processing.
 
-The controller:
+The pipeline:
 1. Searches for query templates matching user questions
 2. Extracts parameters from natural language
-3. Executes SQL against the Wide World Importers database
-4. Returns structured results
+3. Validates parameters and SQL
+4. Executes SQL against the Wide World Importers database
+5. Returns structured results
 """
 
-from .executor import NL2SQLController
+from .pipeline import process_query
 
-__all__ = ["NL2SQLController"]
+__all__ = ["process_query"]

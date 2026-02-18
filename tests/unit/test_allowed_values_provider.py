@@ -1,17 +1,18 @@
 """Unit tests for AllowedValuesProvider and hydration integration.
 
 Tests the stale-while-revalidate caching, input validation, TTL behaviour,
-and the ParameterExtractorExecutor._hydrate_database_allowed_values flow.
+and the _hydrate_database_allowed_values flow.
 """
 
 import asyncio
-import importlib
 import os
-import sys
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from entities.parameter_extractor.extractor import (
+    _fuzzy_match_allowed_value,
+    _hydrate_database_allowed_values,
+)
 from entities.shared.allowed_values_provider import (
     _COLUMN_PATTERN,
     _TABLE_PATTERN,
@@ -19,38 +20,6 @@ from entities.shared.allowed_values_provider import (
     AllowedValuesResult,
 )
 from models import ParameterDefinition, ParameterValidation, QueryTemplate
-
-# ---------------------------------------------------------------------------
-# Stub agent_framework / agent_framework_azure_ai so we can import the
-# ParameterExtractorExecutor without a real Azure AI client.
-# ---------------------------------------------------------------------------
-_mock_af = MagicMock()
-_mock_af.handler = lambda fn: fn
-_mock_af.ChatAgent = MagicMock
-_mock_af.Executor = type("Executor", (), {"__init__": lambda _self, **_kw: None})
-_mock_af.WorkflowContext = MagicMock
-_mock_af.AgentThread = MagicMock
-sys.modules.setdefault("agent_framework", _mock_af)
-sys.modules.setdefault("agent_framework_azure_ai", MagicMock())
-
-# Import executor module via spec to avoid __init__ side-effects
-_executor_path = (
-    Path(__file__).resolve().parents[2]
-    / "src"
-    / "backend"
-    / "entities"
-    / "parameter_extractor"
-    / "executor.py"
-)
-_spec = importlib.util.spec_from_file_location(  # type: ignore[union-attr]
-    "entities.parameter_extractor.executor", _executor_path
-)
-_mod = importlib.util.module_from_spec(_spec)  # type: ignore[arg-type]
-_spec.loader.exec_module(_mod)  # type: ignore[union-attr]
-
-ParameterExtractorExecutor = _mod.ParameterExtractorExecutor
-_fuzzy_match_allowed_value = _mod._fuzzy_match_allowed_value
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -274,26 +243,12 @@ class TestNamePatterns:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 3. Hydration integration (ParameterExtractorExecutor)
+# 3. Hydration integration (_hydrate_database_allowed_values)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-def _make_executor(
-    provider: AllowedValuesProvider | None = None,
-) -> MagicMock:
-    """Build a minimal mock executor that has _hydrate and related attrs."""
-    executor = MagicMock()
-    executor._allowed_values_provider = provider
-    executor._partial_cache_params = set()
-    # Bind the real unbound method so we can call it on our mock
-    executor._hydrate_database_allowed_values = (
-        ParameterExtractorExecutor._hydrate_database_allowed_values.__get__(executor)
-    )
-    return executor
-
-
 class TestHydrateDatabaseAllowedValues:
-    """Tests for ParameterExtractorExecutor._hydrate_database_allowed_values."""
+    """Tests for _hydrate_database_allowed_values standalone function."""
 
     async def test_database_sourced_param_gets_hydrated(self) -> None:
         """A param with allowed_values_source='database' is populated from the provider."""
@@ -302,10 +257,9 @@ class TestHydrateDatabaseAllowedValues:
             values=["Corporate", "Gift Store", "Supermarket"], is_partial=False
         )
 
-        executor = _make_executor(provider)
         template = _make_template()
 
-        await executor._hydrate_database_allowed_values(template)
+        await _hydrate_database_allowed_values(template, provider)
 
         param = template.parameters[0]
         assert param.validation is not None
@@ -318,7 +272,6 @@ class TestHydrateDatabaseAllowedValues:
     async def test_structural_enum_not_hydrated(self) -> None:
         """Params without allowed_values_source='database' are left untouched."""
         provider = AsyncMock(spec=AllowedValuesProvider)
-        executor = _make_executor(provider)
 
         template = _make_template(
             allowed_values_source=None,
@@ -327,7 +280,7 @@ class TestHydrateDatabaseAllowedValues:
             static_allowed=["ASC", "DESC"],
         )
 
-        await executor._hydrate_database_allowed_values(template)
+        await _hydrate_database_allowed_values(template, provider)
 
         assert template.parameters[0].validation is not None
         assert template.parameters[0].validation.allowed_values == ["ASC", "DESC"]
@@ -340,22 +293,20 @@ class TestHydrateDatabaseAllowedValues:
             values=["A", "B"], is_partial=True
         )
 
-        executor = _make_executor(provider)
         template = _make_template()
 
-        await executor._hydrate_database_allowed_values(template)
+        partial = await _hydrate_database_allowed_values(template, provider)
 
-        assert "category" in executor._partial_cache_params
+        assert "category" in partial
 
     async def test_db_unreachable_leaves_allowed_values_none(self) -> None:
         """If the provider returns None, validation.allowed_values stays None."""
         provider = AsyncMock(spec=AllowedValuesProvider)
         provider.get_allowed_values.return_value = None
 
-        executor = _make_executor(provider)
         template = _make_template()  # validation is None by default
 
-        await executor._hydrate_database_allowed_values(template)
+        await _hydrate_database_allowed_values(template, provider)
 
         param = template.parameters[0]
         assert param.validation is None
@@ -367,13 +318,12 @@ class TestHydrateDatabaseAllowedValues:
             values=["Cat1", "Cat2"], is_partial=False
         )
 
-        executor = _make_executor(provider)
         template = _make_template(validation=None)
 
         # Confirm precondition
         assert template.parameters[0].validation is None
 
-        await executor._hydrate_database_allowed_values(template)
+        await _hydrate_database_allowed_values(template, provider)
 
         param = template.parameters[0]
         assert param.validation is not None
@@ -387,24 +337,14 @@ class TestHydrateDatabaseAllowedValues:
             values=["New1", "New2"], is_partial=False
         )
 
-        executor = _make_executor(provider)
         template = _make_template(
             validation=ParameterValidation(type="string", allowed_values=["Old"])
         )
 
-        await executor._hydrate_database_allowed_values(template)
+        await _hydrate_database_allowed_values(template, provider)
 
         assert template.parameters[0].validation is not None
         assert template.parameters[0].validation.allowed_values == ["New1", "New2"]
-
-    async def test_no_provider_is_noop(self) -> None:
-        """When no provider is configured, hydration is a no-op."""
-        executor = _make_executor(provider=None)
-        template = _make_template()
-
-        # Should not raise
-        await executor._hydrate_database_allowed_values(template)
-        assert template.parameters[0].validation is None
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -417,7 +357,7 @@ class TestValidatorPartialCacheIntegration:
 
     def test_string_validator_rejects_unknown_value(self) -> None:
         """_validate_string rejects a value not in allowed_values."""
-        from entities.parameter_validator.executor import _validate_string
+        from entities.parameter_validator.validator import _validate_string
 
         validation = ParameterValidation(type="string", allowed_values=["A", "B"])
         violations = _validate_string("C", validation, "test")
@@ -425,7 +365,7 @@ class TestValidatorPartialCacheIntegration:
 
     def test_string_validator_passes_without_allowed_values(self) -> None:
         """Without allowed_values, _validate_string does not reject."""
-        from entities.parameter_validator.executor import _validate_string
+        from entities.parameter_validator.validator import _validate_string
 
         validation = ParameterValidation(type="string")
         violations = _validate_string("C", validation, "test")

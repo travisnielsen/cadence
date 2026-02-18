@@ -6,14 +6,27 @@ phases (deterministic extraction, confidence scoring, confirmation notes,
 hypothesis prompts, and schema area detection) work together correctly.
 """
 
-import importlib
-import sys
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
-from entities.orchestrator.orchestrator import (
+from entities.assistant.assistant import (
     SCHEMA_SUGGESTIONS,
     _detect_schema_area,
+)
+from entities.nl2sql_controller.pipeline import (
+    _CONFIDENCE_THRESHOLD_HIGH,
+    _CONFIDENCE_THRESHOLD_LOW,
+    _format_confirmation_note,
+    _format_hypothesis_prompt,
+)
+
+# ---------------------------------------------------------------------------
+# Direct imports from the new pipeline/extractor modules
+# ---------------------------------------------------------------------------
+from entities.parameter_extractor.extractor import (
+    _build_parameter_confidences,
+    _fuzzy_match_allowed_value,
+    _hydrate_database_allowed_values,
+    _pre_extract_parameters,
 )
 from entities.shared.allowed_values_provider import AllowedValuesProvider, AllowedValuesResult
 from models import (
@@ -22,62 +35,6 @@ from models import (
     ParameterValidation,
     QueryTemplate,
 )
-
-# ---------------------------------------------------------------------------
-# Stub agent_framework so we can import executor modules without a real client
-# ---------------------------------------------------------------------------
-_mock_af = MagicMock()
-_mock_af.handler = lambda fn: fn
-_mock_af.ChatAgent = MagicMock
-_mock_af.Executor = type("Executor", (), {"__init__": lambda _self, **_kw: None})
-_mock_af.WorkflowContext = MagicMock
-_mock_af.AgentThread = MagicMock
-_mock_af.AgentResponse = MagicMock
-_mock_af.Role = MagicMock
-_mock_af.response_handler = lambda fn: fn
-sys.modules.setdefault("agent_framework", _mock_af)
-sys.modules.setdefault("agent_framework_azure_ai", MagicMock())
-
-# Import parameter_extractor executor via importlib to avoid __init__ side-effects
-_pe_path = (
-    Path(__file__).resolve().parents[2]
-    / "src"
-    / "backend"
-    / "entities"
-    / "parameter_extractor"
-    / "executor.py"
-)
-_pe_spec = importlib.util.spec_from_file_location(  # type: ignore[union-attr]
-    "entities.parameter_extractor.executor", _pe_path
-)
-_pe_mod = importlib.util.module_from_spec(_pe_spec)  # type: ignore[arg-type]
-_pe_spec.loader.exec_module(_pe_mod)  # type: ignore[union-attr]
-
-_pre_extract_parameters = _pe_mod._pre_extract_parameters
-_build_parameter_confidences = _pe_mod._build_parameter_confidences
-_fuzzy_match_allowed_value = _pe_mod._fuzzy_match_allowed_value
-ParameterExtractorExecutor = _pe_mod.ParameterExtractorExecutor
-
-# Import nl2sql_controller executor via importlib
-_ctrl_path = (
-    Path(__file__).resolve().parents[2]
-    / "src"
-    / "backend"
-    / "entities"
-    / "nl2sql_controller"
-    / "executor.py"
-)
-_ctrl_spec = importlib.util.spec_from_file_location(  # type: ignore[union-attr]
-    "entities.nl2sql_controller.executor", _ctrl_path
-)
-_ctrl_mod = importlib.util.module_from_spec(_ctrl_spec)  # type: ignore[arg-type]
-_ctrl_spec.loader.exec_module(_ctrl_mod)  # type: ignore[union-attr]
-
-_format_confirmation_note = _ctrl_mod._format_confirmation_note
-_format_hypothesis_prompt = _ctrl_mod._format_hypothesis_prompt
-_CONFIDENCE_THRESHOLD_HIGH = _ctrl_mod._CONFIDENCE_THRESHOLD_HIGH
-_CONFIDENCE_THRESHOLD_LOW = _ctrl_mod._CONFIDENCE_THRESHOLD_LOW
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -248,15 +205,8 @@ class TestDatabaseHydrationFuzzyMatch:
             ],
         )
 
-        # Build a mock executor with the real _hydrate method
-        executor = MagicMock()
-        executor._allowed_values_provider = provider
-        executor._partial_cache_params = set()
-        executor._hydrate_database_allowed_values = (
-            ParameterExtractorExecutor._hydrate_database_allowed_values.__get__(executor)
-        )
-
-        await executor._hydrate_database_allowed_values(template)
+        # Call the standalone hydration function directly
+        await _hydrate_database_allowed_values(template, provider)
 
         # Verify hydration worked
         param = template.parameters[0]

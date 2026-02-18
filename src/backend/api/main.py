@@ -5,9 +5,9 @@ This module handles application setup, lifespan management, and middleware confi
 Route handlers are organized in the routers/ package.
 
 The API uses a hybrid architecture:
-- ConversationOrchestrator: Manages chat sessions, intent classification, and refinements
-- NL2SQL Workflow: Processes data queries via NL2SQLController
-- The orchestrator invokes the workflow for data questions
+- DataAssistant: Manages chat sessions, intent classification, and refinements
+- NL2SQL Pipeline: Processes data queries via process_query
+- The assistant invokes the pipeline for data questions
 """
 
 import logging
@@ -76,7 +76,7 @@ async def lifespan(_application: FastAPI) -> AsyncIterator[None]:
     Application lifespan handler.
 
     Initializes application state on startup and cleans up on shutdown.
-    The ConversationOrchestrator and NL2SQL workflow are created per-session
+    The DataAssistant and NL2SQL pipeline are created per-session
     by the chat router, not at startup.
     """
     # Startup logging

@@ -1,10 +1,10 @@
 """
-Parameter Extractor agent and executor.
+Parameter Extractor - extracts parameter values from user queries.
 
 This module extracts parameter values from user queries to fill
-SQL template tokens using LLM-based analysis.
+SQL template tokens using deterministic and LLM-based analysis.
 """
 
-from .executor import ParameterExtractorExecutor
+from .extractor import extract_parameters
 
-__all__ = ["ParameterExtractorExecutor"]
+__all__ = ["extract_parameters"]

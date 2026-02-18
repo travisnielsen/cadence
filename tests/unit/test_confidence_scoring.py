@@ -1,12 +1,12 @@
 """Unit tests for confidence scoring functions.
 
-Tests pure helper functions from the parameter extractor executor:
+Tests pure helper functions from the parameter extractor:
 _compute_confidence, _has_validation_rules, _value_passes_validation,
 and _build_parameter_confidences.
 """
 
 import pytest
-from entities.parameter_extractor.executor import (
+from entities.parameter_extractor.extractor import (
     _build_parameter_confidences,
     _compute_confidence,
     _has_validation_rules,

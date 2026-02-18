@@ -1,5 +1,5 @@
 """Query Validator package for validating SQL queries before execution."""
 
-from .executor import QueryValidatorExecutor
+from .validator import validate_query
 
-__all__ = ["QueryValidatorExecutor"]
+__all__ = ["validate_query"]

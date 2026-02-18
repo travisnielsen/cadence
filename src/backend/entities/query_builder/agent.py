@@ -18,6 +18,26 @@ def load_prompt() -> str:
     return (Path(__file__).parent / "prompt.md").read_text(encoding="utf-8")
 
 
+def create_query_builder_agent(
+    client: AzureAIClient,
+    instructions: str,
+) -> ChatAgent:
+    """Create a query builder ChatAgent.
+
+    Args:
+        client: Azure AI client for LLM access.
+        instructions: Agent system prompt text.
+
+    Returns:
+        Configured ChatAgent for query building.
+    """
+    return ChatAgent(
+        name="query-builder-agent",
+        instructions=instructions,
+        chat_client=client,
+    )
+
+
 def _create_agent() -> ChatAgent:
     """Create the query builder agent."""
     # Get Azure AI Foundry endpoint from environment

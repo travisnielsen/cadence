@@ -14,7 +14,7 @@ The NL2SQL backend currently uses Microsoft Agent Framework (MAF) Executor/Workf
 - The Workflow message graph (WorkflowBuilder + edges) adds boilerplate and indirection for what is fundamentally a linear pipeline with one branch point (template match → ParameterExtractor **or** no match → QueryBuilder).
 - `ctx.send_message()` / `ctx.yield_output()` / `ctx.shared_state` create tight coupling to a framework that provides no real orchestration value here — there is no parallelism, no fan-out, no retry logic, no conditional routing that couldn't be expressed as `if/else`.
 - A fresh Workflow instance is created per request ("Agent Framework doesn't support concurrent workflow executions"), so there is no state reuse benefit.
-- The ConversationOrchestrator already proves the alternative: it's a plain Python class that calls `ChatAgent` directly and works fine.
+- The ConversationOrchestrator (renamed to `DataAssistant` in this spec) already proves the alternative: it's a plain Python class that calls `ChatAgent` directly and works fine.
 
 Only **two** of the five executors actually call `agent.run()` on an LLM: ParameterExtractor and QueryBuilder. Those LLM calls should be preserved — but wrapped in plain async functions instead of Executor subclasses.
 
@@ -22,9 +22,9 @@ Only **two** of the five executors actually call `agent.run()` on an LLM: Parame
 
 | MAF Component | Usage | Verdict |
 |---|---|---|
-| `ChatAgent` | LLM calls in Orchestrator, ParameterExtractor, QueryBuilder | **Keep** — thin wrapper over Azure AI Agent Service |
+| `ChatAgent` | LLM calls in DataAssistant, ParameterExtractor, QueryBuilder | **Keep** — thin wrapper over Azure AI Agent Service |
 | `AzureAIClient` | Creates ChatAgent instances with Foundry connection | **Keep** — required by ChatAgent |
-| `AgentThread` | Thread management for Orchestrator | **Keep** — Foundry thread lifecycle |
+| `AgentThread` | Thread management for DataAssistant | **Keep** — Foundry thread lifecycle |
 | `@tool` decorator | Function tools for `template_search`, `table_search`, `execute_sql` | **Keep** — registers tools with ChatAgent |
 | `Executor` subclasses | 5 classes wrapping business logic | **Remove** — replace with async functions |
 | `Workflow` / `WorkflowBuilder` | Message graph connecting executors | **Remove** — replace with a single `process_query()` function |
@@ -75,8 +75,8 @@ The `create_nl2sql_workflow()` function and `WorkflowBuilder` edge graph are rem
 2. **Given** `chat.py`, **When** it handles a data query, **Then** it calls `process_query()` directly and streams results via SSE without `Workflow.run_stream()`
 3. **Given** `chat.py`, **When** it handles a data query, **Then** step events (template search, parameter extraction, SQL execution, etc.) still appear in the SSE stream in the same order as before
 4. **Given** the `WorkflowBuilder` import, **When** the refactor is complete, **Then** no file in `src/backend/` imports `Workflow`, `WorkflowBuilder`, or `WorkflowContext`
-5. **Given** the ConversationOrchestrator, **When** it invokes the NL2SQL pipeline, **Then** it calls `process_query()` with the user's question and receives `NL2SQLResponse` directly
-6. **Given** a clarification scenario (missing parameters), **When** `process_query()` returns a `ClarificationRequest`, **Then** the orchestrator renders clarification options to the user without any MAF message wrapping
+5. **Given** the DataAssistant (formerly ConversationOrchestrator), **When** it invokes the NL2SQL pipeline, **Then** it calls `process_query()` with the user's question and receives `NL2SQLResponse` directly
+6. **Given** a clarification scenario (missing parameters), **When** `process_query()` returns a `ClarificationRequest`, **Then** the DataAssistant renders clarification options to the user without any MAF message wrapping
 
 ---
 
@@ -130,9 +130,29 @@ All existing tests are updated to work with the new function-based architecture.
 
 ---
 
+### User Story 6 — Protocol-Based Dependency Injection for Testability (Priority: P1)
+
+All I/O boundaries are abstracted behind `Protocol` interfaces and injected via `PipelineClients`. Progress reporting uses an injectable `ProgressReporter` protocol. Configuration is centralized in a `Settings` model. `ConversationOrchestrator` is renamed to `DataAssistant` and accepts an injected `ChatAgent`.
+
+**Why this priority**: Without DI, the extracted functions still require `mock.patch` of module-level globals, `sys.modules` hacks, and Azure credentials in tests. Protocol injection is what makes the refactor actually testable — it's the difference between "functions that are hard to test" and "functions that are trivial to test."
+
+**Independent Test**: Write a unit test for `process_query()` that constructs `PipelineClients` entirely from in-memory fakes. The test must run without network, filesystem, or environment variables.
+
+**Acceptance Scenarios**:
+
+1. **Given** the `TemplateSearchService` protocol, **When** a test provides a `FakeTemplateSearch` that returns canned results, **Then** `process_query()` uses it without `mock.patch`
+2. **Given** the `SqlExecutor` protocol, **When** a test provides a `FakeSqlExecutor` that returns canned rows, **Then** SQL execution works end-to-end in the pipeline test
+3. **Given** the `ProgressReporter` protocol, **When** a test provides `NoOpReporter()`, **Then** no step event infrastructure is needed — and when a test provides `SpyReporter()`, step events are captured for assertion
+4. **Given** the `Settings` model, **When** a test constructs `Settings(azure_ai_project_endpoint="test")`, **Then** no `os.getenv()` or `monkeypatch.setenv` is needed
+5. **Given** the `DataAssistant` class, **When** a test constructs `DataAssistant(mock_agent)`, **Then** no `AzureAIClient` or Foundry connection is needed
+6. **Given** any module in `src/backend/entities/`, **When** it is imported, **Then** no I/O (network, filesystem, env vars) occurs at import time
+7. **Given** any test file, **When** the refactor is complete, **Then** no `sys.modules.setdefault("agent_framework", ...)` or `importlib.util.spec_from_file_location` hack exists
+
+---
+
 ### Edge Cases
 
-- **Clarification state**: Currently stored in `ctx.shared_state[CLARIFICATION_STATE_KEY]`. After refactor, stored as a return value from `process_query()` and passed back in on the follow-up turn (orchestrator already serializes this via `ClarificationRequest`).
+- **Clarification state**: Currently stored in `ctx.shared_state[CLARIFICATION_STATE_KEY]`. After refactor, stored as a return value from `process_query()` and passed back in on the follow-up turn (DataAssistant already serializes this via `ClarificationRequest`).
 - **Step event ordering**: Functions must emit step events in the same order as the current Executor graph. The `asyncio.Queue` mechanism doesn't change — only the caller changes.
 - **Agent registration timing**: `ChatAgent` instances for ParameterExtractor and QueryBuilder are still created lazily and register with Foundry on first `agent.run()`. No change to registration behavior.
 - **Concurrent requests**: The current system creates a fresh Workflow per request. The new system creates a fresh `process_query()` call per request — same isolation, simpler mechanism.
@@ -149,14 +169,17 @@ All existing tests are updated to work with the new function-based architecture.
 - **FR-004**: The `validate_query()` function MUST be a pure function (no I/O, no LLM) that validates SQL syntax, table allowlists, and security patterns
 - **FR-005**: The `extract_parameters()` function MUST support both deterministic fast-path (fuzzy matching) and LLM-assisted extraction via `ChatAgent`
 - **FR-006**: The `build_query()` function MUST generate SQL via `ChatAgent` from table metadata when no template matches
-- **FR-007**: All functions MUST emit step events via `asyncio.Queue` for SSE streaming progress
+- **FR-007**: All functions MUST emit step events via injectable `ProgressReporter` protocol for SSE streaming progress
 - **FR-008**: The SSE endpoint MUST produce identical event structure and ordering as the pre-refactor implementation
 - **FR-009**: No file in `src/backend/` MUST import `Executor`, `Workflow`, `WorkflowBuilder`, `WorkflowContext`, `@handler`, or `@response_handler` after the refactor
 - **FR-010**: `ChatAgent`, `AzureAIClient`, `AgentThread`, and `@tool` imports MUST be preserved — these are the retained MAF components
 - **FR-011**: The `agent-framework` and `agent-framework-azure-ai` packages MUST remain in `pyproject.toml`
 - **FR-012**: All quality checks (`uv run poe check`) MUST pass with zero errors
 - **FR-013**: All existing tests MUST pass after the refactor, updated as needed for the new function signatures
-- **FR-014**: The ConversationOrchestrator MUST continue to work unchanged — it already uses the correct pattern (plain class + ChatAgent)
+- **FR-014**: The `ConversationOrchestrator` MUST be renamed to `DataAssistant` and accept an injected `ChatAgent` instead of creating one internally
+- **FR-015**: All I/O boundaries (template search, table search, SQL execution) MUST be accessed through `Protocol` interfaces injectable via `PipelineClients`
+- **FR-016**: No extracted module MUST perform I/O (network, filesystem, env vars) at import time
+- **FR-017**: Environment configuration MUST be centralized in a `Settings` model — no scattered `os.getenv()` in entity modules
 
 ### Key Entities
 
@@ -165,6 +188,10 @@ All existing tests are updated to work with the new function-based architecture.
 - **`validate_parameters()`** (new): Pure function replacing ParameterValidatorExecutor. No I/O.
 - **`build_query()`** (new): Async function replacing QueryBuilderExecutor. Calls ChatAgent for SQL generation.
 - **`validate_query()`** (new): Pure function replacing QueryValidatorExecutor. No I/O.
+- **`DataAssistant`** (renamed from ConversationOrchestrator): Data-focused assistant that classifies intent, delegates to `process_query()`, and renders responses. Accepts injected `ChatAgent`.
+- **`PipelineClients`** (new): Frozen dataclass holding all injectable dependencies (agents, services, reporter, config).
+- **`ProgressReporter`** (new): Protocol for step event emission. Implementations: `QueueReporter` (production), `NoOpReporter` (tests).
+- **`Settings`** (new): Pydantic settings model centralizing all environment configuration.
 - **`NL2SQLResponse`** (unchanged): Return type from `process_query()`.
 - **`ClarificationRequest`** (unchanged): Alternative return type when parameters are missing.
 - **`SQLDraft`** (simplified): Passed between functions directly — no `SQLDraftMessage` wrapper needed.
@@ -182,3 +209,6 @@ All existing tests are updated to work with the new function-based architecture.
 - **SC-007**: Foundry portal shows the same agents registered (parameter-extractor-agent, query-builder-agent, conversation-orchestrator) after refactor
 - **SC-008**: Unit tests for extracted pure functions (validate_parameters, validate_query) require zero mocks of framework objects
 - **SC-009**: The `process_query()` function is callable from a test with only ChatAgent mocks — no Workflow setup needed
+- **SC-010**: Zero `sys.modules` hacks or `importlib.util.spec_from_file_location` workarounds in any test file
+- **SC-011**: All tests run without Azure credentials (CI-safe)
+- **SC-012**: DataAssistant is testable with a mocked ChatAgent — no AzureAIClient needed

@@ -18,6 +18,26 @@ def load_prompt() -> str:
     return (Path(__file__).parent / "prompt.md").read_text(encoding="utf-8")
 
 
+def create_param_extractor_agent(
+    client: AzureAIClient,
+    instructions: str,
+) -> ChatAgent:
+    """Create a parameter extractor ChatAgent.
+
+    Args:
+        client: Azure AI client for LLM access.
+        instructions: Agent system prompt text.
+
+    Returns:
+        Configured ChatAgent for parameter extraction.
+    """
+    return ChatAgent(
+        name="parameter-extractor-agent",
+        instructions=instructions,
+        chat_client=client,
+    )
+
+
 def _create_agent() -> ChatAgent:
     """Create the parameter extractor agent."""
     # Get Azure AI Foundry endpoint from environment

@@ -1,5 +1,4 @@
-"""
-Standalone Conversation Orchestrator that manages chat sessions.
+"""DataAssistant — manages chat sessions and invokes the NL2SQL workflow.
 
 This agent owns the Foundry thread and conversation history.
 It classifies user intent, invokes the NL2SQL workflow for data questions,
@@ -13,9 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from agent_framework import AgentThread
-from agent_framework import ChatAgent as MAFChatAgent
-from agent_framework_azure_ai import AzureAIClient
+from agent_framework import AgentThread, ChatAgent
 from models import NL2SQLRequest, NL2SQLResponse, SchemaSuggestion
 
 logger = logging.getLogger(__name__)
@@ -113,9 +110,7 @@ def _detect_schema_area(tables: list[str]) -> str | None:
 
 @dataclass
 class ConversationContext:
-    """
-    Tracks the context of the current conversation for refinements.
-    """
+    """Tracks the context of the current conversation for refinements."""
 
     # Template-based query context
     last_template_json: str | None = None
@@ -125,8 +120,8 @@ class ConversationContext:
 
     # Dynamic query context
     last_sql: str | None = None
-    last_tables: list[str] = field(default_factory=list)  # Table names for logging
-    last_tables_json: str | None = None  # Full TableMetadata JSON for reuse
+    last_tables: list[str] = field(default_factory=list)
+    last_tables_json: str | None = None
     last_question: str = ""
     query_source: str = ""  # "template" or "dynamic"
 
@@ -144,17 +139,16 @@ class ClassificationResult:
     param_overrides: dict = field(default_factory=dict)  # For refinements
 
 
-def _load_prompt() -> str:
-    """Load the conversation orchestrator prompt."""
-    prompt_path = Path(__file__).parent / "orchestrator_prompt.md"
+def load_assistant_prompt() -> str:
+    """Load the DataAssistant instructions prompt."""
+    prompt_path = Path(__file__).parent / "assistant_prompt.md"
     if not prompt_path.exists():
         raise FileNotFoundError(f"Prompt not found: {prompt_path}")
     return prompt_path.read_text(encoding="utf-8")
 
 
-class ConversationOrchestrator:
-    """
-    Standalone orchestrator that manages conversation flow.
+class DataAssistant:
+    """Manages conversation flow and invokes the NL2SQL workflow.
 
     Responsibilities:
     1. Own the Foundry thread and conversation history
@@ -164,27 +158,19 @@ class ConversationOrchestrator:
     5. Render results back to the user
     """
 
-    def __init__(self, client: AzureAIClient, thread_id: str | None = None) -> None:
-        """
-        Initialize the conversation orchestrator.
+    def __init__(self, agent: ChatAgent, thread_id: str | None = None) -> None:
+        """Initialize the DataAssistant.
 
         Args:
-            client: Azure AI Agent client for LLM calls
+            agent: Pre-configured ChatAgent for LLM calls
             thread_id: Optional existing Foundry thread ID to resume
         """
-        self.client = client
+        self.agent = agent
         self.context = ConversationContext()
         self._thread: AgentThread | None = None
         self._initial_thread_id = thread_id
 
-        # Create the underlying MAF agent for LLM calls
-        self.agent = MAFChatAgent(
-            name="ConversationOrchestrator",
-            instructions=_load_prompt(),
-            chat_client=client,
-        )
-
-        logger.info("ConversationOrchestrator initialized (thread_id=%s)", thread_id)
+        logger.info("DataAssistant initialized (thread_id=%s)", thread_id)
 
     @property
     def thread_id(self) -> str | None:
@@ -199,31 +185,26 @@ class ConversationOrchestrator:
             return self._thread
 
         if self._initial_thread_id:
-            # Resume existing thread
             self._thread = self.agent.get_new_thread(service_thread_id=self._initial_thread_id)
             logger.info("Resumed thread: %s", self._initial_thread_id)
         else:
-            # Create new thread
             self._thread = self.agent.get_new_thread()
             logger.info("Created new thread")
 
         return self._thread
 
     async def classify_intent(self, user_message: str) -> ClassificationResult:
-        """
-        Classify the user's intent using the LLM.
+        """Classify the user's intent using the LLM.
 
         The LLM considers conversation history to detect refinements.
 
         Returns:
-            ClassificationResult with intent type and any extracted overrides
+            ClassificationResult with intent type and any extracted overrides.
         """
         thread = await self.get_or_create_thread()
 
-        # Build classification prompt with context
         context_info = ""
         if self.context.query_source == "template" and self.context.last_template_json:
-            # Template-based query context
             try:
                 template_data = json.loads(self.context.last_template_json)
                 param_names = [p.get("name") for p in template_data.get("parameters", [])]
@@ -237,7 +218,6 @@ Previous query context (TEMPLATE-BASED):
             except json.JSONDecodeError:
                 pass
         elif self.context.query_source == "dynamic" and self.context.last_sql:
-            # Dynamic query context
             context_info = f"""
 Previous query context (DYNAMIC):
 - Original question: {self.context.last_question}
@@ -266,17 +246,14 @@ Important: A refinement ONLY applies if there was a previous query and the user 
 
 JSON response:"""
 
-        # Call LLM for classification
         result = await self.agent.run(
             classification_prompt,
             thread=thread,
         )
 
-        # Parse the response - AgentRunResponse has .text property
         response_text = result.text or ""
 
         try:
-            # Extract JSON from response
             json_start = response_text.find("{")
             json_end = response_text.rfind("}") + 1
             if json_start >= 0 and json_end > json_start:
@@ -297,15 +274,13 @@ JSON response:"""
         except json.JSONDecodeError as e:
             logger.warning("Failed to parse classification response: %s", e)
 
-        # Default to conversation if classification fails
         return ClassificationResult(intent="conversation")
 
     async def handle_conversation(self, user_message: str) -> str:
-        """
-        Handle general conversation using the LLM.
+        """Handle general conversation using the LLM.
 
         Returns:
-            The agent's conversational response
+            The agent's conversational response.
         """
         thread = await self.get_or_create_thread()
 
@@ -314,18 +289,15 @@ JSON response:"""
             thread=thread,
         )
 
-        # AgentRunResponse has .text property
         return result.text or ""
 
     def build_nl2sql_request(self, classification: ClassificationResult) -> NL2SQLRequest:
-        """
-        Build an NL2SQL request based on the classification.
+        """Build an NL2SQL request based on the classification.
 
         For refinements, includes the previous template/query context.
         """
         if classification.intent == "refinement":
             if self.context.query_source == "template" and self.context.last_template_json:
-                # Template-based refinement
                 return NL2SQLRequest(
                     user_query=classification.query,
                     is_refinement=True,
@@ -334,7 +306,6 @@ JSON response:"""
                     param_overrides=classification.param_overrides,
                 )
             if self.context.query_source == "dynamic" and self.context.last_sql:
-                # Dynamic query refinement - pass full table metadata
                 return NL2SQLRequest(
                     user_query=classification.query,
                     is_refinement=True,
@@ -344,7 +315,6 @@ JSON response:"""
                     previous_question=self.context.last_question,
                 )
 
-        # New query
         return NL2SQLRequest(
             user_query=classification.query,
             is_refinement=False,
@@ -376,21 +346,18 @@ JSON response:"""
         if not area_suggestions:
             return []
 
-        # Rotate based on depth so repeated queries get varied suggestions
         count = len(area_suggestions)
         start = (depth - 1) % count
         rotated = [*area_suggestions[start:], *area_suggestions[:start]]
         selected = rotated[:3]
 
-        # At sufficient depth, replace last suggestion with cross-area suggestion
-        if depth >= ConversationOrchestrator._CROSS_AREA_DEPTH_THRESHOLD:
+        if depth >= DataAssistant._CROSS_AREA_DEPTH_THRESHOLD:
             sorted_areas = sorted(SCHEMA_SUGGESTIONS.keys())
             current_idx = sorted_areas.index(schema_area)
             next_area = sorted_areas[(current_idx + 1) % len(sorted_areas)]
             cross_suggestion = SCHEMA_SUGGESTIONS[next_area][0]
             selected = [*selected[:2], cross_suggestion]
 
-        # Prepend recovery suggestion for empty results
         if not has_results:
             recovery = SchemaSuggestion(
                 title="Try broader filters",
@@ -403,8 +370,7 @@ JSON response:"""
     def update_context(
         self, response: NL2SQLResponse, template_json: str | None, params: dict
     ) -> None:
-        """
-        Update conversation context after a successful query.
+        """Update conversation context after a successful query.
 
         Args:
             response: The NL2SQL response
@@ -412,33 +378,27 @@ JSON response:"""
             params: The parameters that were used
         """
         if not response.error and response.sql_query:
-            # Track query source for refinement handling
             self.context.query_source = response.query_source
 
             if response.query_source == "template" and template_json:
-                # Template-based query context
                 self.context.last_template_json = template_json
                 self.context.last_params = params
                 self.context.last_defaults_used = response.defaults_used
                 self.context.last_query = response.sql_query
-                # Clear dynamic context
                 self.context.last_sql = None
                 self.context.last_tables = []
                 self.context.last_tables_json = None
                 self.context.last_question = ""
             else:
-                # Dynamic query context
                 self.context.last_sql = response.sql_query
                 self.context.last_tables = response.tables_used
                 self.context.last_tables_json = response.tables_metadata_json
                 self.context.last_question = response.original_question
-                # Clear template context
                 self.context.last_template_json = None
                 self.context.last_params = {}
                 self.context.last_defaults_used = {}
                 self.context.last_query = response.sql_query
 
-            # Detect schema area from tables used in the query
             if response.tables_used:
                 tables = response.tables_used
             else:
@@ -452,7 +412,7 @@ JSON response:"""
             self.context.current_schema_area = detected_area
 
             logger.info(
-                "Updated conversation context for %s query refinement (schema_area=%s, depth=%d)",
+                "Updated context for %s query refinement (schema_area=%s, depth=%d)",
                 self.context.query_source,
                 self.context.current_schema_area,
                 self.context.schema_exploration_depth,
@@ -474,11 +434,10 @@ JSON response:"""
         return response
 
     def render_response(self, response: NL2SQLResponse) -> dict:
-        """
-        Render the NL2SQL response for the frontend.
+        """Render the NL2SQL response for the frontend.
 
         Returns:
-            A structured dict with text, thread_id, and tool_call data
+            A structured dict with text, thread_id, and tool_call data.
         """
         text = self._format_response_text(response)
 
@@ -527,7 +486,6 @@ JSON response:"""
 
         lines = []
 
-        # Add note about defaults used if any
         if response.defaults_used:
             descriptions = list(response.defaults_used.values())
             if len(descriptions) == 1:

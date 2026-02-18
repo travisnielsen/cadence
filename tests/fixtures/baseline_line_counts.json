@@ -1,0 +1,56 @@
+{
+    "captured_at": "2026-02-18",
+    "description": "Pre-refactor baseline line counts for spec 003-simplify-workflow",
+    "pipeline_files": {
+        "total": 5022,
+        "files": {
+            "entities/nl2sql_controller/executor.py": 1296,
+            "entities/parameter_extractor/executor.py": 982,
+            "entities/parameter_validator/executor.py": 462,
+            "entities/query_builder/executor.py": 368,
+            "entities/query_validator/executor.py": 384,
+            "entities/workflow/workflow.py": 159,
+            "entities/orchestrator/orchestrator.py": 553,
+            "api/routers/chat.py": 540,
+            "api/step_events.py": 163,
+            "api/session_manager.py": 115
+        }
+    },
+    "model_files": {
+        "total": 622,
+        "files": {
+            "models/schema.py": 117,
+            "models/extraction.py": 158,
+            "models/generation.py": 169,
+            "models/execution.py": 124,
+            "models/__init__.py": 54
+        }
+    },
+    "shared_files": {
+        "total": 632,
+        "files": {
+            "entities/shared/allowed_values_provider.py": 202,
+            "entities/shared/column_filter.py": 195,
+            "entities/shared/error_recovery.py": 126,
+            "entities/shared/substitution.py": 97,
+            "entities/shared/__init__.py": 12
+        }
+    },
+    "agent_files": {
+        "total": 126,
+        "files": {
+            "entities/parameter_extractor/agent.py": 63,
+            "entities/query_builder/agent.py": 63
+        }
+    },
+    "tool_files": {
+        "total": 515,
+        "files": {
+            "entities/nl2sql_controller/tools/sql.py": 77,
+            "entities/nl2sql_controller/tools/table_search.py": 162,
+            "entities/nl2sql_controller/tools/__init__.py": 19,
+            "entities/nl2sql_controller/tools/template_search.py": 257
+        }
+    },
+    "grand_total": 6917
+}

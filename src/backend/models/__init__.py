@@ -7,9 +7,7 @@ All models are re-exported here for backward compatibility.
 
 from .execution import ClarificationInfo, NL2SQLResponse, SchemaSuggestion
 from .extraction import (
-    ClarificationMessage,
     ClarificationRequest,
-    ExtractionRequestMessage,
     MissingParameter,
     NL2SQLRequest,
     ParameterConfidence,
@@ -17,9 +15,7 @@ from .extraction import (
 )
 from .generation import (
     QueryBuilderRequest,
-    QueryBuilderRequestMessage,
     SQLDraft,
-    SQLDraftMessage,
 )
 from .schema import (
     ParameterDefinition,
@@ -32,9 +28,7 @@ from .schema import (
 
 __all__ = [
     "ClarificationInfo",
-    "ClarificationMessage",
     "ClarificationRequest",
-    "ExtractionRequestMessage",
     "MissingParameter",
     "NL2SQLRequest",
     "NL2SQLResponse",
@@ -44,10 +38,8 @@ __all__ = [
     "ParameterNormalization",
     "ParameterValidation",
     "QueryBuilderRequest",
-    "QueryBuilderRequestMessage",
     "QueryTemplate",
     "SQLDraft",
-    "SQLDraftMessage",
     "SchemaSuggestion",
     "TableColumn",
     "TableMetadata",

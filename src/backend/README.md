@@ -103,13 +103,13 @@ flowchart TB
 | Component | Path | Purpose |
 |-----------|------|---------|
 | **API Layer** | `api/` | FastAPI routes, middleware, SSE streaming |
-| **ConversationOrchestrator** | `entities/orchestrator/` | Session management, intent classification, response rendering |
-| **NL2SQLController** | `entities/nl2sql_controller/` | Query flow orchestration, template search, SQL execution |
+| **DataAssistant** | `entities/assistant/` | Session management, intent classification, response rendering |
+| **NL2SQL Pipeline** | `entities/nl2sql_controller/` | Query pipeline (`process_query`), template search, SQL execution |
 | **ParameterExtractor** | `entities/parameter_extractor/` | Extracts parameter values from natural language to fill SQL template tokens |
 | **ParameterValidator** | `entities/parameter_validator/` | Non-LLM validation of parameters (type, range, regex, allowed values) |
 | **QueryBuilder** | `entities/query_builder/` | Dynamic SQL generation from table metadata when no template matches |
 | **QueryValidator** | `entities/query_validator/` | SQL syntax validation, table allowlist, security checks |
-| **Workflow** | `entities/workflow/` | MAF workflow definition connecting all agents |
+| **Pipeline Clients** | `entities/workflow/` | Protocol-based DI container (`PipelineClients`), adapter factories |
 
 ### API Endpoints
 

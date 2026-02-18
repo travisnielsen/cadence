@@ -1,5 +1,5 @@
 """Parameter Validator - validates extracted parameter values against rules."""
 
-from .executor import ParameterValidatorExecutor
+from .validator import validate_parameters
 
-__all__ = ["ParameterValidatorExecutor"]
+__all__ = ["validate_parameters"]

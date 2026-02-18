@@ -15,12 +15,10 @@ from .schema import QueryTemplate
 
 @dataclass
 class ClarificationRequest:
-    """
-    Request for clarification sent via ctx.request_info().
+    """Request for parameter clarification.
 
-    This is a dataclass (not Pydantic) for compatibility with Agent Framework's
-    request_info/response_handler pattern. The workflow will pause when this
-    is emitted, and resume when a response is provided via send_responses_streaming.
+    A dataclass representing a request to the user for missing or
+    ambiguous parameter information.
     """
 
     parameter_name: str
@@ -75,28 +73,6 @@ class MissingParameter(BaseModel):
     alternatives: list[str] | None = Field(
         default=None, description="Alternative values the user might mean"
     )
-
-
-class ClarificationMessage(BaseModel):
-    """
-    A wrapper for user clarification responses.
-
-    This type is used by the workflow to distinguish between new questions
-    (sent as plain strings) and clarification responses (wrapped in this type).
-    """
-
-    clarification_text: str = Field(description="The user's clarification response")
-
-
-class ExtractionRequestMessage(BaseModel):
-    """
-    A wrapper for parameter extraction requests.
-
-    This type is used by the workflow to distinguish extraction requests
-    from other string messages sent to NL2SQL.
-    """
-
-    request_json: str = Field(description="The JSON-encoded extraction request")
 
 
 class ParameterExtractionRequest(BaseModel):

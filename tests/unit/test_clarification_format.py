@@ -1,40 +1,16 @@
 """Unit tests for clarification formatting functions.
 
-Tests pure helper functions from the NL2SQL controller executor:
+Tests pure helper functions from the NL2SQL pipeline:
 _format_hypothesis_prompt, _format_confirmation_note, and
 threshold constants.
 """
 
-import importlib
-import sys
-from pathlib import Path
-from unittest.mock import MagicMock
-
-# The nl2sql_controller __init__ eagerly creates an Azure agent, so we
-# pre-register its package with a stub to avoid the import side-effect.
-_pkg = "entities.nl2sql_controller"
-if _pkg not in sys.modules:
-    sys.modules[_pkg] = MagicMock()  # type: ignore[assignment]
-
-# Now we can safely import the executor module directly.
-_executor_path = (
-    Path(__file__).resolve().parents[2]
-    / "src"
-    / "backend"
-    / "entities"
-    / "nl2sql_controller"
-    / "executor.py"
+from entities.nl2sql_controller.pipeline import (
+    _CONFIDENCE_THRESHOLD_HIGH,
+    _CONFIDENCE_THRESHOLD_LOW,
+    _format_confirmation_note,
+    _format_hypothesis_prompt,
 )
-_spec = importlib.util.spec_from_file_location(  # type: ignore[union-attr]
-    "entities.nl2sql_controller.executor", _executor_path
-)
-_mod = importlib.util.module_from_spec(_spec)  # type: ignore[arg-type]
-_spec.loader.exec_module(_mod)  # type: ignore[union-attr]
-
-_format_hypothesis_prompt = _mod._format_hypothesis_prompt
-_format_confirmation_note = _mod._format_confirmation_note
-_CONFIDENCE_THRESHOLD_HIGH = _mod._CONFIDENCE_THRESHOLD_HIGH
-_CONFIDENCE_THRESHOLD_LOW = _mod._CONFIDENCE_THRESHOLD_LOW
 from models import MissingParameter
 
 # ── _format_hypothesis_prompt ────────────────────────────────────────────

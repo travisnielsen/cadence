@@ -6,13 +6,13 @@ and _build_parameter_confidences.
 """
 
 import pytest
-from entities.parameter_extractor.extractor import (
+from models import ParameterDefinition, ParameterValidation, QueryTemplate
+from parameter_extractor.extractor import (
     _build_parameter_confidences,
     _compute_confidence,
     _has_validation_rules,
     _value_passes_validation,
 )
-from models import ParameterDefinition, ParameterValidation, QueryTemplate
 
 # ── _compute_confidence ──────────────────────────────────────────────────
 

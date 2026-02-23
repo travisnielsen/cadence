@@ -8,7 +8,7 @@ pre-defined template matches the user's question.
 import os
 from pathlib import Path
 
-from agent_framework import ChatAgent
+from agent_framework import Agent
 from agent_framework_azure_ai import AzureAIClient
 from azure.identity.aio import DefaultAzureCredential
 
@@ -21,24 +21,24 @@ def load_prompt() -> str:
 def create_query_builder_agent(
     client: AzureAIClient,
     instructions: str,
-) -> ChatAgent:
-    """Create a query builder ChatAgent.
+) -> Agent:
+    """Create a query builder Agent.
 
     Args:
         client: Azure AI client for LLM access.
         instructions: Agent system prompt text.
 
     Returns:
-        Configured ChatAgent for query building.
+        Configured Agent for query building.
     """
-    return ChatAgent(
+    return Agent(
         name="query-builder-agent",
         instructions=instructions,
-        chat_client=client,
+        client=client,
     )
 
 
-def _create_agent() -> ChatAgent:
+def _create_agent() -> Agent:
     """Create the query builder agent."""
     # Get Azure AI Foundry endpoint from environment
     endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT", "")
@@ -72,10 +72,10 @@ def _create_agent() -> ChatAgent:
     instructions = load_prompt()
 
     # Create agent (no tools needed - this is pure LLM reasoning)
-    return ChatAgent(
+    return Agent(
         name="query-builder-agent",
         instructions=instructions,
-        chat_client=chat_client,
+        client=chat_client,
     )
 
 

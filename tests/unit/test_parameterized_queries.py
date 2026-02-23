@@ -5,7 +5,7 @@ from the NL2SQL controller substitution module.
 """
 
 import pytest
-from entities.shared.substitution import (
+from shared.substitution import (
     ParameterizedQuery,
     substitute_parameters,
 )

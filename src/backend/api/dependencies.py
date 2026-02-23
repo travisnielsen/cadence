@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from fastapi import Depends, HTTPException, Request
 
 if TYPE_CHECKING:
-    from agent_framework import ChatAgent
+    from agent_framework import Agent
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ def get_project_client(request: Request) -> Any:  # noqa: ANN401
     return chat_client
 
 
-def get_agent(request: Request) -> "ChatAgent":
+def get_agent(request: Request) -> "Agent":
     """
     Get the agent from app state.
 

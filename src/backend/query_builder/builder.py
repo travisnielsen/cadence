@@ -11,9 +11,9 @@ import logging
 import re
 from typing import Any
 
-from agent_framework import AgentThread, ChatAgent
-from entities.shared.protocols import NoOpReporter, ProgressReporter
+from agent_framework import Agent, AgentSession
 from models import QueryBuilderRequest, SQLDraft, TableMetadata
+from shared.protocols import NoOpReporter, ProgressReporter
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +112,8 @@ def _parse_llm_response(response_text: str) -> dict[str, Any]:
 
 async def build_query(
     request: QueryBuilderRequest,
-    agent: ChatAgent,
-    thread: AgentThread,
+    agent: Agent,
+    thread: AgentSession,
     reporter: ProgressReporter = NoOpReporter(),
 ) -> SQLDraft:
     """Generate a SQL query from table metadata via LLM analysis.
@@ -147,7 +147,7 @@ async def build_query(
 
         generation_prompt = _build_generation_prompt(user_query, tables)
 
-        response = await agent.run(generation_prompt, thread=thread)
+        response = await agent.run(generation_prompt, session=thread)
 
         # Extract response text from agent messages
         response_text = ""

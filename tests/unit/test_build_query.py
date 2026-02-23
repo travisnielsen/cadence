@@ -11,8 +11,8 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from entities.query_builder.builder import _parse_llm_response, build_query
 from models import QueryBuilderRequest, SQLDraft, TableColumn, TableMetadata
+from query_builder.builder import _parse_llm_response, build_query
 
 from tests.conftest import SpyReporter
 
@@ -76,7 +76,7 @@ def _make_request(
 
 
 def _mock_agent(response_text: str) -> MagicMock:
-    """Create a mock ChatAgent that returns the given text.
+    """Create a mock Agent that returns the given text.
 
     Args:
         response_text: The text the mock LLM should return.
@@ -97,7 +97,7 @@ def _mock_agent(response_text: str) -> MagicMock:
 
 
 def _mock_thread() -> MagicMock:
-    """Create a mock AgentThread."""
+    """Create a mock AgentSession."""
     return MagicMock()
 
 
@@ -468,7 +468,7 @@ class TestEdgeCases:
         assert result.status == "error"
 
     async def test_agent_called_with_correct_prompt_and_thread(self) -> None:
-        """Verify agent.run receives the generation prompt and thread."""
+        """Verify agent.run receives the generation prompt and session."""
         agent = _mock_agent(_success_json())
         thread = _mock_thread()
 
@@ -478,7 +478,7 @@ class TestEdgeCases:
         call_args = agent.run.call_args
         prompt_arg = call_args[0][0]
         assert "Top sellers" in prompt_arg
-        assert call_args[1]["thread"] is thread
+        assert call_args[1]["session"] is thread
 
     async def test_table_columns_in_prompt(self) -> None:
         """Table column details appear in the prompt sent to the agent."""

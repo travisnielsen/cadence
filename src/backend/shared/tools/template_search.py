@@ -11,8 +11,8 @@ import os
 from typing import Any
 
 from agent_framework import tool
-from entities.shared.clients import AzureSearchClient
 from models import ParameterDefinition, QueryTemplate
+from shared.clients import AzureSearchClient
 
 MIN_AMBIGUITY_RESULTS = 2
 

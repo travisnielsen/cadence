@@ -16,13 +16,13 @@ from typing import TYPE_CHECKING
 from .clients import PipelineClients, create_pipeline_clients
 
 if TYPE_CHECKING:
-    from entities.nl2sql_controller.pipeline import process_query as process_query
+    from nl2sql_controller.pipeline import process_query as process_query
 
 
 def __getattr__(name: str) -> object:
     """Lazily import ``process_query`` to avoid circular imports."""
     if name == "process_query":
-        from entities.nl2sql_controller.pipeline import process_query  # noqa: PLC0415
+        from nl2sql_controller.pipeline import process_query  # noqa: PLC0415
 
         return process_query
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

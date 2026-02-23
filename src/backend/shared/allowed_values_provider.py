@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 from weakref import WeakSet
 
-from entities.shared.clients.sql_client import AzureSqlClient
+from shared.clients.sql_client import AzureSqlClient
 
 logger = logging.getLogger(__name__)
 

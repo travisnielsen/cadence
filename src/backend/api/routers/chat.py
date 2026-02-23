@@ -71,9 +71,9 @@ async def generate_clarification_response_stream(
     del request_id  # Used by caller for lookup only
     from api.session_manager import get_assistant, store_assistant
     from config.settings import get_settings
-    from entities.nl2sql_controller.pipeline import process_query
-    from entities.shared.protocols import QueueReporter
-    from entities.workflow.clients import create_pipeline_clients
+    from nl2sql_controller.pipeline import process_query
+    from shared.protocols import QueueReporter
+    from workflow.clients import create_pipeline_clients
 
     step_queue: asyncio.Queue[dict] = asyncio.Queue()
     set_step_queue(step_queue)
@@ -187,15 +187,15 @@ async def generate_orchestrator_streaming_response(
     del title  # TODO: Use for thread metadata
     import time
 
-    from agent_framework import ChatAgent
+    from agent_framework import Agent
     from agent_framework_azure_ai import AzureAIClient
     from api.session_manager import get_assistant, store_assistant
+    from assistant import DataAssistant, load_assistant_prompt
     from azure.identity.aio import DefaultAzureCredential
     from config.settings import get_settings
-    from entities.assistant import DataAssistant, load_assistant_prompt
-    from entities.nl2sql_controller.pipeline import process_query
-    from entities.shared.protocols import QueueReporter
-    from entities.workflow.clients import create_pipeline_clients
+    from nl2sql_controller.pipeline import process_query
+    from shared.protocols import QueueReporter
+    from workflow.clients import create_pipeline_clients
 
     step_queue: asyncio.Queue[dict] = asyncio.Queue()
     set_step_queue(step_queue)
@@ -231,10 +231,10 @@ async def generate_orchestrator_streaming_response(
                 use_latest_version=True,
             )
 
-            agent = ChatAgent(
+            agent = Agent(
                 name="DataAssistant",
                 instructions=load_assistant_prompt(),
-                chat_client=ai_client,
+                client=ai_client,
             )
 
             assistant = DataAssistant(agent, thread_id)

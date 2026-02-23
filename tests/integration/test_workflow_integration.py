@@ -8,11 +8,17 @@ hypothesis prompts, and schema area detection) work together correctly.
 
 from unittest.mock import AsyncMock
 
-from entities.assistant.assistant import (
+from assistant.assistant import (
     SCHEMA_SUGGESTIONS,
     _detect_schema_area,
 )
-from entities.nl2sql_controller.pipeline import (
+from models import (
+    MissingParameter,
+    ParameterDefinition,
+    ParameterValidation,
+    QueryTemplate,
+)
+from nl2sql_controller.pipeline import (
     _CONFIDENCE_THRESHOLD_HIGH,
     _CONFIDENCE_THRESHOLD_LOW,
     _format_confirmation_note,
@@ -22,25 +28,19 @@ from entities.nl2sql_controller.pipeline import (
 # ---------------------------------------------------------------------------
 # Direct imports from the new pipeline/extractor modules
 # ---------------------------------------------------------------------------
-from entities.parameter_extractor.extractor import (
+from parameter_extractor.extractor import (
     _build_parameter_confidences,
     _fuzzy_match_allowed_value,
     _hydrate_database_allowed_values,
     _pre_extract_parameters,
 )
-from entities.shared.allowed_values_provider import AllowedValuesProvider, AllowedValuesResult
-from models import (
-    MissingParameter,
-    ParameterDefinition,
-    ParameterValidation,
-    QueryTemplate,
-)
+from shared.allowed_values_provider import AllowedValuesProvider, AllowedValuesResult
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
 
-_PATCH_TARGET = "entities.shared.allowed_values_provider.AzureSqlClient"
+_PATCH_TARGET = "shared.allowed_values_provider.AzureSqlClient"
 
 
 def _make_template(

@@ -7,8 +7,8 @@ compliance, security pattern detection, and edge cases.
 from __future__ import annotations
 
 import pytest
-from entities.query_validator.validator import validate_query
 from models import SQLDraft
+from query_validator.validator import validate_query
 
 # Consistent allowed-tables set used across tests
 ALLOWED_TABLES: set[str] = {

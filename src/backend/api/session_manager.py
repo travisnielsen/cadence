@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from config.settings import get_settings
 
 if TYPE_CHECKING:
-    from entities.assistant import DataAssistant
+    from assistant import DataAssistant
 
 logger = logging.getLogger(__name__)
 

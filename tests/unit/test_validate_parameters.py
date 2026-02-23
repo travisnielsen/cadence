@@ -4,11 +4,11 @@ Tests the pure ``validate_parameters()`` and ``validate_all_parameters()``
 functions from the parameter validator module.
 """
 
-from entities.parameter_validator.validator import (
+from models import ParameterDefinition, ParameterValidation, SQLDraft
+from parameter_validator.validator import (
     validate_all_parameters,
     validate_parameters,
 )
-from models import ParameterDefinition, ParameterValidation, SQLDraft
 
 # ---------------------------------------------------------------------------
 # Helpers

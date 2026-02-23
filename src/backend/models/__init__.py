@@ -1,5 +1,5 @@
 """
-Shared models for entities.
+Shared models for backend components.
 
 These models are used across multiple agents and the workflow.
 All models are re-exported here for backward compatibility.

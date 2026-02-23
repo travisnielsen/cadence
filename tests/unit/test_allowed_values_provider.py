@@ -9,23 +9,23 @@ import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from entities.parameter_extractor.extractor import (
+from models import ParameterDefinition, ParameterValidation, QueryTemplate
+from parameter_extractor.extractor import (
     _fuzzy_match_allowed_value,
     _hydrate_database_allowed_values,
 )
-from entities.shared.allowed_values_provider import (
+from shared.allowed_values_provider import (
     _COLUMN_PATTERN,
     _TABLE_PATTERN,
     AllowedValuesProvider,
     AllowedValuesResult,
 )
-from models import ParameterDefinition, ParameterValidation, QueryTemplate
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-_PATCH_TARGET = "entities.shared.allowed_values_provider.AzureSqlClient"
+_PATCH_TARGET = "shared.allowed_values_provider.AzureSqlClient"
 
 
 def _make_mock_client(
@@ -357,7 +357,7 @@ class TestValidatorPartialCacheIntegration:
 
     def test_string_validator_rejects_unknown_value(self) -> None:
         """_validate_string rejects a value not in allowed_values."""
-        from entities.parameter_validator.validator import _validate_string
+        from parameter_validator.validator import _validate_string
 
         validation = ParameterValidation(type="string", allowed_values=["A", "B"])
         violations = _validate_string("C", validation, "test")
@@ -365,7 +365,7 @@ class TestValidatorPartialCacheIntegration:
 
     def test_string_validator_passes_without_allowed_values(self) -> None:
         """Without allowed_values, _validate_string does not reject."""
-        from entities.parameter_validator.validator import _validate_string
+        from parameter_validator.validator import _validate_string
 
         validation = ParameterValidation(type="string")
         violations = _validate_string("C", validation, "test")

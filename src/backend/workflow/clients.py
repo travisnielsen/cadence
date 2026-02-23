@@ -17,20 +17,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agent_framework import ChatAgent
+from agent_framework import Agent
 from agent_framework_azure_ai import AzureAIClient
 from azure.identity.aio import DefaultAzureCredential
 from config.settings import Settings
-from entities.shared.allowed_values_provider import AllowedValuesProvider
-from entities.shared.clients import AzureSearchClient, AzureSqlClient
-from entities.shared.protocols import (
+from models import ParameterDefinition, QueryTemplate, TableColumn, TableMetadata
+from shared.allowed_values_provider import AllowedValuesProvider
+from shared.clients import AzureSearchClient, AzureSqlClient
+from shared.protocols import (
     NoOpReporter,
     ProgressReporter,
     SqlExecutor,
     TableSearchService,
     TemplateSearchService,
 )
-from models import ParameterDefinition, QueryTemplate, TableColumn, TableMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +132,7 @@ def _hydrate_table_metadata(raw: dict[str, Any]) -> TableMetadata:
 # Config loader
 # ---------------------------------------------------------------------------
 
-_ALLOWED_TABLES_PATH = Path(__file__).resolve().parents[2] / "config" / "allowed_tables.json"
+_ALLOWED_TABLES_PATH = Path(__file__).resolve().parents[1] / "config" / "allowed_tables.json"
 
 
 def load_allowed_tables(path: Path = _ALLOWED_TABLES_PATH) -> frozenset[str]:
@@ -439,8 +439,8 @@ class PipelineClients:
     Production code passes real Azure clients; tests pass fakes.
 
     Args:
-        param_extractor_agent: ChatAgent for parameter extraction LLM calls.
-        query_builder_agent: ChatAgent for SQL generation LLM calls.
+        param_extractor_agent: Agent for parameter extraction LLM calls.
+        query_builder_agent: Agent for SQL generation LLM calls.
         template_search: Service for searching query templates.
         table_search: Service for searching table metadata.
         sql_executor: Service for executing SQL queries.
@@ -449,8 +449,8 @@ class PipelineClients:
         allowed_values_provider: Optional provider for database-sourced allowed values.
     """
 
-    param_extractor_agent: ChatAgent
-    query_builder_agent: ChatAgent
+    param_extractor_agent: Agent
+    query_builder_agent: Agent
     template_search: TemplateSearchService
     table_search: TableSearchService
     sql_executor: SqlExecutor
@@ -470,7 +470,7 @@ def create_pipeline_clients(
 ) -> PipelineClients:
     """Build a ``PipelineClients`` from application ``Settings``.
 
-    Loads prompts from disk, creates ``ChatAgent`` instances via the
+    Loads prompts from disk, creates ``Agent`` instances via the
     updated agent factories, wraps Azure clients in Protocol adapters,
     and reads the allowed-tables config file.  No module-level singletons
     are created; each call produces a fresh, self-contained bundle.
@@ -509,16 +509,16 @@ def create_pipeline_clients(
     )
 
     # -- Prompts (loaded once from disk) -----------------------------------
-    from entities.parameter_extractor.agent import (  # noqa: PLC0415
+    from parameter_extractor.agent import (  # noqa: PLC0415
         create_param_extractor_agent,
     )
-    from entities.parameter_extractor.agent import (  # noqa: PLC0415
+    from parameter_extractor.agent import (  # noqa: PLC0415
         load_prompt as load_extractor_prompt,
     )
-    from entities.query_builder.agent import (  # noqa: PLC0415
+    from query_builder.agent import (  # noqa: PLC0415
         create_query_builder_agent,
     )
-    from entities.query_builder.agent import (  # noqa: PLC0415
+    from query_builder.agent import (  # noqa: PLC0415
         load_prompt as load_builder_prompt,
     )
 

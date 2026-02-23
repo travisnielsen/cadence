@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from agent_framework import AgentThread, ChatAgent
+from agent_framework import Agent, AgentSession
 from models import NL2SQLRequest, NL2SQLResponse, SchemaSuggestion
 
 logger = logging.getLogger(__name__)
@@ -158,16 +158,16 @@ class DataAssistant:
     5. Render results back to the user
     """
 
-    def __init__(self, agent: ChatAgent, thread_id: str | None = None) -> None:
+    def __init__(self, agent: Agent, thread_id: str | None = None) -> None:
         """Initialize the DataAssistant.
 
         Args:
-            agent: Pre-configured ChatAgent for LLM calls
+            agent: Pre-configured Agent for LLM calls
             thread_id: Optional existing Foundry thread ID to resume
         """
         self.agent = agent
         self.context = ConversationContext()
-        self._thread: AgentThread | None = None
+        self._thread: AgentSession | None = None
         self._initial_thread_id = thread_id
 
         logger.info("DataAssistant initialized (thread_id=%s)", thread_id)
@@ -175,20 +175,23 @@ class DataAssistant:
     @property
     def thread_id(self) -> str | None:
         """Get the current Foundry thread ID."""
-        if self._thread and self._thread.service_thread_id:
-            return self._thread.service_thread_id
+        if self._thread:
+            service_session_id = getattr(self._thread, "service_session_id", None)
+            if service_session_id:
+                return service_session_id
+            return self._thread.session_id
         return self._initial_thread_id
 
-    async def get_or_create_thread(self) -> AgentThread:
+    async def get_or_create_thread(self) -> AgentSession:
         """Get or create the Foundry thread."""
         if self._thread is not None:
             return self._thread
 
         if self._initial_thread_id:
-            self._thread = self.agent.get_new_thread(service_thread_id=self._initial_thread_id)
+            self._thread = self.agent.get_session(service_session_id=self._initial_thread_id)
             logger.info("Resumed thread: %s", self._initial_thread_id)
         else:
-            self._thread = self.agent.get_new_thread()
+            self._thread = self.agent.create_session()
             logger.info("Created new thread")
 
         return self._thread
@@ -248,7 +251,7 @@ JSON response:"""
 
         result = await self.agent.run(
             classification_prompt,
-            thread=thread,
+            session=thread,
         )
 
         response_text = result.text or ""
@@ -286,7 +289,7 @@ JSON response:"""
 
         result = await self.agent.run(
             user_message,
-            thread=thread,
+            session=thread,
         )
 
         return result.text or ""

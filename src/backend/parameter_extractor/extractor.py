@@ -13,9 +13,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Any
 
-from agent_framework import AgentThread, ChatAgent
-from entities.shared.allowed_values_provider import AllowedValuesProvider
-from entities.shared.protocols import NoOpReporter, ProgressReporter
+from agent_framework import Agent, AgentSession
 from models import (
     MissingParameter,
     ParameterDefinition,
@@ -24,6 +22,8 @@ from models import (
     QueryTemplate,
     SQLDraft,
 )
+from shared.allowed_values_provider import AllowedValuesProvider
+from shared.protocols import NoOpReporter, ProgressReporter
 
 logger = logging.getLogger(__name__)
 
@@ -432,8 +432,8 @@ async def _hydrate_database_allowed_values(
 
 async def extract_parameters(
     request: ParameterExtractionRequest,
-    agent: ChatAgent,
-    thread: AgentThread,
+    agent: Agent,
+    thread: AgentSession,
     reporter: ProgressReporter = NoOpReporter(),
     *,
     allowed_values_provider: AllowedValuesProvider | None = None,
@@ -446,8 +446,8 @@ async def extract_parameters(
 
     Args:
         request: Extraction request containing template and user query.
-        agent: ChatAgent used for LLM fallback.
-        thread: Existing AgentThread for the LLM conversation.
+        agent: Agent used for LLM fallback.
+        thread: Existing AgentSession for the LLM conversation.
         reporter: Progress reporter for streaming UI updates.
         allowed_values_provider: Optional provider for database-sourced
             allowed values.
@@ -474,8 +474,8 @@ async def extract_parameters(
 
 async def _extract_parameters_inner(
     request: ParameterExtractionRequest,
-    agent: ChatAgent,
-    thread: AgentThread,
+    agent: Agent,
+    thread: AgentSession,
     *,
     allowed_values_provider: AllowedValuesProvider | None = None,
 ) -> SQLDraft:
@@ -560,7 +560,7 @@ async def _extract_parameters_inner(
     extraction_prompt = _build_extraction_prompt(user_query, template)
     logger.info("Extraction prompt:\n%s", extraction_prompt)
 
-    response = await agent.run(extraction_prompt, thread=thread)
+    response = await agent.run(extraction_prompt, session=thread)
 
     # Get the response text
     response_text = ""

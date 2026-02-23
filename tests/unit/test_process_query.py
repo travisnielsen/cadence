@@ -11,8 +11,6 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from entities.nl2sql_controller.pipeline import process_query
-from entities.workflow.clients import PipelineClients
 from models import (
     ClarificationRequest,
     NL2SQLRequest,
@@ -20,8 +18,10 @@ from models import (
     ParameterDefinition,
     SQLDraft,
 )
+from nl2sql_controller.pipeline import process_query
+from workflow.clients import PipelineClients
 
-_MOD = "entities.nl2sql_controller.pipeline"
+_MOD = "nl2sql_controller.pipeline"
 
 # ── Shared test data ─────────────────────────────────────────────────────
 
@@ -138,7 +138,7 @@ def _step_names(reporter: SpyReporter) -> list[str]:
 # ── 1. Template Match Path (Happy Path) ─────────────────────────────────
 
 
-@patch(f"{_MOD}.AgentThread")
+@patch(f"{_MOD}.AgentSession")
 @patch(f"{_MOD}.validate_query")
 @patch(f"{_MOD}.validate_parameters")
 @patch(f"{_MOD}.extract_parameters", new_callable=AsyncMock)
@@ -178,7 +178,7 @@ async def test_template_path_returns_response_with_rows(
 # ── 2. Dynamic Query Path ────────────────────────────────────────────────
 
 
-@patch(f"{_MOD}.AgentThread")
+@patch(f"{_MOD}.AgentSession")
 @patch(f"{_MOD}.validate_query")
 @patch(f"{_MOD}.build_query", new_callable=AsyncMock)
 async def test_dynamic_path_returns_response(
@@ -236,7 +236,7 @@ async def test_ambiguous_match_returns_error() -> None:
 # ── 4. Clarification Path (Low Confidence) ──────────────────────────────
 
 
-@patch(f"{_MOD}.AgentThread")
+@patch(f"{_MOD}.AgentSession")
 @patch(f"{_MOD}.extract_parameters", new_callable=AsyncMock)
 async def test_low_confidence_returns_clarification(
     mock_extract: AsyncMock,
@@ -271,7 +271,7 @@ async def test_low_confidence_returns_clarification(
 # ── 5. Needs Confirmation (Medium Confidence) ───────────────────────────
 
 
-@patch(f"{_MOD}.AgentThread")
+@patch(f"{_MOD}.AgentSession")
 @patch(f"{_MOD}.validate_query")
 @patch(f"{_MOD}.validate_parameters")
 @patch(f"{_MOD}.extract_parameters", new_callable=AsyncMock)
@@ -309,7 +309,7 @@ async def test_medium_confidence_returns_response_with_confirmation(
 # ── 6. Parameter Validation Failure ──────────────────────────────────────
 
 
-@patch(f"{_MOD}.AgentThread")
+@patch(f"{_MOD}.AgentSession")
 @patch(f"{_MOD}.validate_parameters")
 @patch(f"{_MOD}.extract_parameters", new_callable=AsyncMock)
 async def test_parameter_validation_failure_returns_error(
@@ -338,7 +338,7 @@ async def test_parameter_validation_failure_returns_error(
 # ── 7. Query Validation Failure → Retry Succeeds ────────────────────────
 
 
-@patch(f"{_MOD}.AgentThread")
+@patch(f"{_MOD}.AgentSession")
 @patch(f"{_MOD}.validate_query")
 @patch(f"{_MOD}.build_query", new_callable=AsyncMock)
 async def test_dynamic_query_validation_retry_succeeds(
@@ -389,7 +389,7 @@ async def test_dynamic_query_validation_retry_succeeds(
 # ── 8. Query Validation Failure (Max Retries) ───────────────────────────
 
 
-@patch(f"{_MOD}.AgentThread")
+@patch(f"{_MOD}.AgentSession")
 @patch(f"{_MOD}.validate_query")
 @patch(f"{_MOD}.build_query", new_callable=AsyncMock)
 async def test_dynamic_query_validation_max_retries_returns_error(
@@ -433,7 +433,7 @@ async def test_dynamic_query_validation_max_retries_returns_error(
 # ── 9. Dynamic Query Confidence Gate ─────────────────────────────────────
 
 
-@patch(f"{_MOD}.AgentThread")
+@patch(f"{_MOD}.AgentSession")
 @patch(f"{_MOD}.validate_query")
 @patch(f"{_MOD}.build_query", new_callable=AsyncMock)
 async def test_dynamic_low_confidence_triggers_gate(
@@ -480,7 +480,7 @@ async def test_no_tables_returns_error() -> None:
 # ── 11. Template Refinement ──────────────────────────────────────────────
 
 
-@patch(f"{_MOD}.AgentThread")
+@patch(f"{_MOD}.AgentSession")
 @patch(f"{_MOD}.validate_query")
 @patch(f"{_MOD}.validate_parameters")
 @patch(f"{_MOD}.extract_parameters", new_callable=AsyncMock)
@@ -525,7 +525,7 @@ async def test_template_refinement_reuses_previous_template(
 # ── 12. Dynamic Refinement ───────────────────────────────────────────────
 
 
-@patch(f"{_MOD}.AgentThread")
+@patch(f"{_MOD}.AgentSession")
 @patch(f"{_MOD}.validate_query")
 @patch(f"{_MOD}.build_query", new_callable=AsyncMock)
 async def test_dynamic_refinement_reuses_previous_tables(
@@ -599,7 +599,7 @@ async def test_unexpected_exception_returns_error() -> None:
 # ── 14. SQL Execution Failure ────────────────────────────────────────────
 
 
-@patch(f"{_MOD}.AgentThread")
+@patch(f"{_MOD}.AgentSession")
 @patch(f"{_MOD}.validate_query")
 @patch(f"{_MOD}.validate_parameters")
 @patch(f"{_MOD}.extract_parameters", new_callable=AsyncMock)
@@ -632,7 +632,7 @@ async def test_sql_execution_failure_returns_error(
 
 
 @patch(f"{_MOD}.refine_columns")
-@patch(f"{_MOD}.AgentThread")
+@patch(f"{_MOD}.AgentSession")
 @patch(f"{_MOD}.validate_query")
 @patch(f"{_MOD}.build_query", new_callable=AsyncMock)
 async def test_dynamic_path_calls_refine_columns(
@@ -642,7 +642,7 @@ async def test_dynamic_path_calls_refine_columns(
     mock_refine: MagicMock,
 ) -> None:
     """Dynamic queries pass through refine_columns for column display."""
-    from entities.shared.column_filter import ColumnRefinementResult
+    from shared.column_filter import ColumnRefinementResult
 
     draft = _success_draft(
         source="dynamic",
@@ -677,7 +677,7 @@ async def test_dynamic_path_calls_refine_columns(
 # ── Edge cases ───────────────────────────────────────────────────────────
 
 
-@patch(f"{_MOD}.AgentThread")
+@patch(f"{_MOD}.AgentSession")
 @patch(f"{_MOD}.extract_parameters", new_callable=AsyncMock)
 async def test_extraction_error_status_returns_error(
     mock_extract: AsyncMock,
@@ -702,7 +702,7 @@ async def test_extraction_error_status_returns_error(
     assert "failed" in result.error.lower()
 
 
-@patch(f"{_MOD}.AgentThread")
+@patch(f"{_MOD}.AgentSession")
 @patch(f"{_MOD}.build_query", new_callable=AsyncMock)
 async def test_dynamic_build_error_returns_error(
     mock_build: AsyncMock,
@@ -727,7 +727,7 @@ async def test_dynamic_build_error_returns_error(
     assert "failed" in result.error.lower()
 
 
-@patch(f"{_MOD}.AgentThread")
+@patch(f"{_MOD}.AgentSession")
 @patch(f"{_MOD}.validate_query")
 @patch(f"{_MOD}.validate_parameters")
 @patch(f"{_MOD}.extract_parameters", new_callable=AsyncMock)
@@ -760,7 +760,7 @@ async def test_template_path_reporter_emits_understanding_intent(
     assert intent_events[1]["status"] == "completed"
 
 
-@patch(f"{_MOD}.AgentThread")
+@patch(f"{_MOD}.AgentSession")
 @patch(f"{_MOD}.validate_query")
 @patch(f"{_MOD}.validate_parameters")
 @patch(f"{_MOD}.extract_parameters", new_callable=AsyncMock)

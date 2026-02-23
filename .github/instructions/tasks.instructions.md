@@ -4,7 +4,7 @@ applyTo: "**"
 
 # Task Tracking with Beads
 
-Use `bd` (beads) for task tracking. This is a git-native issue tracker designed for AI agents.
+Use `bd` (beads) for task tracking when Beads is enabled for the current workflow. This is a git-native issue tracker designed for AI agents.
 
 ## Core Commands
 

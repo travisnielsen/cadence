@@ -13,13 +13,13 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from entities.parameter_extractor.extractor import extract_parameters
 from models import (
     ParameterDefinition,
     ParameterExtractionRequest,
     ParameterValidation,
     QueryTemplate,
 )
+from parameter_extractor.extractor import extract_parameters
 
 from tests.conftest import SpyReporter
 
@@ -68,7 +68,7 @@ def _make_request(
 
 
 def _mock_agent(response_text: str) -> MagicMock:
-    """Build a mock ChatAgent whose run() returns *response_text*."""
+    """Build a mock Agent whose run() returns *response_text*."""
     mock_content = MagicMock()
     mock_content.text = response_text
     mock_msg = MagicMock()
@@ -82,7 +82,7 @@ def _mock_agent(response_text: str) -> MagicMock:
 
 
 def _mock_thread() -> MagicMock:
-    """Build a mock AgentThread."""
+    """Build a mock AgentSession."""
     return MagicMock()
 
 

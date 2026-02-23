@@ -10,7 +10,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "src" / "backend"))
 
 from config.settings import Settings
-from entities.shared.protocols import NoOpReporter
+from shared.protocols import NoOpReporter
 
 # ---------------------------------------------------------------------------
 # Protocol fakes

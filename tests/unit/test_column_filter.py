@@ -8,7 +8,7 @@ Tests refine_columns(), _is_empty_column(), _rank_columns() for:
 - max_cols parameter behavior
 """
 
-from entities.shared.column_filter import (
+from shared.column_filter import (
     ColumnRefinementResult,
     _is_empty_column,
     _rank_columns,

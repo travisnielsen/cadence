@@ -10,12 +10,12 @@ for:
 - Schema area detection from table names
 """
 
-from entities.shared.error_recovery import (
+from models import SchemaSuggestion
+from shared.error_recovery import (
     build_error_recovery,
     classify_violations,
     detect_area_from_tables,
 )
-from models import SchemaSuggestion
 
 # ── classify_violations ─────────────────────────────────────────────────
 

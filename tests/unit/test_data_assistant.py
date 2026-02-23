@@ -1,6 +1,6 @@
 """Unit tests for ``DataAssistant`` class.
 
-Tests the assistant layer with a mocked ``ChatAgent``.  No network,
+Tests the assistant layer with a mocked ``Agent``.  No network,
 no Azure credentials.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, MagicMock
 
-from entities.assistant.assistant import (
+from assistant.assistant import (
     SCHEMA_SUGGESTIONS,
     ClassificationResult,
     ConversationContext,
@@ -22,11 +22,13 @@ from models import ClarificationInfo, NL2SQLResponse, SchemaSuggestion
 
 
 def _make_agent(response_text: str = "") -> MagicMock:
-    """Return a mocked ``ChatAgent`` whose ``run()`` returns *response_text*."""
+    """Return a mocked ``Agent`` whose ``run()`` returns *response_text*."""
     agent = MagicMock()
     mock_thread = MagicMock()
-    mock_thread.service_thread_id = "test-thread-123"
-    agent.get_new_thread.return_value = mock_thread
+    mock_thread.service_session_id = "test-thread-123"
+    mock_thread.session_id = "local-session-123"
+    agent.get_session.return_value = mock_thread
+    agent.create_session.return_value = mock_thread
 
     result = MagicMock()
     result.text = response_text

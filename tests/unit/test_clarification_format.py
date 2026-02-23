@@ -5,13 +5,13 @@ _format_hypothesis_prompt, _format_confirmation_note, and
 threshold constants.
 """
 
-from entities.nl2sql_controller.pipeline import (
+from models import MissingParameter
+from nl2sql_controller.pipeline import (
     _CONFIDENCE_THRESHOLD_HIGH,
     _CONFIDENCE_THRESHOLD_LOW,
     _format_confirmation_note,
     _format_hypothesis_prompt,
 )
-from models import MissingParameter
 
 # ── _format_hypothesis_prompt ────────────────────────────────────────────
 

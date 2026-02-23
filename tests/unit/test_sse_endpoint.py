@@ -26,7 +26,7 @@ if "api" not in sys.modules:
     sys.modules["api"] = _api_stub
 
 # Force the submodules we patch to be importable through the stub.
-from entities.assistant.assistant import ClassificationResult
+from assistant.assistant import ClassificationResult
 from models import ClarificationRequest, NL2SQLResponse
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -109,14 +109,14 @@ def _clarification_request(**overrides) -> ClarificationRequest:
 # Shared patch paths for the deferred imports inside
 # generate_orchestrator_streaming_response
 _ORCH_PATCHES = {
-    "process_query": "entities.nl2sql_controller.pipeline.process_query",
-    "create_clients": "entities.workflow.clients.create_pipeline_clients",
+    "process_query": "nl2sql_controller.pipeline.process_query",
+    "create_clients": "workflow.clients.create_pipeline_clients",
     "get_settings": "config.settings.get_settings",
     "get_assistant": "api.session_manager.get_assistant",
     "store_assistant": "api.session_manager.store_assistant",
-    "DataAssistant": "entities.assistant.DataAssistant",
-    "load_prompt": "entities.assistant.load_assistant_prompt",
-    "ChatAgent": "agent_framework.ChatAgent",
+    "DataAssistant": "assistant.DataAssistant",
+    "load_prompt": "assistant.load_assistant_prompt",
+    "Agent": "agent_framework.Agent",
     "AzureAIClient": "agent_framework_azure_ai.AzureAIClient",
     "DefaultCred": "azure.identity.aio.DefaultAzureCredential",
 }
@@ -591,7 +591,7 @@ class TestSessionCacheIntegration:
 
     @patch(_ORCH_PATCHES["DefaultCred"])
     @patch(_ORCH_PATCHES["AzureAIClient"])
-    @patch(_ORCH_PATCHES["ChatAgent"])
+    @patch(_ORCH_PATCHES["Agent"])
     @patch(_ORCH_PATCHES["load_prompt"], return_value="test prompt")
     @patch(_ORCH_PATCHES["DataAssistant"])
     @patch(_ORCH_PATCHES["process_query"], new_callable=AsyncMock)
@@ -668,7 +668,7 @@ class TestSessionCacheIntegration:
 
     @patch(_ORCH_PATCHES["DefaultCred"])
     @patch(_ORCH_PATCHES["AzureAIClient"])
-    @patch(_ORCH_PATCHES["ChatAgent"])
+    @patch(_ORCH_PATCHES["Agent"])
     @patch(_ORCH_PATCHES["load_prompt"], return_value="test prompt")
     @patch(_ORCH_PATCHES["DataAssistant"])
     @patch(_ORCH_PATCHES["process_query"], new_callable=AsyncMock)

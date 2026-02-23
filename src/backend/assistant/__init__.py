@@ -1,7 +1,7 @@
 """DataAssistant — manages user chat sessions and NL2SQL workflow invocation.
 
 Usage:
-    from entities.assistant import DataAssistant
+    from assistant import DataAssistant
 
     assistant = DataAssistant(agent, thread_id)
 """

@@ -72,7 +72,7 @@ Bridge:             @orchestrator imports tasks.md → beads issues with deps/as
 Execution:          @implementer → @tester → @reviewer → @security
 ```
 
-**Key rule:** Skip `/speckit.implement` — use `@implementer` and other role agents instead, since they integrate with our beads-based workflow.
+**Key rule:** Skip `/speckit.implement` — use `@implementer` and other role agents instead. If Beads is enabled for the workflow, the orchestrator can additionally map tasks into Beads issues.
 
 ### Spec Kit Artifacts
 
@@ -94,7 +94,7 @@ Execution:          @implementer → @tester → @reviewer → @security
 
 ## Task/Issue Tracking
 
-This project uses **bd (beads)** for issue tracking.
+This project can use **bd (beads)** for issue tracking when task tracking is enabled.
 
 ```bash
 bd ready              # Find unblocked work

@@ -13,15 +13,7 @@ import logging
 import operator
 from typing import Any
 
-from agent_framework import AgentThread
-from entities.parameter_extractor.extractor import extract_parameters
-from entities.parameter_validator.validator import validate_parameters
-from entities.query_builder.builder import build_query
-from entities.query_validator.validator import validate_query
-from entities.shared.column_filter import refine_columns
-from entities.shared.error_recovery import build_error_recovery
-from entities.shared.substitution import substitute_parameters
-from entities.workflow.clients import PipelineClients
+from agent_framework import AgentSession
 from models import (
     ClarificationRequest,
     MissingParameter,
@@ -33,7 +25,15 @@ from models import (
     SQLDraft,
     TableMetadata,
 )
+from parameter_extractor.extractor import extract_parameters
+from parameter_validator.validator import validate_parameters
 from pydantic import ValidationError
+from query_builder.builder import build_query
+from query_validator.validator import validate_query
+from shared.column_filter import refine_columns
+from shared.error_recovery import build_error_recovery
+from shared.substitution import substitute_parameters
+from workflow.clients import PipelineClients
 
 logger = logging.getLogger(__name__)
 
@@ -459,7 +459,7 @@ async def _run_template_pipeline(
         Final response or clarification request.
     """
     # 1. Extract parameters
-    thread = AgentThread()
+    thread = AgentSession()
     draft = await extract_parameters(
         extraction_req,
         clients.param_extractor_agent,
@@ -643,7 +643,7 @@ async def _retry_dynamic_query(
         retry_count=draft.retry_count + 1,
     )
 
-    thread = AgentThread()
+    thread = AgentSession()
     retry_draft = await build_query(
         retry_req,
         clients.query_builder_agent,
@@ -726,7 +726,7 @@ async def _dynamic_path(
         tables=tables,
     )
 
-    thread = AgentThread()
+    thread = AgentSession()
     draft = await build_query(
         builder_req,
         clients.query_builder_agent,
@@ -815,7 +815,7 @@ async def _handle_dynamic_refinement(
         tables=tables,
     )
 
-    thread = AgentThread()
+    thread = AgentSession()
     draft = await build_query(
         builder_req,
         clients.query_builder_agent,

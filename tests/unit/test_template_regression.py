@@ -8,8 +8,8 @@ template-based queries:
 - NL2SQLResponse fields remain correct for template queries
 """
 
-from entities.shared.column_filter import refine_columns
 from models import NL2SQLResponse, SQLDraft
+from shared.column_filter import refine_columns
 
 # ── Template SQLDraft passthrough ────────────────────────────────────────
 

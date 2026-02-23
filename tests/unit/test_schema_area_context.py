@@ -6,7 +6,7 @@ and update_context schema tracking.
 
 from unittest.mock import MagicMock
 
-from entities.assistant.assistant import (
+from assistant.assistant import (
     SCHEMA_SUGGESTIONS,
     DataAssistant,
     _detect_schema_area,

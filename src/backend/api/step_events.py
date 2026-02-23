@@ -26,7 +26,7 @@ _step_start_times: ContextVar[dict[str, float] | None] = ContextVar(
 )
 
 # Context variable to hold the current user_id for this request
-# This allows executors to access the authenticated user when creating threads
+# This allows executors to access the authenticated user when creating conversations
 _user_id_var: ContextVar[str | None] = ContextVar("user_id", default=None)
 
 

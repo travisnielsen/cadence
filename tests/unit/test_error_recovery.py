@@ -47,6 +47,17 @@ class TestClassifyViolations:
         violations = ["Query references non-existent column 'FooBar'"]
         assert classify_violations(violations) == "generic"
 
+    def test_union_type_safety_violation(self) -> None:
+        violations = ["UNION column 3 has incompatible CAST type families: numeric, string"]
+        assert classify_violations(violations) == "union_type_safety"
+
+    def test_date_context_violation(self) -> None:
+        violations = [
+            "Dynamic query uses a relative current-date window that is outside "
+            "the available data timeframe; regenerate with dataset-relative date context"
+        ]
+        assert classify_violations(violations) == "date_context"
+
     def test_multiple_violations_disallowed_wins(self) -> None:
         """If any violation contains disallowed table pattern, that category wins."""
         violations = [
@@ -108,6 +119,27 @@ class TestBuildErrorRecovery:
     def test_generic_error_includes_violations(self) -> None:
         msg, _ = build_error_recovery(["Column 'FooBar' not found"], ["Sales.Orders"])
         assert "FooBar" in msg
+
+    def test_union_type_safety_message_has_actionable_hint(self) -> None:
+        msg, _ = build_error_recovery(
+            ["UNION column 2 must use explicit CAST/CONVERT in each branch"],
+            ["Purchasing.Suppliers"],
+        )
+        assert "UNION" in msg
+        assert "explicit type" in msg
+        assert "CAST(NULL AS" in msg
+
+    def test_date_context_message_does_not_expose_offset_implementation(self) -> None:
+        msg, _ = build_error_recovery(
+            [
+                "Dynamic query uses a relative current-date window that is outside "
+                "the available data timeframe; regenerate with dataset-relative date context"
+            ],
+            ["Sales.Orders"],
+        )
+        assert "adjusted date context" in msg.lower()
+        assert "dateadd(year, -10, getdate())" not in msg.lower()
+        assert "-10" not in msg
 
     def test_suggestions_from_matched_area(self) -> None:
         _, suggestions = build_error_recovery(["Syntax error"], ["Sales.Orders"])

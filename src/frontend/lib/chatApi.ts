@@ -1,8 +1,8 @@
 /**
- * Foundry API Client
+ * Conversation API Client
  *
- * Uses Foundry thread IDs directly - no local session management.
- * Thread ID is returned by the backend on first message.
+ * Uses backend-issued conversation IDs for multi-turn continuity.
+ * Application session authority is maintained server-side via AgentSession.
  */
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -38,7 +38,7 @@ export interface ClarificationData {
 }
 
 export interface StreamChunk {
-  thread_id?: string; // Foundry thread ID (returned with done: true)
+  conversation_id?: string; // Conversation handle returned with done=true
   content?: string;
   reasoning?: string; // Workflow step/reasoning info (deprecated)
   step?: string; // Step name
@@ -56,25 +56,25 @@ export interface StreamChunk {
 /**
  * Stream a chat message via SSE.
  *
- * @param threadId - Pass null for new thread, or existing Foundry thread ID
+ * @param conversationId - Pass null for new conversation, or an existing conversation ID
  * @param message - The user's message
  * @param onChunk - Called with each content chunk
- * @param onComplete - Called with Foundry thread_id when stream completes
+ * @param onComplete - Called with conversation_id when stream completes
  * @param onError - Called on error
  * @param onReasoning - Called with reasoning/step info for UI display (deprecated, use onStep)
  * @param onToolCall - Called with tool call data for generative UI
  * @param onStep - Called with step data including timing information
  * @param accessToken - Optional access token for authentication
- * @param title - Optional title for new threads (truncated first message)
+ * @param title - Optional title for new conversations (truncated first message)
  * @param onStepsComplete - Called when all workflow steps are done (before stream ends)
  * @param requestId - Optional request_id for clarification responses
  * @param onClarification - Called when clarification is needed from user
  */
 export function streamChat(
-  threadId: string | null,
+  conversationId: string | null,
   message: string,
   onChunk: (content: string) => void,
-  onComplete: (threadId: string) => void,
+  onComplete: (conversationId: string) => void,
   onError: (error: string) => void,
   onReasoning?: (reasoning: string) => void,
   onToolCall?: (toolCall: ToolCallData) => void,
@@ -89,11 +89,11 @@ export function streamChat(
 
   // Build URL for chat streaming endpoint
   let url = `${API_BASE_URL}/api/chat/stream?message=${encodeURIComponent(message)}`;
-  if (threadId) {
-    url += `&thread_id=${encodeURIComponent(threadId)}`;
+  if (conversationId) {
+    url += `&conversation_id=${encodeURIComponent(conversationId)}`;
   }
-  // For new threads, pass the title
-  if (!threadId && title) {
+  // For new conversations, pass the title
+  if (!conversationId && title) {
     url += `&title=${encodeURIComponent(title)}`;
   }
   // For clarification responses, include request_id
@@ -160,8 +160,8 @@ export function streamChat(
           if (chunk.content) {
             onChunk(chunk.content);
           }
-          if (chunk.done && chunk.thread_id) {
-            onComplete(chunk.thread_id);
+          if (chunk.done && chunk.conversation_id) {
+            onComplete(chunk.conversation_id);
             streamComplete = true;
           }
         } catch {
@@ -207,18 +207,18 @@ export function streamChat(
 }
 
 // ============================================================================
-// Thread List API
+// Conversation List API
 // ============================================================================
 
-export interface ThreadData {
-  thread_id: string;
+export interface ConversationData {
+  conversation_id: string;
   title: string | null;
   status: "regular" | "archived";
   created_at: string | null;
 }
 
-export interface ThreadListResponse {
-  threads: ThreadData[];
+export interface ConversationListResponse {
+  conversations: ConversationData[];
 }
 
 export interface MessageData {
@@ -233,11 +233,11 @@ export interface MessagesResponse {
 }
 
 /**
- * Fetch all threads for the current user.
+ * Fetch all conversations for the current user.
  */
-export async function listThreads(
+export async function listConversations(
   accessToken?: string | null
-): Promise<ThreadData[]> {
+): Promise<ConversationData[]> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
@@ -245,25 +245,25 @@ export async function listThreads(
     headers["Authorization"] = `Bearer ${accessToken}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}/api/threads`, {
+  const response = await fetch(`${API_BASE_URL}/api/conversations`, {
     method: "GET",
     headers,
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to list threads: ${response.status}`);
+    throw new Error(`Failed to list conversations: ${response.status}`);
   }
 
-  const data: ThreadListResponse = await response.json();
-  return data.threads;
+  const data: ConversationListResponse = await response.json();
+  return data.conversations;
 }
 
 /**
- * Fetch all messages for a thread.
+ * Fetch all messages for a conversation.
  * Returns messages in chronological order (oldest first).
  */
-export async function getThreadMessages(
-  threadId: string,
+export async function getConversationMessages(
+  conversationId: string,
   accessToken?: string | null
 ): Promise<MessageData[]> {
   const headers: Record<string, string> = {
@@ -273,13 +273,13 @@ export async function getThreadMessages(
     headers["Authorization"] = `Bearer ${accessToken}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}/api/threads/${threadId}/messages`, {
+  const response = await fetch(`${API_BASE_URL}/api/conversations/${conversationId}/messages`, {
     method: "GET",
     headers,
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to get thread messages: ${response.status}`);
+    throw new Error(`Failed to get conversation messages: ${response.status}`);
   }
 
   const data: MessagesResponse = await response.json();
@@ -287,12 +287,12 @@ export async function getThreadMessages(
 }
 
 /**
- * Get a specific thread by ID.
+ * Get a specific conversation by ID.
  */
-export async function getThread(
-  threadId: string,
+export async function getConversation(
+  conversationId: string,
   accessToken?: string | null
-): Promise<ThreadData> {
+): Promise<ConversationData> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
@@ -300,23 +300,23 @@ export async function getThread(
     headers["Authorization"] = `Bearer ${accessToken}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}/api/threads/${threadId}`, {
+  const response = await fetch(`${API_BASE_URL}/api/conversations/${conversationId}`, {
     method: "GET",
     headers,
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to get thread: ${response.status}`);
+    throw new Error(`Failed to get conversation: ${response.status}`);
   }
 
   return response.json();
 }
 
 /**
- * Update a thread's metadata (title, status).
+ * Update a conversation's metadata (title, status).
  */
-export async function updateThread(
-  threadId: string,
+export async function updateConversation(
+  conversationId: string,
   updates: { title?: string; status?: string },
   accessToken?: string | null
 ): Promise<void> {
@@ -327,22 +327,22 @@ export async function updateThread(
     headers["Authorization"] = `Bearer ${accessToken}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}/api/threads/${threadId}`, {
+  const response = await fetch(`${API_BASE_URL}/api/conversations/${conversationId}`, {
     method: "PATCH",
     headers,
     body: JSON.stringify(updates),
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to update thread: ${response.status}`);
+    throw new Error(`Failed to update conversation: ${response.status}`);
   }
 }
 
 /**
- * Delete a thread.
+ * Delete a conversation.
  */
-export async function deleteThread(
-  threadId: string,
+export async function deleteConversation(
+  conversationId: string,
   accessToken?: string | null
 ): Promise<void> {
   const headers: Record<string, string> = {
@@ -352,12 +352,12 @@ export async function deleteThread(
     headers["Authorization"] = `Bearer ${accessToken}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}/api/threads/${threadId}`, {
+  const response = await fetch(`${API_BASE_URL}/api/conversations/${conversationId}`, {
     method: "DELETE",
     headers,
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to delete thread: ${response.status}`);
+    throw new Error(`Failed to delete conversation: ${response.status}`);
   }
 }

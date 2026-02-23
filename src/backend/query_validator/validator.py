@@ -54,6 +54,274 @@ DANGEROUS_KEYWORDS = [
     "DBCC",
 ]
 
+_MIN_WRAPPED_IDENTIFIER_LENGTH = 2
+
+
+def _split_select_items(select_clause: str) -> list[str]:
+    """Split a SELECT projection clause into top-level comma-separated items."""
+    items: list[str] = []
+    current: list[str] = []
+    depth = 0
+    in_single_quote = False
+
+    for char in select_clause:
+        if char == "'":
+            in_single_quote = not in_single_quote
+            current.append(char)
+            continue
+
+        if in_single_quote:
+            current.append(char)
+            continue
+
+        if char == "(":
+            depth += 1
+        elif char == ")" and depth > 0:
+            depth -= 1
+
+        if char == "," and depth == 0:
+            item = "".join(current).strip()
+            if item:
+                items.append(item)
+            current = []
+            continue
+
+        current.append(char)
+
+    final_item = "".join(current).strip()
+    if final_item:
+        items.append(final_item)
+    return items
+
+
+def _extract_union_select_items(sql: str) -> list[list[str]]:
+    """Extract top-level SELECT projection items for each UNION branch."""
+    if not re.search(r"\bUNION(?:\s+ALL)?\b", sql, re.IGNORECASE):
+        return []
+
+    branches = re.split(r"\bUNION(?:\s+ALL)?\b", sql, flags=re.IGNORECASE)
+    select_lists: list[list[str]] = []
+
+    for branch in branches:
+        match = re.search(r"(?is)\bSELECT\b\s*(.*?)\s*\bFROM\b", branch)
+        if not match:
+            return []
+        select_lists.append(_split_select_items(match.group(1)))
+
+    return select_lists
+
+
+def _extract_first_select_items(sql: str) -> list[str]:
+    """Extract top-level SELECT projection items for the first SELECT statement."""
+    match = re.search(r"(?is)\bSELECT\b\s*(.*?)\s*\bFROM\b", sql)
+    if not match:
+        return []
+
+    select_clause = match.group(1).strip()
+    select_clause = re.sub(
+        r"(?is)^TOP\s*\(?\s*\d+\s*\)?(?:\s+PERCENT)?(?:\s+WITH\s+TIES)?\s+",
+        "",
+        select_clause,
+    )
+    select_clause = re.sub(r"(?is)^DISTINCT\s+", "", select_clause)
+    return _split_select_items(select_clause)
+
+
+def _strip_identifier_wrappers(identifier: str) -> str:
+    """Strip common SQL identifier wrappers from a token."""
+    token = identifier.strip()
+    if (
+        token.startswith("[")
+        and token.endswith("]")
+        and len(token) >= _MIN_WRAPPED_IDENTIFIER_LENGTH
+    ):
+        return token[1:-1]
+    if (
+        token.startswith('"')
+        and token.endswith('"')
+        and len(token) >= _MIN_WRAPPED_IDENTIFIER_LENGTH
+    ):
+        return token[1:-1]
+    return token
+
+
+def _extract_output_column_name(select_expr: str) -> str | None:
+    """Infer projected output column name from a SELECT expression."""
+    expr = select_expr.strip()
+    if not expr:
+        return None
+
+    alias_match = re.search(
+        r"(?is)\bAS\s+(\[[^\]]+\]|\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\s*$",
+        expr,
+    )
+    if alias_match:
+        return _strip_identifier_wrappers(alias_match.group(1))
+
+    token_match = re.search(r"(?is)(\[[^\]]+\]|\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_]*)\s*$", expr)
+    if token_match:
+        return _strip_identifier_wrappers(token_match.group(1))
+
+    return None
+
+
+def _check_dynamic_projection_constraints(sql: str) -> tuple[bool, list[str]]:
+    """Validate dynamic query output columns for duplicates and identifier leakage."""
+    violations: list[str] = []
+
+    union_select_lists = _extract_union_select_items(sql)
+    select_items = union_select_lists[0] if union_select_lists else _extract_first_select_items(sql)
+    if not select_items:
+        return True, violations
+
+    seen_output_names: set[str] = set()
+    duplicate_reported: set[str] = set()
+
+    for index, item in enumerate(select_items, start=1):
+        stripped_item = item.strip()
+        if stripped_item == "*" or stripped_item.endswith(".*"):
+            violations.append(
+                "Dynamic query must not use wildcard projection ('*' or 'alias.*'); "
+                "explicitly select non-ID display columns"
+            )
+            continue
+
+        output_name = _extract_output_column_name(item)
+        if not output_name:
+            continue
+
+        normalized_name = output_name.strip().lower()
+        if not normalized_name:
+            continue
+
+        if normalized_name.endswith("id"):
+            violations.append(
+                f"Dynamic query must not return identifier column '{output_name}' "
+                f"(column {index}); remove columns ending with ID"
+            )
+
+        if normalized_name in seen_output_names and normalized_name not in duplicate_reported:
+            violations.append(
+                f"Dynamic query has duplicate output column name '{output_name}'; "
+                "all projected column names must be unique"
+            )
+            duplicate_reported.add(normalized_name)
+        seen_output_names.add(normalized_name)
+
+    return len(violations) == 0, violations
+
+
+def _check_dynamic_historical_date_anchor(sql: str) -> tuple[bool, list[str]]:
+    """Ensure dynamic SQL uses the historical anchor whenever GETDATE is referenced."""
+    violations: list[str] = []
+
+    if not re.search(r"(?is)\bGETDATE\s*\(", sql):
+        return True, violations
+
+    has_historical_anchor = bool(
+        re.search(r"(?is)\bDATEADD\s*\(\s*YEAR\s*,\s*-10\s*,\s*GETDATE\s*\(\s*\)\s*\)", sql)
+    )
+    if not has_historical_anchor:
+        violations.append(
+            "Dynamic query uses a relative current-date window that is outside "
+            "the available data timeframe; regenerate with dataset-relative date context"
+        )
+
+    return len(violations) == 0, violations
+
+
+def _extract_explicit_cast_type(expr: str) -> str | None:
+    """Extract explicit CAST/CONVERT target type from an expression."""
+    cast_match = re.search(r"(?is)\bCAST\s*\(.*?\bAS\s+([A-Za-z0-9_]+)", expr)
+    if cast_match:
+        return cast_match.group(1).lower()
+
+    convert_match = re.search(r"(?is)\bCONVERT\s*\(\s*([A-Za-z0-9_]+)\s*,", expr)
+    if convert_match:
+        return convert_match.group(1).lower()
+
+    return None
+
+
+def _sql_type_family(sql_type: str) -> str:
+    """Normalize SQL types to broad families for compatibility checks."""
+    t = sql_type.lower()
+    if any(token in t for token in ("char", "text", "nchar", "nvarchar", "varchar")):
+        return "string"
+    if any(
+        token in t
+        for token in (
+            "int",
+            "decimal",
+            "numeric",
+            "float",
+            "real",
+            "money",
+            "smallmoney",
+            "bigint",
+            "smallint",
+            "tinyint",
+        )
+    ):
+        return "numeric"
+    if any(token in t for token in ("date", "time", "datetime", "smalldatetime")):
+        return "datetime"
+    if "bit" in t:
+        return "boolean"
+    return t
+
+
+def _check_union_projection_safety(sql: str) -> tuple[bool, list[str]]:
+    """Check UNION/UNION ALL projection compatibility to prevent implicit conversion errors."""
+    violations: list[str] = []
+    select_lists = _extract_union_select_items(sql)
+    if not select_lists:
+        return True, violations
+
+    column_counts = {len(items) for items in select_lists}
+    if len(column_counts) != 1:
+        violations.append("UNION branches must project the same number of columns")
+        return False, violations
+
+    total_columns = len(select_lists[0])
+    for index in range(total_columns):
+        cast_families: set[str] = set()
+        has_plain_null = False
+        has_cast_expression = False
+        has_non_cast_expression = False
+
+        for branch_items in select_lists:
+            expr = branch_items[index].strip()
+            if re.fullmatch(r"(?is)NULL(?:\s+AS\s+\w+)?", expr):
+                has_plain_null = True
+                continue
+
+            cast_type = _extract_explicit_cast_type(expr)
+            if cast_type is None:
+                has_non_cast_expression = True
+                continue
+            has_cast_expression = True
+            cast_families.add(_sql_type_family(cast_type))
+
+        col_num = index + 1
+        if has_plain_null:
+            violations.append(f"UNION column {col_num} uses untyped NULL; use CAST(NULL AS <type>)")
+        if has_cast_expression and has_non_cast_expression:
+            violations.append(
+                f"UNION column {col_num} must not mix CAST/CONVERT and raw expressions"
+            )
+        elif has_non_cast_expression:
+            violations.append(
+                f"UNION column {col_num} must use explicit CAST/CONVERT in each branch"
+            )
+        if len(cast_families) > 1:
+            families = ", ".join(sorted(cast_families))
+            violations.append(
+                f"UNION column {col_num} has incompatible CAST type families: {families}"
+            )
+
+    return len(violations) == 0, violations
+
 
 def _check_syntax(sql: str) -> tuple[bool, list[str]]:
     """Basic syntax check for SQL query.
@@ -230,12 +498,30 @@ def validate_query(draft: SQLDraft, allowed_tables: set[str]) -> SQLDraft:
         security_valid, security_violations = _check_security(sql_query)
         all_violations.extend(security_violations)
 
+        union_valid = True
+        projection_valid = True
+        historical_date_valid = True
+        if draft.source == "dynamic":
+            union_valid, union_violations = _check_union_projection_safety(sql_query)
+            all_violations.extend(union_violations)
+            projection_valid, projection_violations = _check_dynamic_projection_constraints(
+                sql_query
+            )
+            all_violations.extend(projection_violations)
+            historical_date_valid, historical_date_violations = (
+                _check_dynamic_historical_date_anchor(sql_query)
+            )
+            all_violations.extend(historical_date_violations)
+
         is_valid = (
             syntax_valid
             and allowlist_valid
             and statement_type == "SELECT"
             and is_single_statement
             and security_valid
+            and union_valid
+            and projection_valid
+            and historical_date_valid
         )
 
         logger.info(

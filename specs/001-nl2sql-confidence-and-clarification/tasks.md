@@ -119,7 +119,7 @@
 
 ### Frontend Implementation for User Story 3
 
-- [x] T028 [US3] Add `SuggestionPills` React component to `src/frontend/components/assistant-ui/nl2sql-tool-ui.tsx` — renders suggestion pills with green/neutral styling (differentiated from clarification's blue). Uses `threadRuntime.composer.setText(prompt)` + `.send()` on click.
+- [x] T028 [US3] Add `SuggestionPills` React component to `src/frontend/components/assistant-ui/nl2sql-tool-ui.tsx` — renders suggestion pills with green/neutral styling (differentiated from clarification's blue). Uses the existing assistant-ui runtime composer send pattern (`threadRuntime.composer.setText(prompt)` + `.send()`) on click.
 - [x] T029 [US3] Add `suggestions` field to the `NL2SQLResult` TypeScript interface in `nl2sql-tool-ui.tsx`. Render `<SuggestionPills>` after the Observations section in the success state of `NL2SQLToolUI`, only when `result.suggestions?.length > 0`.
 
 **Checkpoint**: Schema-area suggestions appearing as clickable pills in query results. Context tracks across turns. Clicking a pill sends the follow-up query.

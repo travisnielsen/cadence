@@ -60,10 +60,10 @@ def _mock_settings() -> MagicMock:
 def _mock_assistant(
     intent: str = "data_query",
     query: str = "Show orders",
-    thread_id: str = "test-thread-123",
+    conversation_id: str = "test-thread-123",
 ) -> MagicMock:
     assistant = MagicMock()
-    assistant.thread_id = thread_id
+    assistant.conversation_id = conversation_id
     assistant.classify_intent = AsyncMock(
         return_value=ClassificationResult(intent=intent, query=query),
     )
@@ -74,7 +74,7 @@ def _mock_assistant(
     assistant.render_response.return_value = {
         "text": "Here are the results",
         "tool_call": {"tool_name": "nl2sql_query", "result": {}},
-        "thread_id": thread_id,
+        "conversation_id": conversation_id,
     }
     return assistant
 
@@ -152,7 +152,7 @@ class TestDataQueryStream:
         chunks = await _collect(
             generate_orchestrator_streaming_response(
                 message="Show orders",
-                thread_id="test-thread-123",
+                conversation_id="test-thread-123",
             ),
         )
         events = _parse_sse_events(chunks)
@@ -169,7 +169,7 @@ class TestDataQueryStream:
 
         # Last: done marker
         assert events[-1]["done"] is True
-        assert events[-1]["thread_id"] == "test-thread-123"
+        assert events[-1]["conversation_id"] == "test-thread-123"
 
     @patch(_ORCH_PATCHES["process_query"], new_callable=AsyncMock)
     @patch(_ORCH_PATCHES["create_clients"])
@@ -195,7 +195,7 @@ class TestDataQueryStream:
         await _collect(
             generate_orchestrator_streaming_response(
                 message="Show orders",
-                thread_id="test-thread-123",
+                conversation_id="test-thread-123",
             ),
         )
 
@@ -233,7 +233,7 @@ class TestConversationStream:
         chunks = await _collect(
             generate_orchestrator_streaming_response(
                 message="Hello",
-                thread_id="test-thread-123",
+                conversation_id="test-thread-123",
             ),
         )
         events = _parse_sse_events(chunks)
@@ -252,7 +252,7 @@ class TestConversationStream:
 
         # Text response
         assert events[4]["text"] == "Hello there!"
-        assert events[4]["thread_id"] == "test-thread-123"
+        assert events[4]["conversation_id"] == "test-thread-123"
 
         # Done
         assert events[-1]["done"] is True
@@ -293,7 +293,7 @@ class TestClarificationResult:
         chunks = await _collect(
             generate_orchestrator_streaming_response(
                 message="Show orders",
-                thread_id="test-thread-123",
+                conversation_id="test-thread-123",
             ),
         )
         events = _parse_sse_events(chunks)
@@ -346,7 +346,7 @@ class TestClarificationResponseStream:
                 clarification_ctx=ctx,
                 message="Seattle",
                 request_id="clarify_abc123",
-                thread_id="test-thread-123",
+                conversation_id="test-thread-123",
             ),
         )
         events = _parse_sse_events(chunks)
@@ -396,7 +396,7 @@ class TestClarificationResponseStream:
                 clarification_ctx=ctx,
                 message="Seattle",
                 request_id="clarify_abc123",
-                thread_id="test-thread-123",
+                conversation_id="test-thread-123",
             ),
         )
         events = _parse_sse_events(chunks)
@@ -437,7 +437,7 @@ class TestErrorHandling:
         chunks = await _collect(
             generate_orchestrator_streaming_response(
                 message="Show orders",
-                thread_id="test-thread-123",
+                conversation_id="test-thread-123",
             ),
         )
         events = _parse_sse_events(chunks)
@@ -473,7 +473,7 @@ class TestErrorHandling:
         chunks = await _collect(
             generate_orchestrator_streaming_response(
                 message="???",
-                thread_id="test-thread-123",
+                conversation_id="test-thread-123",
             ),
         )
         events = _parse_sse_events(chunks)
@@ -503,7 +503,7 @@ class TestErrorHandling:
                 clarification_ctx=ctx,
                 message="Seattle",
                 request_id="clarify_abc",
-                thread_id="test-thread-123",
+                conversation_id="test-thread-123",
             ),
         )
         events = _parse_sse_events(chunks)
@@ -564,7 +564,7 @@ class TestStepEventDrain:
         chunks = await _collect(
             generate_orchestrator_streaming_response(
                 message="Show orders",
-                thread_id="test-thread-123",
+                conversation_id="test-thread-123",
             ),
         )
         events = _parse_sse_events(chunks)
@@ -625,7 +625,7 @@ class TestSessionCacheIntegration:
         await _collect(
             generate_orchestrator_streaming_response(
                 message="Show orders",
-                thread_id=None,
+                conversation_id=None,
             ),
         )
 
@@ -657,7 +657,7 @@ class TestSessionCacheIntegration:
         chunks = await _collect(
             generate_orchestrator_streaming_response(
                 message="Show orders",
-                thread_id="test-thread-123",
+                conversation_id="test-thread-123",
             ),
         )
         events = _parse_sse_events(chunks)
@@ -704,7 +704,7 @@ class TestSessionCacheIntegration:
         await _collect(
             generate_orchestrator_streaming_response(
                 message="Show orders",
-                thread_id=None,
+                conversation_id=None,
             ),
         )
 

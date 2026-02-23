@@ -5,7 +5,7 @@
 
 ## Summary
 
-Replace the MAF Executor/Workflow/WorkflowBuilder orchestration layer with plain async Python functions while keeping `ChatAgent`, `AzureAIClient`, `AgentThread`, and `@tool` for LLM calls and Foundry integration. The NL2SQL pipeline becomes a single `process_query()` async function that calls extracted sub-functions directly instead of routing messages through a WorkflowContext graph.
+Replace the MAF Executor/Workflow/WorkflowBuilder orchestration layer with plain async Python functions while keeping `ChatAgent`, `AzureAIClient`, session handling via `AgentSession`, and `@tool` for LLM calls and provider integration. The NL2SQL pipeline becomes a single `process_query()` async function that calls extracted sub-functions directly instead of routing messages through a WorkflowContext graph.
 
 Additionally, introduce **Protocol-based dependency injection** for all I/O boundaries (search, SQL execution, progress reporting) so extracted functions are unit-testable without `unittest.mock.patch` hacks. Centralize configuration into a `Settings` model and rename `ConversationOrchestrator` → `DataAssistant` to better reflect its actual responsibility as a data-focused assistant (not an orchestrator).
 
@@ -149,13 +149,22 @@ Rename to `DataAssistant` to accurately reflect this role. The name also accommo
 
 ```python
 class DataAssistant:
-    def __init__(self, agent: ChatAgent, thread_id: str | None = None) -> None:
+    def __init__(self, agent: ChatAgent, conversation_id: str | None = None) -> None:
         self.agent = agent
         self.context = ConversationContext()
-        self._initial_thread_id = thread_id
+        self._initial_conversation_id = conversation_id
 ```
 
 Tests construct `DataAssistant(mock_agent)` — no `AzureAIClient` needed.
+
+### Session Continuity Implementation Note
+
+Current implementation anchors continuity to provider conversation IDs:
+
+- `chat.py` reuses inbound `conversation_id` or pre-creates one from the provider on first turn.
+- `DataAssistant` uses that value as `service_session_id` when calling `agent.get_session(...)`.
+- Downstream pipeline LLM calls reuse the same provider conversation ID for trace/thread continuity.
+- SSE responses return this provider `conversation_id` to the client each turn.
 
 ### Testability Summary
 
@@ -166,7 +175,7 @@ Tests construct `DataAssistant(mock_agent)` — no `AzureAIClient` needed.
 | `try: from api.step_events import ...; except ImportError` | Accept `ProgressReporter` parameter | Explicit, testable |
 | `os.getenv("AZURE_SQL_SERVER")` scattered | `Settings` model passed through | Construct in test |
 | `_load_prompt()` reads filesystem in `__init__` | Prompt string passed to factory | No filesystem dependency |
-| `ConversationOrchestrator(client, thread_id)` | `DataAssistant(agent, thread_id)` | Mock only ChatAgent |
+| `ConversationOrchestrator(client, conversation_id)` | `DataAssistant(agent, conversation_id)` | Mock only ChatAgent |
 | `ALLOWED_TABLES = _load_allowed_tables()` at import | `allowed_tables` parameter on function | No import-time I/O |
 
 ## Project Structure

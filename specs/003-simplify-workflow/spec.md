@@ -24,12 +24,23 @@ Only **two** of the five executors actually call `agent.run()` on an LLM: Parame
 |---|---|---|
 | `ChatAgent` | LLM calls in DataAssistant, ParameterExtractor, QueryBuilder | **Keep** — thin wrapper over Azure AI Agent Service |
 | `AzureAIClient` | Creates ChatAgent instances with Foundry connection | **Keep** — required by ChatAgent |
-| `AgentThread` | Thread management for DataAssistant | **Keep** — Foundry thread lifecycle |
+| `AgentSession` | Session and conversation state for DataAssistant | **Keep** — framework-managed session lifecycle |
 | `@tool` decorator | Function tools for `template_search`, `table_search`, `execute_sql` | **Keep** — registers tools with ChatAgent |
 | `Executor` subclasses | 5 classes wrapping business logic | **Remove** — replace with async functions |
 | `Workflow` / `WorkflowBuilder` | Message graph connecting executors | **Remove** — replace with a single `process_query()` function |
 | `WorkflowContext` | `ctx.send_message()`, `ctx.shared_state` | **Remove** — replace with function args/returns |
 | `@handler` / `@response_handler` | Message routing decorators | **Remove** — replace with function calls |
+
+### Implemented Session Continuity (Post-Implementation Note)
+
+Current runtime behavior (implemented in `src/backend/api/routers/chat.py` and
+`src/backend/assistant/assistant.py`) is:
+
+- Backend reuses inbound `conversation_id` when provided.
+- On first turn without `conversation_id`, backend pre-creates a provider conversation and uses the returned ID.
+- `DataAssistant` resumes/creates thread state with `AgentSession` using `service_session_id=conversation_id`.
+- API returns this same `conversation_id` in SSE payloads so clients can continue the same provider thread.
+- Fallback to local session identity remains possible if provider conversation creation fails.
 
 ### Expected Outcomes
 
@@ -99,7 +110,7 @@ The SSE endpoint no longer needs to iterate over MAF `WorkflowEvent` objects and
 
 ### User Story 4 — Remove Unused MAF Dependencies and Wrapper Types (Priority: P2)
 
-All MAF-specific wrapper types (e.g., `SQLDraftMessage` with `source` field for message routing) are either removed or simplified. The `agent-framework` dependency is pruned to only what `ChatAgent`, `AzureAIClient`, `AgentThread`, and `@tool` need.
+All MAF-specific wrapper types (e.g., `SQLDraftMessage` with `source` field for message routing) are either removed or simplified. The `agent-framework` dependency is pruned to only what `ChatAgent`, `AzureAIClient`, session handling via `AgentSession`, and `@tool` need.
 
 **Why this priority**: Cleanup story. The system works without this, but leaving dead imports and unused types creates confusion for future contributors.
 
@@ -172,7 +183,7 @@ All I/O boundaries are abstracted behind `Protocol` interfaces and injected via 
 - **FR-007**: All functions MUST emit step events via injectable `ProgressReporter` protocol for SSE streaming progress
 - **FR-008**: The SSE endpoint MUST produce identical event structure and ordering as the pre-refactor implementation
 - **FR-009**: No file in `src/backend/` MUST import `Executor`, `Workflow`, `WorkflowBuilder`, `WorkflowContext`, `@handler`, or `@response_handler` after the refactor
-- **FR-010**: `ChatAgent`, `AzureAIClient`, `AgentThread`, and `@tool` imports MUST be preserved — these are the retained MAF components
+- **FR-010**: `ChatAgent`, `AzureAIClient`, `AgentSession`-compatible session handling, and `@tool` imports MUST be preserved — these are the retained MAF components
 - **FR-011**: The `agent-framework` and `agent-framework-azure-ai` packages MUST remain in `pyproject.toml`
 - **FR-012**: All quality checks (`uv run poe check`) MUST pass with zero errors
 - **FR-013**: All existing tests MUST pass after the refactor, updated as needed for the new function signatures

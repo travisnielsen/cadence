@@ -447,6 +447,7 @@ class PipelineClients:
         reporter: Progress reporter for streaming UI updates.
         allowed_tables: Set of fully-qualified table names for query validation.
         allowed_values_provider: Optional provider for database-sourced allowed values.
+        conversation_id: Optional provider conversation ID for multi-agent trace continuity.
     """
 
     param_extractor_agent: Agent
@@ -457,6 +458,7 @@ class PipelineClients:
     reporter: ProgressReporter
     allowed_tables: frozenset[str]
     allowed_values_provider: AllowedValuesProvider | None = None
+    conversation_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -467,6 +469,7 @@ class PipelineClients:
 def create_pipeline_clients(
     settings: Settings,
     reporter: ProgressReporter | None = None,
+    conversation_id: str | None = None,
 ) -> PipelineClients:
     """Build a ``PipelineClients`` from application ``Settings``.
 
@@ -478,6 +481,8 @@ def create_pipeline_clients(
     Args:
         settings: Centralised application configuration.
         reporter: Optional progress reporter.  Defaults to ``NoOpReporter``.
+        conversation_id: Optional provider conversation ID to reuse for all
+            pipeline agent calls within a user session.
 
     Returns:
         Fully-initialised ``PipelineClients`` ready for ``process_query()``.
@@ -507,6 +512,10 @@ def create_pipeline_clients(
         model_deployment_name=builder_model,
         use_latest_version=True,
     )
+
+    if conversation_id:
+        extractor_llm.conversation_id = conversation_id
+        builder_llm.conversation_id = conversation_id
 
     # -- Prompts (loaded once from disk) -----------------------------------
     from parameter_extractor.agent import (  # noqa: PLC0415
@@ -562,4 +571,5 @@ def create_pipeline_clients(
         reporter=reporter or NoOpReporter(),
         allowed_tables=allowed_tables,
         allowed_values_provider=avp,
+        conversation_id=conversation_id,
     )

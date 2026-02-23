@@ -4,17 +4,17 @@
  * Assistant Component
  *
  * Simple chat interface using assistant-ui with a custom backend based on Microsoft Agent Framework.
- * Uses ExternalStoreRuntime for SSE streaming with thread list sidebar.
+ * Uses ExternalStoreRuntime for SSE streaming with conversation sidebar history.
  */
 
-import { Loader2 } from "lucide-react";
-import { AssistantRuntimeProvider } from "@assistant-ui/react";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { NL2SQLToolUI } from "@/components/assistant-ui/nl2sql-tool-ui";
 import { Thread } from "@/components/assistant-ui/thread";
 import { ThreadListSidebar } from "@/components/assistant-ui/threadlist-sidebar";
-import { useChatApi } from "@/hooks/useChatApi";
 import { AuthButton } from "@/components/ui/authButton";
-import { NL2SQLToolUI } from "@/components/assistant-ui/nl2sql-tool-ui";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { useChatApi } from "@/hooks/useChatApi";
+import { AssistantRuntimeProvider } from "@assistant-ui/react";
+import { Loader2 } from "lucide-react";
 
 export const Assistant = () => {
   const { runtime, isLoadingMessages } = useChatApi();
@@ -23,7 +23,7 @@ export const Assistant = () => {
     <AssistantRuntimeProvider runtime={runtime}>
       {/* Register tool UIs for generative UI rendering */}
       <NL2SQLToolUI />
-      
+
       <SidebarProvider>
         <ThreadListSidebar />
         <SidebarInset>

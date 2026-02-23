@@ -1,6 +1,6 @@
 # Cadence
 
-`cadence` is a reference application that demonstrates exploration of structured and unstructured data using natural language and agentic retrieval. It's built using [Microsoft Agent Framework](https://aka.ms/agent-framework) (MAF) hosted on FastAPI for intent and retrieval orchestration and [assistant-ui](https://github.com/assistant-ui/assistant-ui) for the user experience. Communication between these two components happens via Server-Sent Events with thread management delegated to Microsoft Foundry.
+`cadence` is a reference application that demonstrates exploration of structured and unstructured data using natural language and agentic retrieval. It's built using [Microsoft Agent Framework](https://aka.ms/agent-framework) (MAF) hosted on FastAPI for intent and retrieval orchestration and [assistant-ui](https://github.com/assistant-ui/assistant-ui) for the user experience. Communication between these two components happens via Server-Sent Events, with multi-turn continuity keyed by the provider conversation ID and threaded through `AgentSession.service_session_id` (falling back to local `session_id` only when provider IDs are unavailable).
 
 ![screenshot](./docs/images/data-agent-screenshot.png)
 

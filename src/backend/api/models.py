@@ -9,33 +9,33 @@ class ChatRequest(BaseModel):
     """Request body for non-streaming chat endpoint."""
 
     message: str
-    thread_id: str | None = None
+    conversation_id: str | None = None
 
 
-class ThreadData(BaseModel):
-    """Thread information returned by thread endpoints."""
+class ConversationData(BaseModel):
+    """Conversation information returned by conversation endpoints."""
 
-    thread_id: str
+    conversation_id: str
     title: str | None = None
     status: str = "regular"  # "regular" or "archived"
     created_at: str | None = None
 
 
-class ThreadListResponse(BaseModel):
-    """Response for listing threads."""
+class ConversationListResponse(BaseModel):
+    """Response for listing conversations."""
 
-    threads: list[ThreadData]
+    conversations: list[ConversationData]
 
 
-class UpdateThreadRequest(BaseModel):
-    """Request body for updating thread metadata."""
+class UpdateConversationRequest(BaseModel):
+    """Request body for updating conversation metadata."""
 
     title: str | None = None
     status: str | None = None
 
 
 class MessageData(BaseModel):
-    """Individual message in a thread."""
+    """Individual message in a conversation."""
 
     id: str
     role: str
@@ -44,6 +44,6 @@ class MessageData(BaseModel):
 
 
 class MessagesResponse(BaseModel):
-    """Response for getting thread messages."""
+    """Response for getting conversation messages."""
 
     messages: list[MessageData]

@@ -25,7 +25,7 @@ This repo includes Infrastructure-as-Code (IaC) that deploys a baseline set of s
 | Container Registry | `container_registry` | Private container image registry for deploying custom applications |
 | Key Vault | `ai_keyvault` | Secure storage for secrets, keys, and certificates used by AI Foundry |
 | Storage Account | `ai_storage` | Blob storage for AI Foundry agent file storage and artifacts |
-| Cosmos DB | `ai_cosmosdb` | NoSQL database for storing AI agent threads and conversation history |
+| Cosmos DB | `ai_cosmosdb` | NoSQL database for storing AI agent conversation and session history |
 | AI Search | `ai_search` | Vector search service for RAG patterns and semantic search capabilities |
 | Microsoft Foundry | `ai_foundry` | Azure AI Foundry hub and project with model deployments (GPT-5, embeddings) |
 | Azure SQL Database | `sql_server` | SQL database with Wide World Importers sample data for NL2SQL scenarios |

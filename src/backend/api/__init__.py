@@ -6,7 +6,7 @@ Contains:
 - auth.py: Azure AD authentication middleware
 - models.py: Pydantic models for API requests/responses
 - dependencies.py: FastAPI dependencies
-- routers/: Route handlers for chat and threads
+- routers/: Route handlers for chat and conversations
 - util/: Utility modules (search client)
 """
 

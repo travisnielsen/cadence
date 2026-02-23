@@ -132,3 +132,19 @@ class NL2SQLRequest(BaseModel):
         default=None,
         description="The original question from the previous query (for dynamic refinements)",
     )
+
+    confirm_previous_sql: bool = Field(
+        default=False,
+        description=(
+            "When true, execute previous_sql directly for a pending dynamic confirmation "
+            "instead of regenerating SQL"
+        ),
+    )
+
+    reprompt_pending_confirmation: bool = Field(
+        default=False,
+        description=(
+            "When true, keep the dynamic query in pending confirmation state and "
+            "re-display the confirmation prompt"
+        ),
+    )

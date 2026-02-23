@@ -109,10 +109,10 @@ bd sync               # Sync with git (run at session end)
 
 ## Architecture Overview
 
-This is a **multi-agent NL2SQL application** using Microsoft Agent Framework (MAF) with a FastAPI backend and Next.js/assistant-ui frontend. Communication happens via SSE streaming, with thread management delegated to Microsoft Foundry.
+This is a **multi-agent NL2SQL application** using Microsoft Agent Framework (MAF) with a FastAPI backend and Next.js/assistant-ui frontend. Communication happens via SSE streaming, with multi-turn continuity anchored to the provider conversation ID and propagated through `AgentSession.service_session_id`.
 
 ### Architecture Components
-1. **ConversationOrchestrator** (`src/backend/entities/orchestrator/`) - Manages chat sessions, classifies intent (data query vs conversation), handles refinements, invokes NL2SQL workflow
+1. **DataAssistant** (`src/backend/assistant/`) - Manages chat sessions, classifies intent (data query vs conversation), handles refinements, invokes NL2SQL pipeline
 2. **NL2SQLController** (`src/backend/entities/nl2sql_controller/`) - Orchestrates query flow, searches templates via Azure AI Search, executes SQL via `execute_sql` tool
 3. **ParameterExtractor** (`src/backend/entities/parameter_extractor/`) - Extracts parameter values from natural language to fill SQL template tokens
 4. **ParameterValidator** (`src/backend/entities/parameter_validator/`) - Non-LLM validation of extracted parameters (type, range, regex, allowed values)
@@ -121,17 +121,17 @@ This is a **multi-agent NL2SQL application** using Microsoft Agent Framework (MA
 
 ### Architecture Flow
 ```
-User → ConversationOrchestrator (intent classification)
+User → DataAssistant (intent classification)
      → NL2SQL Workflow: NL2SQLController → ParameterExtractor/QueryBuilder → Validators → execute_sql
-     → ConversationOrchestrator (renders response) → User
+     → DataAssistant (renders response) → User
 ```
 
-The ConversationOrchestrator lives **outside** the MAF workflow. It manages the Foundry thread and invokes `create_nl2sql_workflow()` for data queries. This separation allows:
+The DataAssistant lives **outside** the NL2SQL pipeline function flow. It manages the application session (`AgentSession`) and invokes `process_query()` for data queries. This separation allows:
 - Session-level conversation context for refinements
 - Intent classification before invoking the workflow
 - Cleaner separation of concerns
 
-The NL2SQL workflow is built in `src/backend/entities/workflow/workflow.py` and creates a fresh instance per request.
+The NL2SQL pipeline is implemented in `src/backend/nl2sql_controller/pipeline.py` and is called per request with injected clients.
 
 ## Key Patterns
 
@@ -141,9 +141,9 @@ Each workflow executor follows a consistent pattern in its folder:
 - `prompt.md` - Agent instructions (loaded at runtime via `load_prompt()`)
 - `tools/` - AI function tools decorated with `@tool`
 
-The orchestrator folder contains:
-- `orchestrator.py` - ConversationOrchestrator class (not a MAF executor)
-- `orchestrator_prompt.md` - Intent classification prompt
+The assistant folder contains:
+- `assistant.py` - DataAssistant class (not a MAF executor)
+- `assistant_prompt.md` - Intent classification prompt
 
 ### Models Structure
 Shared models are in `src/backend/models/` with functional grouping:
@@ -196,7 +196,7 @@ API requires `.env` in `src/backend/` folder with:
 ## Frontend Integration
 
 - Uses `assistant-ui` library with `ExternalStoreRuntime` for SSE
-- Thread IDs come from Foundry (no local session management)
+- Session continuity uses provider `conversation_id` as the canonical key and passes it into `AgentSession.service_session_id` (fallback to local `session_id` when provider ID is unavailable)
 - Tool results render via generative UI components in `src/frontend/components/assistant-ui/`
 - Auth via MSAL with optional Azure AD (`src/frontend/lib/msalConfig.ts`)
 

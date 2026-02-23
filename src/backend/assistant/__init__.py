@@ -3,7 +3,7 @@
 Usage:
     from assistant import DataAssistant
 
-    assistant = DataAssistant(agent, thread_id)
+    assistant = DataAssistant(agent, conversation_id)
 """
 
 from .assistant import (

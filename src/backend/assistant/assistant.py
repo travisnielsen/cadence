@@ -1,6 +1,6 @@
 """DataAssistant — manages chat sessions and invokes the NL2SQL workflow.
 
-This agent owns the Foundry thread and conversation history.
+This agent owns the Foundry conversation session and history.
 It classifies user intent, invokes the NL2SQL workflow for data questions,
 and handles conversational refinements.
 """
@@ -124,6 +124,7 @@ class ConversationContext:
     last_tables_json: str | None = None
     last_question: str = ""
     query_source: str = ""  # "template" or "dynamic"
+    pending_dynamic_confirmation: bool = False
 
     # Schema area context
     current_schema_area: str | None = None
@@ -137,6 +138,7 @@ class ClassificationResult:
     intent: str  # "data_query", "refinement", "conversation"
     query: str = ""  # The query to process (may be rewritten for refinements)
     param_overrides: dict = field(default_factory=dict)  # For refinements
+    confirmation_action: str | None = None  # "accept" | "revise" | "none"
 
 
 def load_assistant_prompt() -> str:
@@ -151,48 +153,57 @@ class DataAssistant:
     """Manages conversation flow and invokes the NL2SQL workflow.
 
     Responsibilities:
-    1. Own the Foundry thread and conversation history
+    1. Own the Foundry conversation session and history
     2. Classify user intent (data query, refinement, conversation)
     3. Invoke NL2SQL workflow for data questions
     4. Handle conversational refinements using previous context
     5. Render results back to the user
     """
 
-    def __init__(self, agent: Agent, thread_id: str | None = None) -> None:
+    def __init__(self, agent: Agent, conversation_id: str | None = None) -> None:
         """Initialize the DataAssistant.
 
         Args:
             agent: Pre-configured Agent for LLM calls
-            thread_id: Optional existing Foundry thread ID to resume
+            conversation_id: Optional existing Foundry conversation ID to resume
         """
         self.agent = agent
         self.context = ConversationContext()
         self._thread: AgentSession | None = None
-        self._initial_thread_id = thread_id
+        self._initial_conversation_id = conversation_id
 
-        logger.info("DataAssistant initialized (thread_id=%s)", thread_id)
+        logger.debug("DataAssistant initialized (conversation_id=%s)", conversation_id)
 
     @property
-    def thread_id(self) -> str | None:
-        """Get the current Foundry thread ID."""
+    def conversation_id(self) -> str | None:
+        """Get the current Foundry conversation ID."""
         if self._thread:
             service_session_id = getattr(self._thread, "service_session_id", None)
             if service_session_id:
                 return service_session_id
             return self._thread.session_id
-        return self._initial_thread_id
+        return self._initial_conversation_id
 
-    async def get_or_create_thread(self) -> AgentSession:
-        """Get or create the Foundry thread."""
+    async def get_or_create_conversation(self) -> AgentSession:
+        """Get or create the Foundry conversation session."""
         if self._thread is not None:
             return self._thread
 
-        if self._initial_thread_id:
-            self._thread = self.agent.get_session(service_session_id=self._initial_thread_id)
-            logger.info("Resumed thread: %s", self._initial_thread_id)
+        if self._initial_conversation_id:
+            self._thread = self.agent.get_session(service_session_id=self._initial_conversation_id)
+            logger.debug(
+                "Resumed conversation: incoming_conversation_id=%s session_id=%s service_session_id=%s",
+                self._initial_conversation_id,
+                getattr(self._thread, "session_id", None),
+                getattr(self._thread, "service_session_id", None),
+            )
         else:
             self._thread = self.agent.create_session()
-            logger.info("Created new thread")
+            logger.debug(
+                "Created new conversation session: session_id=%s service_session_id=%s",
+                getattr(self._thread, "session_id", None),
+                getattr(self._thread, "service_session_id", None),
+            )
 
         return self._thread
 
@@ -204,7 +215,7 @@ class DataAssistant:
         Returns:
             ClassificationResult with intent type and any extracted overrides.
         """
-        thread = await self.get_or_create_thread()
+        thread = await self.get_or_create_conversation()
 
         context_info = ""
         if self.context.query_source == "template" and self.context.last_template_json:
@@ -228,9 +239,22 @@ Previous query context (DYNAMIC):
 - SQL executed: {self.context.last_sql[:500]}...
 """
 
+        pending_confirmation_info = ""
+        if self.context.pending_dynamic_confirmation and self.context.query_source == "dynamic":
+            pending_confirmation_info = f"""
+    Pending dynamic confirmation context:
+    - A dynamic SQL query is awaiting user approval before execution.
+    - Previous question: {self.context.last_question}
+    - Proposed SQL: {self.context.last_sql[:500] if self.context.last_sql else ""}...
+    - If the user approves execution, set intent to "refinement" and confirmation_action to "accept".
+    - If the user asks to change the query, set intent to "refinement" and confirmation_action to "revise".
+    - If the user is off-topic, set intent to "conversation" and confirmation_action to "none".
+    """
+
         classification_prompt = f"""Classify this user message and respond with JSON only.
 
 {context_info}
+    {pending_confirmation_info}
 
 User message: {user_message}
 
@@ -245,6 +269,9 @@ Respond with ONE of these JSON formats:
 3. For general CONVERSATION (greetings, jokes, help, off-topic):
 {{"intent": "conversation"}}
 
+If pending dynamic confirmation context exists, include:
+{{"confirmation_action": "accept" | "revise" | "none"}}
+
 Important: A refinement ONLY applies if there was a previous query and the user is asking to modify it.
 
 JSON response:"""
@@ -252,6 +279,12 @@ JSON response:"""
         result = await self.agent.run(
             classification_prompt,
             session=thread,
+        )
+
+        logger.debug(
+            "classify_intent run completed: response_conversation_id=%s session_service_session_id=%s",
+            getattr(result, "conversation_id", None),
+            getattr(thread, "service_session_id", None),
         )
 
         response_text = result.text or ""
@@ -265,14 +298,25 @@ JSON response:"""
                 intent = parsed.get("intent", "conversation")
                 query = parsed.get("query", user_message)
                 overrides = parsed.get("param_overrides", {})
+                confirmation_action = parsed.get("confirmation_action")
+                if isinstance(confirmation_action, str):
+                    confirmation_action = confirmation_action.lower()
+                else:
+                    confirmation_action = None
 
-                logger.info(
-                    "Classified intent: %s (query=%s, overrides=%s)", intent, query[:50], overrides
+                logger.debug(
+                    "Classified intent: %s (query=%s, overrides=%s, confirmation_action=%s, conversation_id=%s)",
+                    intent,
+                    query[:50],
+                    overrides,
+                    confirmation_action,
+                    self.conversation_id,
                 )
                 return ClassificationResult(
                     intent=intent,
                     query=query,
                     param_overrides=overrides,
+                    confirmation_action=confirmation_action,
                 )
         except json.JSONDecodeError as e:
             logger.warning("Failed to parse classification response: %s", e)
@@ -285,11 +329,17 @@ JSON response:"""
         Returns:
             The agent's conversational response.
         """
-        thread = await self.get_or_create_thread()
+        thread = await self.get_or_create_conversation()
 
         result = await self.agent.run(
             user_message,
             session=thread,
+        )
+
+        logger.debug(
+            "handle_conversation run completed: response_conversation_id=%s session_service_session_id=%s",
+            getattr(result, "conversation_id", None),
+            getattr(thread, "service_session_id", None),
         )
 
         return result.text or ""
@@ -309,6 +359,16 @@ JSON response:"""
                     param_overrides=classification.param_overrides,
                 )
             if self.context.query_source == "dynamic" and self.context.last_sql:
+                pending_confirmation = self.context.pending_dynamic_confirmation
+                action = classification.confirmation_action
+                is_confirmed = pending_confirmation and action == "accept"
+                should_reprompt_confirmation = pending_confirmation and action not in {
+                    "accept",
+                    "revise",
+                }
+                if pending_confirmation and action in {"accept", "revise"}:
+                    self.context.pending_dynamic_confirmation = False
+
                 return NL2SQLRequest(
                     user_query=classification.query,
                     is_refinement=True,
@@ -316,6 +376,8 @@ JSON response:"""
                     previous_tables=self.context.last_tables,
                     previous_tables_json=self.context.last_tables_json,
                     previous_question=self.context.last_question,
+                    confirm_previous_sql=is_confirmed,
+                    reprompt_pending_confirmation=should_reprompt_confirmation,
                 )
 
         return NL2SQLRequest(
@@ -381,6 +443,11 @@ JSON response:"""
             params: The parameters that were used
         """
         if not response.error and response.sql_query:
+            self.context.pending_dynamic_confirmation = bool(
+                response.query_source == "dynamic"
+                and response.needs_clarification
+                and response.query_summary
+            )
             self.context.query_source = response.query_source
 
             if response.query_source == "template" and template_json:
@@ -440,13 +507,13 @@ JSON response:"""
         """Render the NL2SQL response for the frontend.
 
         Returns:
-            A structured dict with text, thread_id, and tool_call data.
+            A structured dict with text, conversation_id, and tool_call data.
         """
         text = self._format_response_text(response)
 
         return {
             "text": text,
-            "thread_id": self.thread_id,
+            "conversation_id": self.conversation_id,
             "tool_call": {
                 "tool_name": "nl2sql_query",
                 "tool_call_id": f"nl2sql_{id(response)}",

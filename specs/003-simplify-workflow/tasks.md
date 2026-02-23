@@ -123,7 +123,7 @@
 - [x] T028 [US4] Remove message wrapper types: `SQLDraftMessage`, `ExtractionRequestMessage`, `QueryBuilderRequestMessage`, `ClarificationMessage` from src/backend/models/generation.py and src/backend/models/extraction.py. Update src/backend/models/**init**.py re-exports.
 - [x] T029 [US4] Run import audit: `grep -r "from agent_framework import.*Executor\|WorkflowBuilder\|WorkflowContext\|handler\|response_handler" src/backend/` must return zero. `grep -r "ConversationOrchestrator" src/backend/` must return zero. `grep -r "try:.*from api.step_events" src/backend/entities/` must return zero. Fix any remaining references.
 
-**Checkpoint**: All MAF orchestration code is removed. DataAssistant replaces old orchestrator. Only ChatAgent/AzureAIClient/AgentThread/@tool remain.
+**Checkpoint**: All MAF orchestration code is removed. DataAssistant replaces old orchestrator. Only ChatAgent/AzureAIClient/session handling via AgentSession/@tool remain.
 
 ---
 

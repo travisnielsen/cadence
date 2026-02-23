@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from api.middleware import AzureADAuthMiddleware, azure_ad_settings, azure_scheme
 from api.monitoring import configure_observability, is_observability_enabled
-from api.routers import chat_router, threads_router
+from api.routers import chat_router, conversations_router
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,6 +39,9 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 # Reduce agent_framework verbosity (it logs all message content at INFO level)
 logging.getLogger("agent_framework").setLevel(logging.WARNING)
+# Suppress known AzureAIClient warning about runtime tool/structured_output overrides
+# (non-fatal in current architecture; functionality remains intact)
+logging.getLogger("agent_framework.azure").setLevel(logging.ERROR)
 
 # Check if Azure AD authentication is configured
 AUTH_ENABLED = bool(azure_ad_settings.AZURE_AD_CLIENT_ID and azure_ad_settings.AZURE_AD_TENANT_ID)
@@ -143,7 +146,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(chat_router)
-app.include_router(threads_router)
+app.include_router(conversations_router)
 
 
 @app.get("/health")

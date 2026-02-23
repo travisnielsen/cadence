@@ -2,30 +2,36 @@
  * Foundry Chat Hook
  *
  * Creates an ExternalStoreRuntime for assistant-ui with SSE streaming.
- * Uses Foundry thread IDs directly - no local session management.
- * Includes thread list adapter with local caching for session history sidebar.
+ * Uses backend-issued conversation IDs for continuity.
+ * Includes assistant-ui list adapter with local conversation cache for sidebar history.
  */
 
 "use client";
 
-import { useCallback, useRef, useState, useEffect } from "react";
 import {
-  useExternalStoreRuntime,
-  type ThreadMessageLike,
-  type AppendMessage,
-  type ExternalStoreThreadListAdapter,
-  type ExternalStoreThreadData,
-} from "@assistant-ui/react";
-import { useMsal, useIsAuthenticated } from "@azure/msal-react";
-import { streamChat, getThreadMessages, type ToolCallData, type StepData, type ClarificationData } from "@/lib/chatApi";
-import { useAccessToken } from "@/lib/useAccessToken";
+  getConversationMessages,
+  streamChat,
+  type ClarificationData,
+  type StepData,
+  type ToolCallData,
+} from "@/lib/chatApi";
 import {
-  loadCachedThreads,
-  addThreadToCache,
-  updateCachedThread,
-  removeThreadFromCache,
+  addThreadToCache as addConversationToCache,
+  loadCachedThreads as loadCachedConversations,
+  removeThreadFromCache as removeConversationFromCache,
+  updateCachedThread as updateCachedConversation,
   type CachedThread,
 } from "@/lib/threadCache";
+import { useAccessToken } from "@/lib/useAccessToken";
+import {
+  useExternalStoreRuntime,
+  type AppendMessage,
+  type ExternalStoreThreadData,
+  type ExternalStoreThreadListAdapter,
+  type ThreadMessageLike,
+} from "@assistant-ui/react";
+import { useIsAuthenticated, useMsal } from "@azure/msal-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface Message {
   id: string;
@@ -42,41 +48,43 @@ export function useChatApi() {
   const { acquireToken } = useAccessToken();
   const isAuthenticated = useIsAuthenticated();
   const { accounts } = useMsal();
-  
+
   // Get user ID from MSAL account (oid claim or localAccountId)
   const userId = accounts[0]?.localAccountId || accounts[0]?.homeAccountId || null;
 
-  // Foundry thread ID - null until first message completes
-  const [threadId, setThreadId] = useState<string | null>(null);
+  // Active conversation ID - null until first message completes
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
-  
+
   // Pending clarification request state - stores request_id for HITL flow
   const [pendingClarification, setPendingClarification] = useState<ClarificationData | null>(null);
   const pendingClarificationRef = useRef<ClarificationData | null>(null);
-  
+
   // Keep ref in sync with state
   useEffect(() => {
     pendingClarificationRef.current = pendingClarification;
   }, [pendingClarification]);
-  
-  // Ref to track current threadId for use in callbacks (avoids stale closure issues)
-  const threadIdRef = useRef<string | null>(null);
-  
+
+  // Ref to track current conversation ID for use in callbacks (avoids stale closure issues)
+  const conversationIdRef = useRef<string | null>(null);
+
   // Keep ref in sync with state
   useEffect(() => {
-    threadIdRef.current = threadId;
-  }, [threadId]);
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
 
-  // Thread list state
-  const [threads, setThreads] = useState<ExternalStoreThreadData<"regular">[]>([]);
-  const [archivedThreads, setArchivedThreads] = useState<ExternalStoreThreadData<"archived">[]>([]);
+  // Conversation list state (mapped to assistant-ui thread-list contract)
+  const [conversationItems, setConversationItems] = useState<ExternalStoreThreadData<"regular">[]>([]);
+  const [archivedConversationItems, setArchivedConversationItems] = useState<
+    ExternalStoreThreadData<"archived">[]
+  >([]);
   const [isLoadingThreads, setIsLoadingThreads] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
 
-  // Helper to convert CachedThread to ExternalStoreThreadData
-  const toExternalThreadData = useCallback(
+  // Helper to convert cached conversations to assistant-ui thread-list entries
+  const toExternalConversationData = useCallback(
     (cached: CachedThread[]): {
       regular: ExternalStoreThreadData<"regular">[];
       archived: ExternalStoreThreadData<"archived">[];
@@ -105,34 +113,34 @@ export function useChatApi() {
     []
   );
 
-  // Load threads from local cache when authenticated
-  const loadThreads = useCallback(() => {
+  // Load conversations from local cache when authenticated
+  const loadConversations = useCallback(() => {
     if (!isAuthenticated || !userId) {
-      setThreads([]);
-      setArchivedThreads([]);
+      setConversationItems([]);
+      setArchivedConversationItems([]);
       setIsLoadingThreads(false);
       return;
     }
 
     try {
       setIsLoadingThreads(true);
-      const cached = loadCachedThreads(userId);
-      const { regular, archived } = toExternalThreadData(cached);
-      setThreads(regular);
-      setArchivedThreads(archived);
+      const cached = loadCachedConversations(userId);
+      const { regular, archived } = toExternalConversationData(cached);
+      setConversationItems(regular);
+      setArchivedConversationItems(archived);
     } catch (error) {
-      console.error("Failed to load thread cache:", error);
-      setThreads([]);
-      setArchivedThreads([]);
+      console.error("Failed to load conversation cache:", error);
+      setConversationItems([]);
+      setArchivedConversationItems([]);
     } finally {
       setIsLoadingThreads(false);
     }
-  }, [isAuthenticated, userId, toExternalThreadData]);
+  }, [isAuthenticated, userId, toExternalConversationData]);
 
-  // Load threads when authentication state changes
+  // Load conversation list when authentication state changes
   useEffect(() => {
-    loadThreads();
-  }, [loadThreads, isAuthenticated, userId]);
+    loadConversations();
+  }, [loadConversations, isAuthenticated, userId]);
 
   // Convert our Message to assistant-ui format
   const convertMessage = useCallback(
@@ -141,15 +149,15 @@ export function useChatApi() {
       const parts: Array<
         | { type: "text"; text: string }
         | { type: "reasoning"; text: string }
-        | { 
-            type: "tool-call"; 
-            toolCallId: string; 
-            toolName: string; 
-            args: Record<string, string | number | boolean | null>; 
-            result?: Record<string, unknown>;
-          }
+        | {
+          type: "tool-call";
+          toolCallId: string;
+          toolName: string;
+          args: Record<string, string | number | boolean | null>;
+          result?: Record<string, unknown>;
+        }
       > = [];
-      
+
       // Add steps as reasoning parts (shows workflow step progress)
       // Use steps array first (new), fallback to reasoning (deprecated)
       if (m.steps && m.steps.length > 0) {
@@ -164,7 +172,7 @@ export function useChatApi() {
       } else if (m.reasoning) {
         parts.push({ type: "reasoning", text: m.reasoning });
       }
-      
+
       // Add tool call part if present (for generative UI)
       if (m.toolCall) {
         parts.push({
@@ -175,13 +183,13 @@ export function useChatApi() {
           result: m.toolCall.result,
         });
       }
-      
+
       // Add the main text content (if no tool call, or as fallback)
       // When we have a tool call, we can skip the text since the tool UI renders it
       if (!m.toolCall && m.content) {
         parts.push({ type: "text", text: m.content });
       }
-      
+
       return {
         id: m.id,
         role: m.role,
@@ -224,20 +232,20 @@ export function useChatApi() {
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
       setIsRunning(true);
 
-      // Use ref to get current threadId (avoids stale closure issues)
-      const currentThreadId = threadIdRef.current;
-      
-      // For new threads, compute a title from the first message
-      const isNewThread = !currentThreadId;
-      const chatTitle = isNewThread
+      // Use ref to get current conversation ID (avoids stale closure issues)
+      const currentConversationId = conversationIdRef.current;
+
+      // For new conversations, compute a title from the first message
+      const isNewConversation = !currentConversationId;
+      const chatTitle = isNewConversation
         ? text.length > 50
           ? text.slice(0, 50) + "..."
           : text
         : null;
 
-      // Stream response - use currentThreadId from ref
+      // Stream response using the current conversation ID from ref
       abortRef.current = streamChat(
-        currentThreadId,
+        currentConversationId,
         text,
         // onChunk - append to assistant message
         (chunk) => {
@@ -253,16 +261,16 @@ export function useChatApi() {
             return updated;
           });
         },
-        // onComplete - save Foundry thread ID and add to thread list/cache
-        (newThreadId) => {
+        // onComplete - persist conversation ID and add to cached/sidebar conversations
+        (newConversationId) => {
           setIsRunning(false);
-          
-          // Handle edge case where stream ended without thread_id
-          if (!newThreadId) {
-            console.warn("Stream completed without thread_id");
+
+          // Handle edge case where stream ended without conversation_id
+          if (!newConversationId) {
+            console.warn("Stream completed without conversation_id");
             return;
           }
-          
+
           // Clear only legacy reasoning, keep steps for display
           setMessages((prev) => {
             const updated = [...prev];
@@ -275,44 +283,44 @@ export function useChatApi() {
             }
             return updated;
           });
-          
-          // Only add to thread list if this is actually a new thread
-          // Use isNewThread which was captured when the request started
-          if (isNewThread) {
+
+          // Only add to list if this is actually a new conversation
+          // Use isNewConversation captured when the request started
+          if (isNewConversation) {
             const title = chatTitle || "New Chat";
-            
+
             // Add to local cache if we have userId
             if (userId) {
-              const cachedThread: CachedThread = {
-                id: newThreadId,
+              const cachedConversation: CachedThread = {
+                id: newConversationId,
                 title,
                 status: "regular",
                 createdAt: new Date().toISOString(),
               };
-              addThreadToCache(userId, cachedThread);
+              addConversationToCache(userId, cachedConversation);
             }
-            
-            // Add to thread list
-            setThreads((prev) => {
-              // Double-check thread doesn't already exist (edge case)
-              if (prev.some((t) => t.id === newThreadId)) {
+
+            // Add to conversation list (assistant-ui thread list adapter)
+            setConversationItems((prev) => {
+              // Double-check conversation doesn't already exist (edge case)
+              if (prev.some((t) => t.id === newConversationId)) {
                 return prev;
               }
-              const newThreadData: ExternalStoreThreadData<"regular"> = {
+              const newConversationData: ExternalStoreThreadData<"regular"> = {
                 status: "regular",
-                id: newThreadId,
+                id: newConversationId,
                 title,
               };
-              return [newThreadData, ...prev];
+              return [newConversationData, ...prev];
             });
           }
-          
-          // Update ref immediately so subsequent messages use correct threadId
-          threadIdRef.current = newThreadId;
-          
-          // Only update state if it actually changed (for new threads)
-          if (isNewThread) {
-            setThreadId(newThreadId);
+
+          // Update ref immediately so subsequent messages use correct conversation ID
+          conversationIdRef.current = newConversationId;
+
+          // Only update state if it actually changed (for new conversations)
+          if (isNewConversation) {
+            setConversationId(newConversationId);
           }
         },
         // onError
@@ -367,7 +375,7 @@ export function useChatApi() {
             const last = updated[updated.length - 1];
             if (last.role === "assistant") {
               const existingSteps = last.steps || [];
-              
+
               // Check if this is a completion event for an existing step
               if (stepData.status === "completed") {
                 // Find and update the matching started step with duration
@@ -411,7 +419,7 @@ export function useChatApi() {
         },
         // accessToken for Authorization header
         accessToken,
-        // title for new threads
+        // title for new conversations
         chatTitle,
         // onStepsComplete - mark steps as complete for step indicator
         () => {
@@ -433,7 +441,7 @@ export function useChatApi() {
         (clarification) => {
           console.log("Received clarification request:", clarification);
           setPendingClarification(clarification);
-          
+
           // Update assistant message to show clarification UI via toolCall
           setMessages((prev) => {
             const updated = [...prev];
@@ -461,7 +469,7 @@ export function useChatApi() {
           });
         }
       );
-      
+
       // Clear pending clarification after sending (it was used)
       if (pendingClarificationRef.current) {
         setPendingClarification(null);
@@ -479,7 +487,7 @@ export function useChatApi() {
   const onReload = useCallback(
     async (parentId: string | null) => {
       if (!parentId) return;
-      
+
       // Find the last user message (the one before the assistant message being regenerated)
       const messageIndex = messages.findIndex((m) => m.id === parentId);
       if (messageIndex === -1) return;
@@ -505,12 +513,12 @@ export function useChatApi() {
       setMessages((prev) => [...prev.slice(0, messageIndex + 1), assistantMsg]);
       setIsRunning(true);
 
-      // Use ref to get current threadId (avoids stale closure issues)
-      const currentThreadId = threadIdRef.current;
+      // Use ref to get current conversation ID (avoids stale closure issues)
+      const currentConversationId = conversationIdRef.current;
 
       // Stream new response
       abortRef.current = streamChat(
-        currentThreadId,
+        currentConversationId,
         userMessage.content,
         // onChunk
         (chunk) => {
@@ -527,15 +535,15 @@ export function useChatApi() {
           });
         },
         // onComplete
-        (newThreadId) => {
+        (newConversationId) => {
           setIsRunning(false);
-          
-          // Handle edge case where stream ended without thread_id
-          if (!newThreadId) {
-            console.warn("Stream completed without thread_id (reload)");
+
+          // Handle edge case where stream ended without conversation_id
+          if (!newConversationId) {
+            console.warn("Stream completed without conversation_id (reload)");
             return;
           }
-          
+
           // Clear only legacy reasoning, keep steps for display
           setMessages((prev) => {
             const updated = [...prev];
@@ -548,10 +556,10 @@ export function useChatApi() {
             }
             return updated;
           });
-          
-          // Only update threadId if it actually changed
-          if (newThreadId !== threadId) {
-            setThreadId(newThreadId);
+
+          // Only update conversation ID if it actually changed
+          if (newConversationId !== conversationId) {
+            setConversationId(newConversationId);
           }
         },
         // onError
@@ -606,7 +614,7 @@ export function useChatApi() {
             const last = updated[updated.length - 1];
             if (last.role === "assistant") {
               const existingSteps = last.steps || [];
-              
+
               if (stepData.status === "completed") {
                 const stepIndex = existingSteps.findIndex(
                   s => s.step === stepData.step && s.status === "started"
@@ -688,31 +696,31 @@ export function useChatApi() {
     [messages, acquireToken]
   );
 
-  // Thread list adapter for sidebar
-  const threadListAdapter: ExternalStoreThreadListAdapter = {
-    threadId: threadId ?? undefined,
-    threads,
-    archivedThreads,
+  // assistant-ui thread-list adapter (backs conversation sidebar)
+  const conversationListAdapter: ExternalStoreThreadListAdapter = {
+    threadId: conversationId ?? undefined,
+    threads: conversationItems,
+    archivedThreads: archivedConversationItems,
     isLoading: isLoadingThreads,
 
     onSwitchToNewThread: () => {
       // Start a fresh conversation
-      threadIdRef.current = null;
-      setThreadId(null);
+      conversationIdRef.current = null;
+      setConversationId(null);
       setMessages([]);
     },
 
-    onSwitchToThread: async (switchThreadId: string) => {
-      // Switch to existing thread and load its messages
-      threadIdRef.current = switchThreadId;
-      setThreadId(switchThreadId);
+    onSwitchToThread: async (switchConversationId: string) => {
+      // Switch to existing conversation and load its messages
+      conversationIdRef.current = switchConversationId;
+      setConversationId(switchConversationId);
       setMessages([]); // Clear while loading
       setIsLoadingMessages(true);
-      
+
       try {
         const accessToken = await acquireToken();
-        const apiMessages = await getThreadMessages(switchThreadId, accessToken);
-        
+        const apiMessages = await getConversationMessages(switchConversationId, accessToken);
+
         // Convert API messages to our Message format, parsing tool calls from stored content
         const loadedMessages: Message[] = apiMessages.map((msg) => {
           const message: Message = {
@@ -720,97 +728,97 @@ export function useChatApi() {
             role: msg.role as "user" | "assistant",
             content: msg.content,
           };
-          
+
           // Keep original markdown content for stored messages
           // The markdown already includes formatted tables and collapsible SQL query
           // Tool UI rendering is only for live streaming responses
-          
+
           return message;
         });
-        
+
         setMessages(loadedMessages);
       } catch (error) {
-        console.error("Failed to load thread messages:", error);
+        console.error("Failed to load conversation messages:", error);
         // Keep empty messages on error - user can still send new messages
       } finally {
         setIsLoadingMessages(false);
       }
     },
 
-    onRename: async (renameThreadId: string, newTitle: string) => {
+    onRename: async (renameConversationId: string, newTitle: string) => {
       if (!userId) return;
-      
+
       // Update local cache
-      updateCachedThread(userId, renameThreadId, { title: newTitle });
-      
+      updateCachedConversation(userId, renameConversationId, { title: newTitle });
+
       // Update UI state
-      setThreads((prev) =>
+      setConversationItems((prev) =>
         prev.map((t) =>
-          t.id === renameThreadId ? { ...t, title: newTitle } : t
+          t.id === renameConversationId ? { ...t, title: newTitle } : t
         )
       );
-      setArchivedThreads((prev) =>
+      setArchivedConversationItems((prev) =>
         prev.map((t) =>
-          t.id === renameThreadId ? { ...t, title: newTitle } : t
+          t.id === renameConversationId ? { ...t, title: newTitle } : t
         )
       );
     },
 
-    onArchive: async (archiveThreadId: string) => {
+    onArchive: async (archiveConversationId: string) => {
       if (!userId) return;
-      
+
       // Update local cache
-      updateCachedThread(userId, archiveThreadId, { status: "archived" });
-      
-      // Move from threads to archivedThreads
-      setThreads((prev) => {
-        const thread = prev.find((t) => t.id === archiveThreadId);
-        if (thread) {
+      updateCachedConversation(userId, archiveConversationId, { status: "archived" });
+
+      // Move from active list to archived list
+      setConversationItems((prev) => {
+        const conversation = prev.find((t) => t.id === archiveConversationId);
+        if (conversation) {
           // Convert to archived status
-          const archivedThread: ExternalStoreThreadData<"archived"> = {
-            ...thread,
+          const archivedConversation: ExternalStoreThreadData<"archived"> = {
+            ...conversation,
             status: "archived",
           };
-          setArchivedThreads((archived) => [archivedThread, ...archived]);
+          setArchivedConversationItems((archived) => [archivedConversation, ...archived]);
         }
-        return prev.filter((t) => t.id !== archiveThreadId);
+        return prev.filter((t) => t.id !== archiveConversationId);
       });
     },
 
-    onUnarchive: async (unarchiveThreadId: string) => {
+    onUnarchive: async (unarchiveConversationId: string) => {
       if (!userId) return;
-      
+
       // Update local cache
-      updateCachedThread(userId, unarchiveThreadId, { status: "regular" });
-      
-      // Move from archivedThreads to threads
-      setArchivedThreads((prev) => {
-        const thread = prev.find((t) => t.id === unarchiveThreadId);
-        if (thread) {
+      updateCachedConversation(userId, unarchiveConversationId, { status: "regular" });
+
+      // Move from archived list back to active list
+      setArchivedConversationItems((prev) => {
+        const conversation = prev.find((t) => t.id === unarchiveConversationId);
+        if (conversation) {
           // Convert to regular status
-          const regularThread: ExternalStoreThreadData<"regular"> = {
-            ...thread,
+          const regularConversation: ExternalStoreThreadData<"regular"> = {
+            ...conversation,
             status: "regular",
           };
-          setThreads((regular) => [regularThread, ...regular]);
+          setConversationItems((regular) => [regularConversation, ...regular]);
         }
-        return prev.filter((t) => t.id !== unarchiveThreadId);
+        return prev.filter((t) => t.id !== unarchiveConversationId);
       });
     },
 
-    onDelete: async (deleteThreadId: string) => {
+    onDelete: async (deleteConversationId: string) => {
       if (!userId) return;
-      
+
       // Remove from local cache
-      removeThreadFromCache(userId, deleteThreadId);
-      
+      removeConversationFromCache(userId, deleteConversationId);
+
       // Remove from UI state
-      setThreads((prev) => prev.filter((t) => t.id !== deleteThreadId));
-      setArchivedThreads((prev) => prev.filter((t) => t.id !== deleteThreadId));
-      
-      // If we deleted the current thread, start fresh
-      if (threadId === deleteThreadId) {
-        setThreadId(null);
+      setConversationItems((prev) => prev.filter((t) => t.id !== deleteConversationId));
+      setArchivedConversationItems((prev) => prev.filter((t) => t.id !== deleteConversationId));
+
+      // If we deleted the current conversation, start fresh
+      if (conversationId === deleteConversationId) {
+        setConversationId(null);
         setMessages([]);
       }
     },
@@ -821,7 +829,7 @@ export function useChatApi() {
     submit: ({ message, type }: { message: { id?: string }; type: "positive" | "negative" }) => {
       // Log feedback (you can extend this to send to an API)
       console.log(`Feedback submitted: ${type} for message ${message.id}`);
-      
+
       // Optional: Send feedback to your backend
       // const accessToken = await acquireToken();
       // await fetch(`${API_BASE_URL}/api/feedback`, {
@@ -830,7 +838,7 @@ export function useChatApi() {
       //     "Content-Type": "application/json",
       //     ...(accessToken && { Authorization: `Bearer ${accessToken}` }),
       //   },
-      //   body: JSON.stringify({ messageId: message.id, threadId, type }),
+      //   body: JSON.stringify({ messageId: message.id, conversationId, type }),
       // });
     },
   };
@@ -844,10 +852,19 @@ export function useChatApi() {
     onCancel,
     onReload,
     adapters: {
-      threadList: threadListAdapter,
+      threadList: conversationListAdapter,
       feedback: feedbackAdapter,
     },
   });
 
-  return { runtime, threadId, messages, isRunning, isLoadingThreads, isLoadingMessages };
+  return {
+    runtime,
+    conversationId,
+    // Compatibility alias for assistant-ui consumer expectations.
+    threadId: conversationId,
+    messages,
+    isRunning,
+    isLoadingThreads,
+    isLoadingMessages,
+  };
 }

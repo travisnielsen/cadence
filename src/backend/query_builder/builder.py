@@ -18,6 +18,72 @@ from shared.protocols import NoOpReporter, ProgressReporter
 logger = logging.getLogger(__name__)
 
 
+def _looks_like_sql(value: str) -> bool:
+    """Return True when text appears to contain a SQL SELECT/WITH statement."""
+    return bool(re.search(r"(?is)\b(select|with)\b", value))
+
+
+def _find_sql_in_payload(payload: object) -> str | None:
+    """Recursively find SQL text in a parsed payload."""
+    stack: list[object] = [payload]
+
+    while stack:
+        current = stack.pop()
+
+        if isinstance(current, str):
+            stripped = current.strip()
+            if stripped and _looks_like_sql(stripped):
+                return stripped
+            continue
+
+        if isinstance(current, list):
+            stack.extend(current)
+            continue
+
+        if isinstance(current, dict):
+            direct_keys = ("completed_sql", "sql_query", "sql", "query")
+            for key in direct_keys:
+                value = current.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+
+            for key, value in current.items():
+                if isinstance(value, str):
+                    key_lower = str(key).lower()
+                    if any(token in key_lower for token in ("sql", "query")) and _looks_like_sql(
+                        value
+                    ):
+                        return value.strip()
+                elif isinstance(value, (dict, list)):
+                    stack.append(value)
+
+    return None
+
+
+def _extract_sql_from_text(text: str) -> str | None:
+    """Best-effort extraction of SQL from plain-text model output."""
+    # Prefer fenced SQL blocks first
+    sql_fence = re.search(r"```sql\s*(.*?)\s*```", text, re.IGNORECASE | re.DOTALL)
+    if sql_fence:
+        candidate = sql_fence.group(1).strip()
+        if candidate:
+            return candidate
+
+    # Fallback: find first SELECT/WITH block in text
+    statement_match = re.search(
+        r"(?is)\b(select|with)\b[\s\S]*",
+        text,
+    )
+    if statement_match:
+        candidate = statement_match.group(0).strip()
+        # Trim trailing markdown fence if present
+        candidate = candidate.split("```")[0].strip()
+        if candidate:
+            return candidate
+
+    return None
+
+
 def _build_generation_prompt(user_query: str, tables: list[TableMetadata]) -> str:
     """Build the prompt for the LLM to generate a SQL query.
 
@@ -59,6 +125,11 @@ def _build_generation_prompt(user_query: str, tables: list[TableMetadata]) -> st
         "## User Question\n"
         f"{user_query}\n"
         "\n"
+        "## Date Semantics\n"
+        "The database is historical. For relative date requests (last N days/months/years, "
+        "this month/year, recent), treat current date as DATEADD(YEAR, -10, GETDATE()) "
+        "instead of GETDATE().\n"
+        "\n"
         "## Available Tables\n"
         f"{json.dumps(tables_info, indent=2)}\n"
         "\n"
@@ -97,6 +168,15 @@ def _parse_llm_response(response_text: str) -> dict[str, Any]:
                 json_str = text[start:end].strip()
                 return json.loads(json_str)
         except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Extract from first '{' to last '}' (handles nested JSON objects)
+    obj_start = text.find("{")
+    obj_end = text.rfind("}")
+    if obj_start >= 0 and obj_end > obj_start:
+        try:
+            return json.loads(text[obj_start : obj_end + 1])
+        except json.JSONDecodeError:
             pass
 
     # Regex search for any JSON object
@@ -161,11 +241,29 @@ async def build_query(
                 if response_text:
                     break
 
+        if not response_text:
+            fallback_text = getattr(response, "text", "")
+            response_text = fallback_text if isinstance(fallback_text, str) else ""
+
+        if not response_text:
+            logger.warning("QueryBuilder returned empty response text")
+
         parsed = _parse_llm_response(response_text)
+        status = str(parsed.get("status", "")).lower()
+        completed_sql = _find_sql_in_payload(parsed)
+        if not completed_sql and response_text:
+            completed_sql = _extract_sql_from_text(response_text)
+        has_completed_sql = isinstance(completed_sql, str) and bool(completed_sql.strip())
+        parser_generated_error = status == "error" and str(parsed.get("error", "")).startswith(
+            "Failed to parse LLM response:"
+        )
 
         tables_metadata_json = json.dumps([t.model_dump() for t in tables])
 
-        if parsed.get("status") == "success":
+        success_statuses = {"success", "ok", "completed", "done"}
+        if status in success_statuses or (
+            has_completed_sql and (status not in {"error", "failed"} or parser_generated_error)
+        ):
             raw_confidence = parsed.get("confidence", 0.5)
             try:
                 confidence = max(0.0, min(1.0, float(raw_confidence)))
@@ -175,7 +273,7 @@ async def build_query(
             return SQLDraft(
                 status="success",
                 source="dynamic",
-                completed_sql=parsed.get("completed_sql"),
+                completed_sql=completed_sql,
                 user_query=user_query,
                 retry_count=retry_count,
                 reasoning=parsed.get("reasoning"),
@@ -184,12 +282,23 @@ async def build_query(
                 confidence=confidence,
             )
 
+        error_message = parsed.get("error")
+        if not error_message:
+            keys = sorted(parsed.keys())
+            logger.warning(
+                "QueryBuilder returned unexpected schema (status=%s, keys=%s, sample=%s)",
+                status or "<missing>",
+                keys,
+                response_text[:300],
+            )
+            error_message = "Query generation failed due to unexpected model response format"
+
         return SQLDraft(
             status="error",
             source="dynamic",
             user_query=user_query,
             retry_count=retry_count,
-            error=parsed.get("error", "Unknown error during query generation"),
+            error=error_message,
             tables_used=parsed.get("tables_used", []),
             tables_metadata_json=tables_metadata_json,
         )

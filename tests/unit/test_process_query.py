@@ -565,6 +565,67 @@ async def test_dynamic_refinement_reuses_previous_tables(
     assert not ts.calls  # type: ignore[union-attr]
 
 
+@patch(f"{_MOD}.build_query", new_callable=AsyncMock)
+@patch(f"{_MOD}.validate_query")
+async def test_dynamic_confirmation_acceptance_executes_previous_sql_directly(
+    mock_validate_query: MagicMock,
+    mock_build: AsyncMock,
+) -> None:
+    """Acceptance reply on dynamic refinement executes previous SQL without regeneration."""
+    validated = _success_draft(
+        source="dynamic",
+        template_id=None,
+        sql=_SQL,
+        confidence=0.9,
+        tables_used=["Sales.Orders"],
+    )
+    mock_validate_query.return_value = validated
+
+    request = NL2SQLRequest(
+        user_query="please run it",
+        is_refinement=True,
+        previous_sql=_SQL,
+        previous_question="Show orders from Seattle",
+        previous_tables=["Sales.Orders"],
+        previous_tables_json=json.dumps([_TABLE_DICT]),
+        confirm_previous_sql=True,
+    )
+    clients = _make_clients(sql_rows=_ROWS, sql_columns=_COLS)
+
+    result = await process_query(request, clients)
+
+    assert isinstance(result, NL2SQLResponse)
+    assert result.error is None
+    assert result.sql_query == _SQL
+    assert result.query_source == "dynamic"
+    mock_build.assert_not_awaited()
+
+
+@patch(f"{_MOD}.build_query", new_callable=AsyncMock)
+async def test_dynamic_confirmation_missing_action_reprompts_gate(
+    mock_build: AsyncMock,
+) -> None:
+    """Missing confirmation action should re-display confirmation gate without regeneration."""
+    request = NL2SQLRequest(
+        user_query="yes",
+        is_refinement=True,
+        previous_sql=_SQL,
+        previous_question="Show orders from Seattle",
+        previous_tables=["Sales.Orders"],
+        previous_tables_json=json.dumps([_TABLE_DICT]),
+        reprompt_pending_confirmation=True,
+    )
+    clients = _make_clients(sql_rows=_ROWS, sql_columns=_COLS)
+
+    result = await process_query(request, clients)
+
+    assert isinstance(result, NL2SQLResponse)
+    assert result.needs_clarification is True
+    assert result.query_source == "dynamic"
+    assert result.query_summary
+    mock_build.assert_not_awaited()
+
+
 # ── 13. Error Recovery (Unexpected Exception) ───────────────────────────
 
 

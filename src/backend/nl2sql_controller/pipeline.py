@@ -13,7 +13,7 @@ import logging
 import operator
 from typing import Any
 
-from agent_framework import AgentSession
+from agent_framework import Agent, AgentSession
 from models import (
     ClarificationRequest,
     MissingParameter,
@@ -138,6 +138,17 @@ def _format_defaults_for_display(
             descriptions[name] = str(value)
 
     return descriptions
+
+
+def _build_agent_session(agent: Agent, conversation_id: str | None) -> AgentSession:
+    """Create or reuse an agent session for pipeline LLM calls.
+
+    When a provider conversation ID is available, this reuses the same
+    provider conversation so multi-agent calls share one trace.
+    """
+    if conversation_id:
+        return agent.get_session(service_session_id=conversation_id)
+    return AgentSession()
 
 
 # ── Confidence routing ───────────────────────────────────────────────────
@@ -459,7 +470,7 @@ async def _run_template_pipeline(
         Final response or clarification request.
     """
     # 1. Extract parameters
-    thread = AgentSession()
+    thread = _build_agent_session(clients.param_extractor_agent, clients.conversation_id)
     draft = await extract_parameters(
         extraction_req,
         clients.param_extractor_agent,
@@ -643,7 +654,7 @@ async def _retry_dynamic_query(
         retry_count=draft.retry_count + 1,
     )
 
-    thread = AgentSession()
+    thread = _build_agent_session(clients.query_builder_agent, clients.conversation_id)
     retry_draft = await build_query(
         retry_req,
         clients.query_builder_agent,
@@ -726,7 +737,7 @@ async def _dynamic_path(
         tables=tables,
     )
 
-    thread = AgentSession()
+    thread = _build_agent_session(clients.query_builder_agent, clients.conversation_id)
     draft = await build_query(
         builder_req,
         clients.query_builder_agent,
@@ -773,6 +784,10 @@ async def _handle_dynamic_refinement(
     Returns:
         Final response or error.
     """
+    confirmation_shortcut = await _handle_dynamic_confirmation_shortcut(request, clients)
+    if confirmation_shortcut is not None:
+        return confirmation_shortcut
+
     tables: list[TableMetadata] = []
 
     if request.previous_tables_json:
@@ -815,7 +830,7 @@ async def _handle_dynamic_refinement(
         tables=tables,
     )
 
-    thread = AgentSession()
+    thread = _build_agent_session(clients.query_builder_agent, clients.conversation_id)
     draft = await build_query(
         builder_req,
         clients.query_builder_agent,
@@ -836,6 +851,60 @@ async def _handle_dynamic_refinement(
 
     # Skip confidence gate for refinements
     return await _execute_and_respond(draft, clients)
+
+
+async def _handle_dynamic_confirmation_shortcut(
+    request: NL2SQLRequest,
+    clients: PipelineClients,
+) -> NL2SQLResponse | None:
+    """Handle pending dynamic confirmation accept/reprompt shortcuts.
+
+    Returns an ``NL2SQLResponse`` when a shortcut path was taken,
+    otherwise ``None`` to continue normal dynamic refinement.
+    """
+    if request.previous_sql and request.reprompt_pending_confirmation:
+        logger.info("Pending dynamic confirmation not resolved; re-prompting confirmation gate")
+        reprompt_draft = SQLDraft(
+            status="success",
+            source="dynamic",
+            completed_sql=request.previous_sql,
+            user_query=request.previous_question or request.user_query,
+            reasoning=(
+                "Please confirm this query before I run it. "
+                "Use Run this query, or tell me what to revise."
+            ),
+            tables_used=request.previous_tables or [],
+            tables_metadata_json=request.previous_tables_json,
+            confidence=max(_DYNAMIC_CONFIDENCE_THRESHOLD - 0.01, 0.0),
+        )
+        return _confidence_gate_response(reprompt_draft)
+
+    if request.previous_sql and request.confirm_previous_sql:
+        logger.info("Accepted pending dynamic confirmation; executing previous SQL directly")
+        direct_draft = SQLDraft(
+            status="success",
+            source="dynamic",
+            completed_sql=request.previous_sql,
+            user_query=request.previous_question or request.user_query,
+            tables_used=request.previous_tables or [],
+            tables_metadata_json=request.previous_tables_json,
+            confidence=_DYNAMIC_CONFIDENCE_THRESHOLD,
+        )
+        direct_draft = validate_query(direct_draft, set(clients.allowed_tables))
+        if direct_draft.query_violations:
+            error_msg, suggestions = build_error_recovery(
+                direct_draft.query_violations,
+                direct_draft.tables_used,
+            )
+            return NL2SQLResponse(
+                sql_query="",
+                error=error_msg,
+                query_source="dynamic",
+                error_suggestions=suggestions,
+            )
+        return await _execute_and_respond(direct_draft, clients)
+
+    return None
 
 
 # ── Public entry point ───────────────────────────────────────────────────

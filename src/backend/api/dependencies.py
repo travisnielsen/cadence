@@ -3,7 +3,7 @@ FastAPI dependencies for authentication and shared resources.
 """
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from fastapi import Depends, HTTPException, Request
 
@@ -13,6 +13,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 MAX_TITLE_LENGTH = 50
+
+
+class OwnershipContext(TypedDict):
+    """Ownership verification result payload for conversation routes."""
+
+    conversation: Any
+    metadata: dict[str, Any]
+    user_id: str
 
 
 def get_user_id(request: Request) -> str:
@@ -61,39 +69,48 @@ def get_agent(request: Request) -> "Agent":
     return agent
 
 
-async def verify_thread_ownership(
-    thread_id: str,
+async def verify_conversation_ownership(
+    conversation_id: str,
     user_id: str = Depends(get_user_id),
     project_client: Any = Depends(get_project_client),  # noqa: ANN401
-) -> dict:
+) -> OwnershipContext:
     """
-    Verify that the current user owns the specified thread.
+    Verify that the current user owns the specified conversation.
 
-    Returns the thread if ownership is verified.
+    Returns the conversation if ownership is verified.
     Raises HTTPException 403 if access is denied.
     """
     try:
         # Get the OpenAI client from the project client
         openai_client = project_client.get_openai_client()
 
-        # Retrieve the thread - will fail if it doesn't exist
-        thread = openai_client.conversations.retrieve(thread_id)
+        # Retrieve the conversation - will fail if it doesn't exist
+        conversation = openai_client.conversations.retrieve(conversation_id)
 
         # For now, we allow access if the thread exists
         # TODO: Implement proper ownership tracking via local storage
-        metadata = getattr(thread, "metadata", {}) or {}
+        metadata_obj = getattr(conversation, "metadata", {}) or {}
+        metadata = metadata_obj if isinstance(metadata_obj, dict) else {}
 
-        logger.info("Thread access check: thread_id=%s, current_user=%s", thread_id, user_id)
+        logger.info(
+            "Conversation access check: conversation_id=%s, current_user=%s",
+            conversation_id,
+            user_id,
+        )
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("Error verifying thread access for %s", thread_id)
-        # If thread doesn't exist, return 404
+        logger.exception("Error verifying conversation access for %s", conversation_id)
+        # If conversation doesn't exist, return 404
         if "not found" in str(e).lower():
-            raise HTTPException(status_code=404, detail="Thread not found") from e
+            raise HTTPException(status_code=404, detail="Conversation not found") from e
         raise HTTPException(status_code=500, detail=str(e)) from e
     else:
-        return {"thread": thread, "metadata": metadata, "user_id": user_id}
+        return {
+            "conversation": conversation,
+            "metadata": metadata,
+            "user_id": user_id,
+        }
 
 
 def extract_message_text(msg: Any) -> str:  # noqa: ANN401
@@ -116,9 +133,13 @@ def extract_message_text(msg: Any) -> str:  # noqa: ANN401
     return content
 
 
-async def get_thread_title(project_client: Any, thread_id: str, metadata: dict) -> str:  # noqa: ANN401
+async def get_conversation_title(
+    project_client: object,
+    conversation_id: str,
+    metadata: dict[str, Any],
+) -> str:
     """
-    Get thread title from metadata or first user message.
+    Get conversation title from metadata or first user message.
 
     Returns "New Chat" if no title can be determined.
     """
@@ -127,15 +148,15 @@ async def get_thread_title(project_client: Any, thread_id: str, metadata: dict) 
         return title
 
     try:
-        openai_client = project_client.get_openai_client()
-        # List items in the thread to find first user message
-        items = openai_client.conversations.items.list(thread_id)
+        openai_client = cast(Any, project_client).get_openai_client()
+        # List items in the conversation to find first user message
+        items = openai_client.conversations.items.list(conversation_id)
         for item in items:
             if hasattr(item, "role") and item.role == "user":
                 text = extract_message_text(item)
                 if text:
                     return text[:MAX_TITLE_LENGTH] + "..." if len(text) > MAX_TITLE_LENGTH else text
     except (ValueError, RuntimeError, OSError) as e:
-        logger.warning("Could not fetch messages for thread %s: %s", thread_id, e)
+        logger.warning("Could not fetch messages for conversation %s: %s", conversation_id, e)
 
     return "New Chat"

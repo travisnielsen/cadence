@@ -34,11 +34,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /app/.venv /app/.venv
 
 # Copy application code (build context is repo root)
-COPY src/backend/api/ ./api/
-COPY src/backend/config/ ./config/
-COPY src/backend/entities/ ./entities/
-COPY src/backend/models/ ./models/
-COPY src/backend/__init__.py ./
+COPY src/backend/ ./
 
 # Set environment variables
 ENV PATH="/app/.venv/bin:$PATH"

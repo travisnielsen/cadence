@@ -10,6 +10,7 @@ DataAssistant + process_query() pattern:
 """
 
 import asyncio
+import inspect
 import json
 import logging
 import uuid
@@ -64,11 +65,18 @@ async def generate_clarification_response_stream(
     clarification_ctx: ClarificationRequest,
     message: str,
     request_id: str,
-    thread_id: str | None = None,
+    conversation_id: str | None = None,
     user_id: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Stream response for a clarification continuation."""
-    del request_id  # Used by caller for lookup only
+    trace_id = uuid.uuid4().hex[:8]
+    logger.debug(
+        "[%s] Clarification stream start: request_id=%s incoming_conversation_id=%s user_present=%s",
+        trace_id,
+        request_id,
+        conversation_id,
+        bool(user_id),
+    )
     from api.session_manager import get_assistant, store_assistant
     from config.settings import get_settings
     from nl2sql_controller.pipeline import process_query
@@ -82,7 +90,11 @@ async def generate_clarification_response_stream(
     try:
         settings = get_settings()
         reporter = QueueReporter(step_queue)
-        clients = create_pipeline_clients(settings, reporter=reporter)
+        clients = create_pipeline_clients(
+            settings,
+            reporter=reporter,
+            conversation_id=conversation_id,
+        )
 
         # Build request incorporating the user's clarification answer
         request = NL2SQLRequest(
@@ -105,7 +117,13 @@ async def generate_clarification_response_stream(
             except asyncio.QueueEmpty:
                 break
 
-        foundry_thread_id = thread_id
+        foundry_conversation_id = conversation_id
+        logger.debug(
+            "[%s] Clarification stream processing complete: resolved_conversation_id=%s result_type=%s",
+            trace_id,
+            foundry_conversation_id,
+            type(result).__name__,
+        )
 
         if isinstance(result, ClarificationRequest):
             # Another clarification needed
@@ -151,13 +169,13 @@ async def generate_clarification_response_stream(
 
             yield (
                 "data: "
-                f"{json.dumps({'tool_call': tool_call, 'done': False, 'thread_id': foundry_thread_id})}"
+                f"{json.dumps({'tool_call': tool_call, 'done': False, 'conversation_id': foundry_conversation_id})}"
                 "\n\n"
             )
             yield (f"data: {json.dumps({'steps_complete': True, 'done': False})}\n\n")
 
             # Update assistant context if cached
-            assistant = get_assistant(foundry_thread_id)
+            assistant = get_assistant(foundry_conversation_id)
             if assistant:
                 assistant.update_context(
                     response,
@@ -165,10 +183,17 @@ async def generate_clarification_response_stream(
                     response.extracted_params,
                 )
                 assistant.enrich_response(response)
-                if foundry_thread_id:
-                    store_assistant(foundry_thread_id, assistant)
+                if foundry_conversation_id:
+                    store_assistant(foundry_conversation_id, assistant)
 
-        yield (f"data: {json.dumps({'done': True, 'thread_id': foundry_thread_id})}\n\n")
+        yield (
+            f"data: {json.dumps({'done': True, 'conversation_id': foundry_conversation_id})}\n\n"
+        )
+        logger.debug(
+            "[%s] Clarification stream done event emitted: conversation_id=%s",
+            trace_id,
+            foundry_conversation_id,
+        )
 
     except (ValueError, RuntimeError, OSError, TypeError) as e:
         logger.error("Clarification error: %s", e, exc_info=True)
@@ -179,13 +204,15 @@ async def generate_clarification_response_stream(
 
 async def generate_orchestrator_streaming_response(
     message: str,
-    thread_id: str | None = None,
+    conversation_id: str | None = None,
     user_id: str | None = None,
     title: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Stream response using the DataAssistant + process_query()."""
-    del title  # TODO: Use for thread metadata
+    del title  # TODO: Use for conversation metadata
     import time
+
+    trace_id = uuid.uuid4().hex[:8]
 
     from agent_framework import Agent
     from agent_framework_azure_ai import AzureAIClient
@@ -202,10 +229,23 @@ async def generate_orchestrator_streaming_response(
     set_request_user_id(user_id)
 
     try:
+        logger.debug(
+            "[%s] Chat stream start: incoming_conversation_id=%s user_present=%s message_chars=%d",
+            trace_id,
+            conversation_id,
+            bool(user_id),
+            len(message),
+        )
         settings = get_settings()
 
         # Get or create DataAssistant for this session
-        assistant = get_assistant(thread_id)
+        assistant = get_assistant(conversation_id)
+        logger.debug(
+            "[%s] Session cache lookup: hit=%s conversation_id=%s",
+            trace_id,
+            bool(assistant),
+            conversation_id,
+        )
 
         if assistant is None:
             endpoint = settings.azure_ai_project_endpoint
@@ -231,16 +271,60 @@ async def generate_orchestrator_streaming_response(
                 use_latest_version=True,
             )
 
+            effective_conversation_id = conversation_id
+            if not effective_conversation_id:
+                try:
+                    logger.debug(
+                        "[%s] No incoming conversation_id; pre-creating provider conversation",
+                        trace_id,
+                    )
+                    openai_client = ai_client.project_client.get_openai_client()
+                    created_conversation_result = openai_client.conversations.create()
+                    if inspect.isawaitable(created_conversation_result):
+                        created_conversation = await created_conversation_result
+                    else:
+                        created_conversation = created_conversation_result
+                    created_id = getattr(created_conversation, "id", None)
+                    if isinstance(created_id, str) and created_id:
+                        effective_conversation_id = created_id
+                        ai_client.conversation_id = created_id
+                        logger.info(
+                            "[%s] Pre-created provider conversation_id=%s for first turn",
+                            trace_id,
+                            created_id,
+                        )
+                    else:
+                        logger.warning(
+                            "[%s] Provider pre-create returned invalid conversation id: %r",
+                            trace_id,
+                            created_id,
+                        )
+                except (ValueError, RuntimeError, OSError, TypeError) as creation_error:
+                    logger.warning(
+                        "[%s] Could not pre-create provider conversation: %s",
+                        trace_id,
+                        creation_error,
+                    )
+            else:
+                ai_client.conversation_id = effective_conversation_id
+                logger.debug(
+                    "[%s] Reusing inbound conversation_id for AzureAIClient: %s",
+                    trace_id,
+                    effective_conversation_id,
+                )
+
             agent = Agent(
                 name="DataAssistant",
                 instructions=load_assistant_prompt(),
                 client=ai_client,
             )
 
-            assistant = DataAssistant(agent, thread_id)
-            logger.info(
-                "Created new DataAssistant for thread_id=%s",
-                thread_id,
+            assistant = DataAssistant(agent, effective_conversation_id)
+            logger.debug(
+                "[%s] Created new DataAssistant for conversation_id=%s (client_default_conversation_id=%s)",
+                trace_id,
+                effective_conversation_id,
+                ai_client.conversation_id,
             )
 
         # Step 1: Classify intent
@@ -249,6 +333,13 @@ async def generate_orchestrator_streaming_response(
         classify_start = time.time()
         classification = await assistant.classify_intent(message)
         classify_ms = int((time.time() - classify_start) * 1000)
+        logger.debug(
+            "[%s] Classification complete: intent=%s assistant_conversation_id=%s duration_ms=%d",
+            trace_id,
+            classification.intent,
+            assistant.conversation_id,
+            classify_ms,
+        )
 
         yield (
             "data: "
@@ -271,15 +362,24 @@ async def generate_orchestrator_streaming_response(
 
             output = {
                 "text": response_text,
-                "thread_id": assistant.thread_id,
+                "conversation_id": assistant.conversation_id,
             }
             yield f"data: {json.dumps(output)}\n\n"
+            logger.debug(
+                "[%s] Conversation response emitted: assistant_conversation_id=%s",
+                trace_id,
+                assistant.conversation_id,
+            )
         else:
             # Data query or refinement
             nl2sql_request = assistant.build_nl2sql_request(classification)
 
             reporter = QueueReporter(step_queue)
-            clients = create_pipeline_clients(settings, reporter=reporter)
+            clients = create_pipeline_clients(
+                settings,
+                reporter=reporter,
+                conversation_id=assistant.conversation_id,
+            )
 
             result = await process_query(nl2sql_request, clients)
 
@@ -303,16 +403,18 @@ async def generate_orchestrator_streaming_response(
                         "prompt": result.prompt,
                         "allowed_values": (result.allowed_values),
                     },
-                    "thread_id": assistant.thread_id,
+                    "conversation_id": assistant.conversation_id,
                     "done": False,
                 }
                 yield (f"data: {json.dumps(clarification_data)}\n\n")
                 yield (f"data: {json.dumps({'steps_complete': True, 'done': False})}\n\n")
 
-                if assistant.thread_id:
-                    store_assistant(assistant.thread_id, assistant)
+                if assistant.conversation_id:
+                    store_assistant(assistant.conversation_id, assistant)
 
-                yield (f"data: {json.dumps({'done': True, 'thread_id': assistant.thread_id})}\n\n")
+                yield (
+                    f"data: {json.dumps({'done': True, 'conversation_id': assistant.conversation_id})}\n\n"
+                )
                 return
 
             # NL2SQLResponse
@@ -324,16 +426,32 @@ async def generate_orchestrator_streaming_response(
             )
             assistant.enrich_response(response)
 
-            if assistant.thread_id:
-                store_assistant(assistant.thread_id, assistant)
+            if assistant.conversation_id:
+                store_assistant(assistant.conversation_id, assistant)
 
             output = assistant.render_response(response)
             yield f"data: {json.dumps(output)}\n\n"
+            logger.debug(
+                "[%s] Data response emitted: assistant_conversation_id=%s",
+                trace_id,
+                assistant.conversation_id,
+            )
 
-        yield (f"data: {json.dumps({'done': True, 'thread_id': assistant.thread_id})}\n\n")
+        yield (
+            f"data: {json.dumps({'done': True, 'conversation_id': assistant.conversation_id})}\n\n"
+        )
+        logger.debug(
+            "[%s] Done event emitted: conversation_id=%s", trace_id, assistant.conversation_id
+        )
 
     except Exception as e:
-        logger.error("DataAssistant error: %s", e, exc_info=True)
+        logger.error(
+            "[%s] DataAssistant error for incoming_conversation_id=%s: %s",
+            trace_id,
+            conversation_id,
+            e,
+            exc_info=True,
+        )
         yield _sanitized_error_event(e)
 
     finally:
@@ -343,12 +461,20 @@ async def generate_orchestrator_streaming_response(
 @router.get("/stream")
 async def chat_stream(
     message: str = Query(..., description="User message"),
-    thread_id: str | None = Query(None, description="Thread ID"),
-    title: str | None = Query(None, description="Thread title"),
+    conversation_id: str | None = Query(None, description="Conversation ID"),
+    title: str | None = Query(None, description="Conversation title"),
     request_id: str | None = Query(None, description="Request ID for clarification"),
     user_id: str | None = Depends(get_optional_user_id),
 ) -> StreamingResponse:
     """SSE streaming chat with DataAssistant architecture."""
+    trace_id = uuid.uuid4().hex[:8]
+    logger.debug(
+        "[%s] chat_stream request: conversation_id=%s request_id=%s user_present=%s",
+        trace_id,
+        conversation_id,
+        request_id,
+        bool(user_id),
+    )
     if request_id:
         clarification_ctx = get_clarification_context(request_id)
         if clarification_ctx:
@@ -357,7 +483,7 @@ async def chat_stream(
                     clarification_ctx,
                     message,
                     request_id,
-                    thread_id,
+                    conversation_id,
                     user_id,
                 ),
                 media_type="text/event-stream",
@@ -372,7 +498,7 @@ async def chat_stream(
         )
 
     return StreamingResponse(
-        generate_orchestrator_streaming_response(message, thread_id, user_id, title),
+        generate_orchestrator_streaming_response(message, conversation_id, user_id, title),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

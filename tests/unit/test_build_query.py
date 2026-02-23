@@ -232,6 +232,50 @@ class TestSuccessPath:
 
         assert result.confidence == pytest.approx(0.5)
 
+    async def test_success_without_status_with_completed_sql(self) -> None:
+        """Response without status but with completed_sql is treated as success."""
+        response = json.dumps({
+            "completed_sql": "SELECT TOP 10 * FROM Purchasing.PurchaseOrders",
+            "tables_used": ["Purchasing.PurchaseOrders"],
+            "confidence": 0.72,
+            "reasoning": "Query matches purchase orders request",
+        })
+        agent = _mock_agent(response)
+
+        result = await build_query(_make_request(), agent, _mock_thread())
+
+        assert result.status == "success"
+        assert result.completed_sql == "SELECT TOP 10 * FROM Purchasing.PurchaseOrders"
+        assert result.confidence == pytest.approx(0.72)
+
+    async def test_plain_text_sql_response_recovers_success(self) -> None:
+        """Plain SQL text without JSON should still be recovered and treated as success."""
+        plain_sql = (
+            "SELECT TOP 20 po.PurchaseOrderID, po.OrderDate "
+            "FROM Purchasing.PurchaseOrders po ORDER BY po.OrderDate DESC"
+        )
+        agent = _mock_agent(plain_sql)
+
+        result = await build_query(_make_request(), agent, _mock_thread())
+
+        assert result.status == "success"
+        assert result.completed_sql == plain_sql
+
+    async def test_nested_sql_payload_recovers_success(self) -> None:
+        """Nested JSON payload containing sql should be recovered as success."""
+        response = json.dumps({
+            "result": {
+                "query": "SELECT TOP 5 * FROM Purchasing.SupplierTransactions",
+            },
+            "confidence": 0.61,
+        })
+        agent = _mock_agent(response)
+
+        result = await build_query(_make_request(), agent, _mock_thread())
+
+        assert result.status == "success"
+        assert result.completed_sql == "SELECT TOP 5 * FROM Purchasing.SupplierTransactions"
+
     async def test_user_query_preserved(self) -> None:
         """The user_query from the request is in the result."""
         request = _make_request(user_query="What are the top customers?")
@@ -300,6 +344,18 @@ class TestErrorPath:
 
         assert result.status == "error"
         assert result.error is not None
+
+    async def test_empty_response_text_returns_specific_error(self) -> None:
+        """Empty model output should return a clear format error, not unknown error."""
+        agent = _mock_agent("")
+
+        result = await build_query(_make_request(), agent, _mock_thread())
+
+        assert result.status == "error"
+        assert result.error is not None
+        assert "unexpected model response format" in result.error.lower() or "failed to parse" in (
+            result.error.lower()
+        )
 
     async def test_error_response_preserves_retry_count(self) -> None:
         """Error response still preserves retry_count from request."""

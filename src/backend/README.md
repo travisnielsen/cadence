@@ -14,7 +14,7 @@ sequenceDiagram
     participant Client as Frontend<br/>assistant-ui
     participant API as FastAPI
     participant MAF as Orchestration<br/>Agent Framework
-    participant Foundry as Microsoft Foundry
+    participant Provider as Agent Service / Responses API
 
     rect rgb(50, 40, 60)
         Note over Client, Foundry: Chat Interaction (SSE Stream)
@@ -22,9 +22,9 @@ sequenceDiagram
         API->>API: Validate token
         API->>MAF: Execute workflow
         activate MAF
-        MAF->>Foundry: Create thread (if new)
-        Foundry-->>MAF: Thread ID
-        MAF->>Foundry: Agent operations
+        MAF->>Provider: Create/restore session context (if needed)
+        Provider-->>MAF: Provider conversation/session handle
+        MAF->>Provider: Agent + Responses operations
 
         loop Real-time Updates
             MAF-->>Client: Step progress events
@@ -32,25 +32,35 @@ sequenceDiagram
             MAF-->>Client: Streamed content
         end
 
-        MAF-->>Client: Thread ID + completion
+        MAF-->>Client: conversation_id + completion
         deactivate MAF
     end
 
     rect rgb(30, 50, 70)
-        Note over Client, Foundry: Thread Management
-        Client->>API: List user threads
-        API->>Foundry: Query threads by user_id
-        Foundry-->>Client: Thread list with metadata
+        Note over Client, Provider: Conversation Management
+        Client->>API: List user conversations
+        API->>Provider: Query conversations
+        Provider-->>Client: Conversation list with metadata
 
-        Client->>API: Load thread history
-        API->>Foundry: Fetch messages
-        Foundry-->>Client: Conversation messages
+        Client->>API: Load conversation history
+        API->>Provider: Fetch messages
+        Provider-->>Client: Conversation messages
 
-        Client->>API: Update thread (title/status)
-        Client->>API: Delete thread
+        Client->>API: Update conversation (title/status)
+        Client->>API: Delete conversation
         API-->>Client: Confirmation
     end
 ```
+
+### Conversation Continuity
+
+Conversation continuity in the chat stream follows this order:
+
+1. If the client provides `conversation_id`, backend reuses it as the provider conversation ID.
+2. If missing, backend pre-creates a provider conversation via the OpenAI client and uses that `id`.
+3. `DataAssistant` resumes the thread with `agent.get_session(service_session_id=conversation_id)`.
+4. SSE responses emit this same `conversation_id` to the client for subsequent turns.
+5. If provider ID creation fails, continuity temporarily falls back to local `AgentSession.session_id`.
 
 ### Agent Workflow
 
@@ -116,9 +126,10 @@ flowchart TB
 | Route | Description |
 |-------|-------------|
 | `POST /chat` | SSE streaming chat endpoint |
-| `GET /threads` | List conversation threads |
-| `GET /threads/{id}` | Load thread history |
-| `DELETE /threads/{id}` | Delete a thread |
+| `GET /conversations` | List conversations |
+| `GET /conversations/{id}` | Load conversation metadata |
+| `GET /conversations/{id}/messages` | Load conversation messages |
+| `DELETE /conversations/{id}` | Delete a conversation |
 | `GET /health` | Health check |
 
 ## Development

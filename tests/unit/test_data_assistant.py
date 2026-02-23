@@ -38,11 +38,11 @@ def _make_agent(response_text: str = "") -> MagicMock:
 
 def _make_assistant(
     response_text: str = "",
-    thread_id: str | None = "test-thread-123",
+    conversation_id: str | None = "test-thread-123",
 ) -> DataAssistant:
     """Create a ``DataAssistant`` with a mocked agent."""
     agent = _make_agent(response_text)
-    return DataAssistant(agent=agent, thread_id=thread_id)
+    return DataAssistant(agent=agent, conversation_id=conversation_id)
 
 
 def _make_response(**overrides) -> NL2SQLResponse:
@@ -148,7 +148,7 @@ class TestClassifyIntent:
         result_mock = MagicMock()
         result_mock.text = None
         agent.run = AsyncMock(return_value=result_mock)
-        assistant = DataAssistant(agent=agent, thread_id="t1")
+        assistant = DataAssistant(agent=agent, conversation_id="t1")
 
         result = await assistant.classify_intent("hello")
 
@@ -165,6 +165,18 @@ class TestClassifyIntent:
         result = await assistant.classify_intent("change to Portland")
 
         assert result.param_overrides == {"city": "Portland"}
+
+    async def test_pending_dynamic_confirmation_uses_llm_action(self) -> None:
+        assistant = _make_assistant(
+            '{"intent": "refinement", "query": "yes", "confirmation_action": "accept"}'
+        )
+        assistant.context.pending_dynamic_confirmation = True
+
+        result = await assistant.classify_intent("yes")
+
+        assert result.intent == "refinement"
+        assert result.confirmation_action == "accept"
+        assert assistant.agent.run.await_count == 1
 
 
 # ── build_nl2sql_request ─────────────────────────────────────────────────
@@ -225,6 +237,47 @@ class TestBuildNL2SQLRequest:
         assert request.previous_tables_json == '{"tables": []}'
         assert request.previous_question == "show orders"
 
+    def test_dynamic_confirmation_acceptance_sets_confirm_previous_sql(self) -> None:
+        assistant = _make_assistant()
+        assistant.context.query_source = "dynamic"
+        assistant.context.last_sql = "SELECT * FROM Sales.Orders"
+        assistant.context.last_tables = ["Sales.Orders"]
+        assistant.context.last_tables_json = '{"tables": []}'
+        assistant.context.last_question = "show orders"
+        assistant.context.pending_dynamic_confirmation = True
+
+        classification = ClassificationResult(
+            intent="refinement",
+            query="yes",
+            confirmation_action="accept",
+        )
+
+        request = assistant.build_nl2sql_request(classification)
+
+        assert request.confirm_previous_sql is True
+        assert assistant.context.pending_dynamic_confirmation is False
+
+    def test_dynamic_confirmation_missing_action_reprompts_and_keeps_pending(self) -> None:
+        assistant = _make_assistant()
+        assistant.context.query_source = "dynamic"
+        assistant.context.last_sql = "SELECT * FROM Sales.Orders"
+        assistant.context.last_tables = ["Sales.Orders"]
+        assistant.context.last_tables_json = '{"tables": []}'
+        assistant.context.last_question = "show orders"
+        assistant.context.pending_dynamic_confirmation = True
+
+        classification = ClassificationResult(
+            intent="refinement",
+            query="yes",
+            confirmation_action=None,
+        )
+
+        request = assistant.build_nl2sql_request(classification)
+
+        assert request.confirm_previous_sql is False
+        assert request.reprompt_pending_confirmation is True
+        assert assistant.context.pending_dynamic_confirmation is True
+
     def test_refinement_without_context_falls_back(self) -> None:
         assistant = _make_assistant()
 
@@ -276,6 +329,20 @@ class TestUpdateContext:
         assert assistant.context.query_source == "dynamic"
         assert assistant.context.last_template_json is None
         assert assistant.context.last_params == {}
+
+    def test_dynamic_confirmation_sets_pending_flag(self) -> None:
+        assistant = _make_assistant()
+        response = _make_response(
+            query_source="dynamic",
+            needs_clarification=True,
+            query_summary="Please confirm this dynamic query",
+            sql_response=[],
+            row_count=0,
+        )
+
+        assistant.update_context(response, None, {})
+
+        assert assistant.context.pending_dynamic_confirmation is True
 
     def test_error_response_does_not_update(self) -> None:
         assistant = _make_assistant()
@@ -388,7 +455,7 @@ class TestRenderResponse:
         rendered = assistant.render_response(response)
 
         assert "text" in rendered
-        assert "thread_id" in rendered
+        assert "conversation_id" in rendered
         assert "tool_call" in rendered
         assert rendered["tool_call"]["result"]["sql_query"] == "SELECT * FROM Sales.Orders"
         assert rendered["tool_call"]["result"]["sql_response"] == [
@@ -513,7 +580,7 @@ class TestHandleConversation:
         result_mock = MagicMock()
         result_mock.text = None
         agent.run = AsyncMock(return_value=result_mock)
-        assistant = DataAssistant(agent=agent, thread_id="t1")
+        assistant = DataAssistant(agent=agent, conversation_id="t1")
 
         result = await assistant.handle_conversation("Hi")
 
@@ -528,10 +595,10 @@ class TestConstructor:
 
     def test_accepts_chat_agent(self) -> None:
         agent = _make_agent()
-        assistant = DataAssistant(agent=agent, thread_id="thread-1")
+        assistant = DataAssistant(agent=agent, conversation_id="thread-1")
 
         assert assistant.agent is agent
-        assert assistant._initial_thread_id == "thread-1"
+        assert assistant._initial_conversation_id == "thread-1"
 
     def test_default_context(self) -> None:
         assistant = _make_assistant()
@@ -541,13 +608,13 @@ class TestConstructor:
         assert assistant.context.current_schema_area is None
 
     def test_thread_id_property_before_thread_creation(self) -> None:
-        assistant = _make_assistant(thread_id="pre-set-id")
+        assistant = _make_assistant(conversation_id="pre-set-id")
 
-        assert assistant.thread_id == "pre-set-id"
+        assert assistant.conversation_id == "pre-set-id"
 
     async def test_thread_id_from_created_thread(self) -> None:
         assistant = _make_assistant()
 
-        await assistant.get_or_create_thread()
+        await assistant.get_or_create_conversation()
 
-        assert assistant.thread_id == "test-thread-123"
+        assert assistant.conversation_id == "test-thread-123"

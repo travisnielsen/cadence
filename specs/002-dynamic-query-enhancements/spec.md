@@ -145,7 +145,7 @@ When dynamic SQL generation fails after validation retry, the system provides ac
 - **All columns empty**: If every column in every row is NULL, return the original column list unmodified. An all-empty table is a meaningful result ("no data matched your query") and stripping everything would leave a confusing empty frame.
 - **Very long column names**: Column names exceeding 40 characters should be truncated with `…` in the `hidden_columns` indicator text but preserved in full in the data.
 - **Column order preservation**: The relative order of columns in the query result must be preserved after stripping/capping. Columns should not be reordered.
-- **Confirmation on timeout**: If the user doesn't respond to a confirmation gate within the SSE connection lifetime, the query is not executed. The next user message in the thread will be treated as a fresh question or refinement.
+- **Confirmation on timeout**: If the user doesn't respond to a confirmation gate within the SSE connection lifetime, the query is not executed. The next user message in the conversation will be treated as a fresh question or refinement.
 - **Confirmation and empty results interaction**: If the user confirms a query and it returns zero rows, that is a valid result — no additional confirmation is needed.
 - **Error recovery with no table matches**: If the original table search returned zero results, the error fallback cannot suggest schema-specific examples. It should fall back to generic guidance ("Try asking about specific business entities like customers, orders, or products").
 

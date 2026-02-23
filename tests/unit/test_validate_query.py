@@ -339,6 +339,125 @@ class TestEdgeCases:
         assert result.query_validated is True
         assert len(result.query_violations) >= 2
 
+
+class TestDynamicUnionSafety:
+    """Dynamic UNION queries should be type-safe across projection branches."""
+
+    def test_dynamic_union_mixed_families_is_rejected(self) -> None:
+        sql = (
+            "SELECT CAST(s.SupplierID AS int) AS SupplierNumber, "
+            "CAST(s.PaymentDays AS int) AS PaymentTerm "
+            "FROM Purchasing.Suppliers s "
+            "UNION ALL "
+            "SELECT CAST(st.SupplierTransactionID AS int) AS SupplierNumber, "
+            "CAST(st.OutstandingBalance AS nvarchar) AS PaymentTerm "
+            "FROM Purchasing.SupplierTransactions st"
+        )
+        result = validate_query(_make_draft(sql, source="dynamic"), ALLOWED_TABLES)
+
+        assert result.query_validated is True
+        assert any("UNION column" in v for v in result.query_violations)
+        assert any("incompatible CAST type families" in v for v in result.query_violations)
+
+    def test_dynamic_union_consistent_casts_passes(self) -> None:
+        sql = (
+            "SELECT CAST(s.SupplierID AS int) AS SupplierNumber, "
+            "CAST(s.PaymentDays AS nvarchar) AS PaymentTerm "
+            "FROM Purchasing.Suppliers s "
+            "UNION ALL "
+            "SELECT CAST(st.SupplierTransactionID AS int) AS SupplierNumber, "
+            "CAST(st.OutstandingBalance AS nvarchar) AS PaymentTerm "
+            "FROM Purchasing.SupplierTransactions st"
+        )
+        result = validate_query(_make_draft(sql, source="dynamic"), ALLOWED_TABLES)
+
+        assert result.query_validated is True
+        assert not any("UNION column" in v for v in result.query_violations)
+
+    def test_dynamic_union_mixed_cast_and_raw_is_rejected(self) -> None:
+        sql = (
+            "SELECT CAST(s.SupplierID AS int) AS SupplierNumber, "
+            "CAST(s.PaymentDays AS nvarchar) AS PaymentTerm "
+            "FROM Purchasing.Suppliers s "
+            "UNION ALL "
+            "SELECT st.SupplierTransactionID AS SupplierNumber, "
+            "CAST(st.OutstandingBalance AS nvarchar) AS PaymentTerm "
+            "FROM Purchasing.SupplierTransactions st"
+        )
+        result = validate_query(_make_draft(sql, source="dynamic"), ALLOWED_TABLES)
+
+        assert result.query_validated is True
+        assert any(
+            "must not mix CAST/CONVERT and raw expressions" in v for v in result.query_violations
+        )
+
+    def test_dynamic_projection_duplicate_output_names_is_rejected(self) -> None:
+        sql = "SELECT c.CustomerName, c.DeliveryAddressLine1 AS CustomerName FROM Sales.Customers c"
+        result = validate_query(_make_draft(sql, source="dynamic"), ALLOWED_TABLES)
+
+        assert result.query_validated is True
+        assert any("duplicate output column name" in v for v in result.query_violations)
+
+    def test_dynamic_projection_identifier_columns_are_rejected(self) -> None:
+        sql = "SELECT c.CustomerID, c.CustomerName FROM Sales.Customers c"
+        result = validate_query(_make_draft(sql, source="dynamic"), ALLOWED_TABLES)
+
+        assert result.query_validated is True
+        assert any("must not return identifier column" in v for v in result.query_violations)
+
+    def test_dynamic_projection_wildcard_is_rejected(self) -> None:
+        sql = "SELECT c.* FROM Sales.Customers c"
+        result = validate_query(_make_draft(sql, source="dynamic"), ALLOWED_TABLES)
+
+        assert result.query_validated is True
+        assert any("must not use wildcard projection" in v for v in result.query_violations)
+
+    def test_template_projection_identifier_columns_not_blocked(self) -> None:
+        sql = "SELECT c.CustomerID, c.CustomerName FROM Sales.Customers c"
+        result = validate_query(_make_draft(sql, source="template"), ALLOWED_TABLES)
+
+        assert result.query_validated is True
+        assert not any("must not return identifier column" in v for v in result.query_violations)
+
+    def test_dynamic_getdate_requires_historical_anchor(self) -> None:
+        sql = (
+            "SELECT DATEFROMPARTS(YEAR(OrderDate), MONTH(OrderDate), 1) AS OrderMonth, "
+            "COUNT(*) AS OrderCount "
+            "FROM Sales.Orders "
+            "WHERE OrderDate >= DATEADD(MONTH, -6, CAST(GETDATE() AS date)) "
+            "GROUP BY DATEFROMPARTS(YEAR(OrderDate), MONTH(OrderDate), 1)"
+        )
+        result = validate_query(_make_draft(sql, source="dynamic"), ALLOWED_TABLES)
+
+        assert result.query_validated is True
+        assert any("relative current-date window" in v for v in result.query_violations)
+
+    def test_dynamic_getdate_with_historical_anchor_passes(self) -> None:
+        sql = (
+            "SELECT DATEFROMPARTS(YEAR(OrderDate), MONTH(OrderDate), 1) AS OrderMonth, "
+            "COUNT(*) AS OrderCount "
+            "FROM Sales.Orders "
+            "WHERE OrderDate >= DATEADD(MONTH, -6, DATEADD(YEAR, -10, GETDATE())) "
+            "GROUP BY DATEFROMPARTS(YEAR(OrderDate), MONTH(OrderDate), 1)"
+        )
+        result = validate_query(_make_draft(sql, source="dynamic"), ALLOWED_TABLES)
+
+        assert result.query_validated is True
+        assert not any("relative current-date window" in v for v in result.query_violations)
+
+    def test_template_getdate_without_historical_anchor_not_blocked(self) -> None:
+        sql = (
+            "SELECT DATEFROMPARTS(YEAR(OrderDate), MONTH(OrderDate), 1) AS OrderMonth, "
+            "COUNT(*) AS OrderCount "
+            "FROM Sales.Orders "
+            "WHERE OrderDate >= DATEADD(MONTH, -6, GETDATE()) "
+            "GROUP BY DATEFROMPARTS(YEAR(OrderDate), MONTH(OrderDate), 1)"
+        )
+        result = validate_query(_make_draft(sql, source="template"), ALLOWED_TABLES)
+
+        assert result.query_validated is True
+        assert not any("relative current-date window" in v for v in result.query_violations)
+
     def test_original_draft_fields_preserved(self) -> None:
         """Non-validation fields on the draft survive the copy."""
         draft = SQLDraft(

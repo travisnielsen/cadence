@@ -52,9 +52,9 @@ After returning query results, the system suggests relevant follow-up questions 
 
 **Independent Test**: Ask a sales-related question (e.g., "show me top customers"). Verify the response includes contextual suggestions rendered as clickable pills (same pattern as clarification options) like "Explore order trends" or "Drill into invoice details."
 
-**Frontend Approach**: Extend the existing `makeAssistantToolUI` component (`NL2SQLToolUI` in `src/frontend/components/assistant-ui/nl2sql-tool-ui.tsx`). The backend adds a `suggestions` field to the `NL2SQLResult` tool response. The frontend renders these as clickable pills below the Observations section — reusing the same `threadRuntime.composer.setText()` + `.send()` pattern already used by `ClarificationOptions`. This keeps suggestions contextually anchored to the query result that generated them.
+**Frontend Approach**: Extend the existing `makeAssistantToolUI` component (`NL2SQLToolUI` in `src/frontend/components/assistant-ui/nl2sql-tool-ui.tsx`). The backend adds a `suggestions` field to the `NL2SQLResult` tool response. The frontend renders these as clickable pills below the Observations section — reusing the same composer pattern already used by `ClarificationOptions` (`threadRuntime` in assistant-ui is a library term). This keeps suggestions contextually anchored to the query result that generated them.
 
-**Why not `SuggestionPrimitive`**: The assistant-ui `Suggestions()` API and `ThreadPrimitive.Suggestions` are designed for empty-thread welcome screens, not post-response follow-ups. They render at the thread level (not inside a tool result), would require migrating to the new `useAui` runtime pattern, and don't anchor suggestions to specific query results.
+**Why not `SuggestionPrimitive`**: The assistant-ui `Suggestions()` API and `ThreadPrimitive.Suggestions` are designed for empty-conversation welcome screens, not post-response follow-ups. They render at the runtime shell level (library naming, not backend contract), would require migrating to the new `useAui` runtime pattern, and don't anchor suggestions to specific query results.
 
 **Acceptance Scenarios**:
 

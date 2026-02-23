@@ -10,6 +10,16 @@ from models import SchemaSuggestion
 
 _DISALLOWED_TABLE_PATTERNS = {"disallowed table", "not in the allowed", "table not allowed"}
 _SYNTAX_PATTERNS = {"syntax error", "parse error", "invalid sql", "incorrect syntax"}
+_UNION_PATTERNS = {
+    "union column",
+    "cast/convert",
+    "incompatible cast type families",
+    "untyped null",
+}
+_DATE_CONTEXT_PATTERNS = {
+    "relative current-date window",
+    "dataset-relative date context",
+}
 
 # Schema area -> example recovery prompts
 _RECOVERY_SUGGESTIONS: dict[str, list[SchemaSuggestion]] = {
@@ -49,7 +59,7 @@ def classify_violations(violations: list[str]) -> str:
         violations: List of violation description strings.
 
     Returns:
-        One of 'disallowed_tables', 'syntax', or 'generic'.
+        One of 'disallowed_tables', 'syntax', 'union_type_safety', 'date_context', or 'generic'.
     """
     combined = " ".join(violations).lower()
     for pattern in _DISALLOWED_TABLE_PATTERNS:
@@ -58,6 +68,12 @@ def classify_violations(violations: list[str]) -> str:
     for pattern in _SYNTAX_PATTERNS:
         if pattern in combined:
             return "syntax"
+    for pattern in _UNION_PATTERNS:
+        if pattern in combined:
+            return "union_type_safety"
+    for pattern in _DATE_CONTEXT_PATTERNS:
+        if pattern in combined:
+            return "date_context"
     return "generic"
 
 
@@ -108,6 +124,17 @@ def build_error_recovery(
         message = (
             "I had trouble constructing a valid query for your request. "
             "Could you rephrase your question or be more specific about what data you need?"
+        )
+    elif category == "union_type_safety":
+        message = (
+            "I generated a UNION query that may fail due to type conversion rules. "
+            "I need to align each UNION column to the same explicit type across all branches "
+            "(including CAST(NULL AS <type>) for placeholders)."
+        )
+    elif category == "date_context":
+        message = (
+            "I interpreted your time range against a current-date window that does not match "
+            "the available historical data range. I can retry with an adjusted date context."
         )
     else:
         message = (

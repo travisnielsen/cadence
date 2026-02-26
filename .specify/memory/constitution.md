@@ -60,8 +60,7 @@ Rationale: mandatory automated gates preserve baseline correctness and code heal
 
 ## Development Workflow
 
-1. **Task tracking (optional)** — Work may be tracked via `bd` (beads) when enabled for a workflow; absence of Beads tracking must not block implementation.
-2. **Conventional commits** — `type(scope): description` format required.
+1. **Conventional commits** — `type(scope): description` format required.
 3. **Quality before commit** — Automated checks must pass.
 4. **Push before done** — All changes committed AND pushed before ending a session.
 

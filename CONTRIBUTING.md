@@ -101,7 +101,7 @@ This project uses git hooks for automated validation:
 | ------------ | -------------------------------------- |
 | `commit-msg` | Validates Conventional Commits format  |
 | `pre-commit` | Runs linting and formatting (via prek) |
-| `pre-push`   | Runs tests + syncs beads               |
+| `pre-push`   | Runs tests                             |
 
 Hooks are installed automatically by `./devsetup.sh`.
 

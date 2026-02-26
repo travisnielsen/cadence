@@ -40,7 +40,6 @@ You **MUST** load these instructions when working on files that match the patter
 | `**/*.py`       | [python.instructions.md](instructions/python.instructions.md) |
 | `**/*.agent.md` | [agents.instructions.md](instructions/agents.instructions.md) |
 | Git files       | [git.instructions.md](instructions/git.instructions.md)       |
-| Task tracking   | [tasks.instructions.md](instructions/tasks.instructions.md)   |
 
 ## Custom Agents
 
@@ -68,11 +67,20 @@ Spec Kit handles **planning**. Our role agents handle **execution**. The `@orche
 
 ```
 Spec Kit Planning:  /speckit.specify → /speckit.plan → /speckit.tasks
-Bridge:             @orchestrator imports tasks.md → beads issues with deps/assignees
+Bridge:             @orchestrator reads tasks.md → delegates to role agents
 Execution:          @implementer → @tester → @reviewer → @security
 ```
 
-**Key rule:** Skip `/speckit.implement` — use `@implementer` and other role agents instead. If Beads is enabled for the workflow, the orchestrator can additionally map tasks into Beads issues.
+**Key rule:** Skip `/speckit.implement` — use `@implementer` and other role agents instead.
+
+### Task Tracking
+
+All task tracking uses **Spec Kit `tasks.md` files** in `specs/<feature>/tasks.md`. This is the single source of truth for work items.
+
+- Tasks use checkbox format: `- [ ] [T001] [P?] [Story?] Description`
+- `[P]` marks parallelizable tasks (different files, no dependencies)
+- Agents mark tasks complete by changing `- [ ]` to `- [x]`
+- Run `/speckit.analyze` to check consistency between spec, plan, and tasks
 
 ### Spec Kit Artifacts
 
@@ -92,20 +100,6 @@ Execution:          @implementer → @tester → @reviewer → @security
 4. **`uv run poe check`** must pass before commit
 5. **Conventional Commits**: `type(scope): description`
 
-## Task/Issue Tracking
-
-This project can use **bd (beads)** for issue tracking when task tracking is enabled.
-
-```bash
-bd ready              # Find unblocked work
-bd ready --json       # Get ready tasks as JSON
-bd create "Title" --type task --priority 2  # Create issue
-bd update <id> --status in_progress  # Claim task
-bd close <id> --reason "Done"   # Complete task
-bd sync               # Sync with git (run at session end)
-```
-
----
 
 ## Architecture Overview
 

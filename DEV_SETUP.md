@@ -14,7 +14,7 @@ For coding standards, see [CODING_STANDARD.md](CODING_STANDARD.md).
 ## Quick Setup
 
 ```bash
-# One-command setup (installs Python, venv, deps, hooks, beads)
+# One-command setup (installs Python, venv, deps, hooks)
 ./devsetup.sh
 
 # Or with a specific Python version
@@ -85,25 +85,12 @@ The workspace is pre-configured (`.vscode/settings.json`) to use the root `.venv
 
 | Pattern            | Commands                                 | Purpose           |
 | ------------------ | ---------------------------------------- | ------------------ |
-| `/^bd\\b/`         | `bd ready`, `bd create`, `bd sync`, etc. | Beads tracking    |
 | `/^uv run poe\\b/` | `uv run poe test`, `uv run poe lint`     | Poe task runner   |
 | `/^uv sync\\b/`    | `uv sync`                                | Dependency sync   |
 | `/^git status\\b/` | `git status`                             | Read-only git     |
 | `/^git diff\\b/`   | `git diff`                               | Read-only git     |
 | `/^git log\\b/`    | `git log`                                | Read-only git     |
 | `/^pytest\\b/`     | `pytest`                                 | Test runs         |
-
-## Task Tracking with Beads
-
-This project uses [Beads](https://github.com/steveyegge/beads) (`bd` CLI) for task tracking.
-
-```bash
-bd ready              # Find unblocked work
-bd create "Title" -t task -p 1  # Create task
-bd update <id> --status in_progress  # Claim task
-bd close <id> --reason "Done"   # Complete task
-bd sync               # Sync with git
-```
 
 ## Available Poe Tasks
 

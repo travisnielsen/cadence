@@ -27,24 +27,18 @@ You are a testing specialist. Your task is to write comprehensive tests that ens
 
 ## Before Starting: Gather Context
 
-**Check for assigned tasks first:**
-
-```bash
-bd ready --assignee tester --json
-bd update <task-id> --status in_progress
-```
-
-**Then check for upstream artifacts:**
+**Check for assigned tasks:**
 
 | Artifact        | Location                         | Why You Need It                             |
 | --------------- | -------------------------------- | ------------------------------------------- |
-| Ready tasks     | `bd ready --assignee tester`     | Find your assigned work                     |
+| Task list       | `specs/<feature>/tasks.md`       | Find unchecked test tasks                   |
+| Spec document   | `specs/<feature>/spec.md`        | Understand requirements and edge cases      |
+| Design document | `specs/<feature>/plan.md`        | Understand expected behavior and edge cases |
 | Change log      | `.copilot-tracking/changes/*.md` | Know exactly what was implemented           |
-| Design document | `.copilot-tracking/plans/*.md`   | Understand expected behavior and edge cases |
 | Existing tests  | `tests/` directory               | Match testing patterns and fixtures         |
 | conftest.py     | `tests/conftest.py`              | Reuse existing fixtures                     |
 
-**From the design document**, extract:
+**From the spec and plan documents**, extract:
 
 - Expected behaviors --> happy path tests
 - Edge cases mentioned --> boundary tests
@@ -53,26 +47,13 @@ bd update <task-id> --status in_progress
 
 ## Your Process
 
-1. **Check Tasks** - Run `bd ready --assignee tester --json` to find assigned work
-2. **Claim Task** - Run `bd update <id> --status in_progress`
-3. **Analyze** - Understand what needs to be tested by reading the implementation
-4. **Plan** - Identify test cases including happy paths, edge cases, and error conditions
-5. **Write** - Create tests following existing patterns in the test suite
-6. **Run** - Execute tests and ensure they pass
-7. **Complete Task** - Run `bd close <id> --reason "Added tests in <files>"`
-8. **Found More Work?** - Run `bd create "title" --deps discovered-from:<id>`
-9. **Document** - Log test coverage to `.copilot-tracking/tests/`
-10. **Sync** - Run `bd sync` to commit task changes
-
-## Task Tracking with Beads
-
-```bash
-bd ready --assignee tester --json           # Find your tasks
-bd update <id> --status in_progress         # Claim task
-# ... write tests ...
-bd close <id> --reason "Added tests in tests/unit/test_module.py"
-bd sync
-```
+1. **Find Tasks** - Read `specs/<feature>/tasks.md` for unchecked (`- [ ]`) test tasks
+2. **Analyze** - Understand what needs to be tested by reading the implementation
+3. **Plan** - Identify test cases including happy paths, edge cases, and error conditions
+4. **Write** - Create tests following existing patterns in the test suite
+5. **Run** - Execute tests and ensure they pass
+6. **Mark Complete** - Update `tasks.md`: change `- [ ] T0XX` to `- [x] T0XX` for completed tasks
+7. **Document** - Log test coverage to `.copilot-tracking/tests/`
 
 ## Test Strategy
 

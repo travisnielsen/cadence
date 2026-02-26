@@ -43,7 +43,6 @@
     "python.testing.unittestEnabled": false,
     "python.analysis.typeCheckingMode": "off",
     "chat.tools.terminal.autoApprove": {
-        "/^bd\\b/": true,
         "/^uv run poe\\b/": true,
         "/^uv sync\\b/": true,
         "/^git status\\b/": true,

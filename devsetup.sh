@@ -134,39 +134,6 @@ setup_git_hooks() {
     fi
 }
 
-install_beads() {
-    info "Setting up Beads task tracker..."
-
-    if command_exists bd; then
-        success "bd already installed: $(bd version 2>/dev/null || echo 'unknown')"
-    else
-        info "Installing beads (bd)..."
-        local install_dir="$HOME/.local/bin"
-        mkdir -p "$install_dir"
-
-        if curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash 2>/dev/null; then
-            success "Beads installed via install script"
-            if [[ ":$PATH:" != *":$install_dir:"* ]]; then
-                warn "Add $install_dir to your PATH if bd command is not found"
-            fi
-        else
-            warn "Failed to install beads (non-critical, can be installed manually)"
-            echo "  Install: curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash"
-        fi
-    fi
-
-    if [ ! -d ".beads" ]; then
-        if command_exists bd; then
-            info "Initializing beads in workspace..."
-            if echo N | bd init --quiet --prefix cad --branch beads-sync 2>/dev/null; then
-                success "Beads initialized with prefix 'cad' and sync branch 'beads-sync'"
-            else
-                warn "Failed to initialize beads (non-critical)"
-            fi
-        fi
-    fi
-}
-
 install_speckit() {
     info "Setting up Spec Kit CLI..."
 
@@ -211,7 +178,6 @@ main() {
     create_virtual_environment
     install_dependencies
     setup_git_hooks
-    install_beads
     install_speckit
     setup_frontend
 

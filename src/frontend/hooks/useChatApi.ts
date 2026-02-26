@@ -15,6 +15,7 @@ import {
   type StepData,
   type ToolCallData,
 } from "@/lib/chatApi";
+import { trackEvent, trackException } from "@/lib/telemetry";
 import {
   addThreadToCache as addConversationToCache,
   loadCachedThreads as loadCachedConversations,
@@ -232,6 +233,11 @@ export function useChatApi() {
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
       setIsRunning(true);
 
+      trackEvent("ChatMessageSent", {
+        isNewConversation: String(!conversationIdRef.current),
+        messageLength: String(text.length),
+      });
+
       // Use ref to get current conversation ID (avoids stale closure issues)
       const currentConversationId = conversationIdRef.current;
 
@@ -264,6 +270,11 @@ export function useChatApi() {
         // onComplete - persist conversation ID and add to cached/sidebar conversations
         (newConversationId) => {
           setIsRunning(false);
+
+          trackEvent("ChatResponseReceived", {
+            conversationId: newConversationId ?? "unknown",
+            isNewConversation: String(isNewConversation),
+          });
 
           // Handle edge case where stream ended without conversation_id
           if (!newConversationId) {
@@ -326,6 +337,7 @@ export function useChatApi() {
         // onError
         (error) => {
           setIsRunning(false);
+          trackException(new Error(error), { source: "ChatStream" });
           setMessages((prev) => {
             const updated = [...prev];
             const last = updated[updated.length - 1];
@@ -354,6 +366,7 @@ export function useChatApi() {
         },
         // onToolCall - store tool call data for generative UI
         (toolCall) => {
+          trackEvent("QueryExecuted", { toolName: toolCall.tool_name });
           setMessages((prev) => {
             const updated = [...prev];
             const last = updated[updated.length - 1];
@@ -711,6 +724,7 @@ export function useChatApi() {
     },
 
     onSwitchToThread: async (switchConversationId: string) => {
+      trackEvent("ConversationSwitched", { conversationId: switchConversationId });
       // Switch to existing conversation and load its messages
       conversationIdRef.current = switchConversationId;
       setConversationId(switchConversationId);
@@ -739,6 +753,10 @@ export function useChatApi() {
         setMessages(loadedMessages);
       } catch (error) {
         console.error("Failed to load conversation messages:", error);
+        trackException(
+          error instanceof Error ? error : new Error(String(error)),
+          { source: "ConversationLoad", conversationId: switchConversationId },
+        );
         // Keep empty messages on error - user can still send new messages
       } finally {
         setIsLoadingMessages(false);

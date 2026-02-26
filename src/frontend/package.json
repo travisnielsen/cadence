@@ -27,6 +27,8 @@
     "@assistant-ui/react-markdown": "^0.12.3",
     "@azure/msal-browser": "^5.1.0",
     "@azure/msal-react": "^5.0.3",
+    "@microsoft/applicationinsights-react-js": "^19.3.8",
+    "@microsoft/applicationinsights-web": "^3.3.11",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.15",

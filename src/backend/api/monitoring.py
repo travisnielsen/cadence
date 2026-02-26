@@ -4,41 +4,47 @@ Application Insights observability configuration for the Data Agent API.
 This module configures Azure Monitor/Application Insights for monitoring agent
 performance, tracing requests, and collecting metrics.
 
-Environment variables:
-- ENABLE_INSTRUMENTATION: Set to "true" to enable tracing (default: false)
-- APPLICATIONINSIGHTS_CONNECTION_STRING: Azure Monitor connection string (required when enabled)
-- ENABLE_SENSITIVE_DATA: Set to "true" to log prompts/responses (default: false)
+Uses centralized ``Settings`` for all configuration. Relevant settings:
+
+- ``enable_instrumentation``: Gate flag (default: False)
+- ``applicationinsights_connection_string``: Azure Monitor connection string
+- ``enable_sensitive_data``: Include prompts/responses in traces (default: False)
 """
 
 import logging
-import os
+
+from config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
 
 def is_observability_enabled() -> bool:
     """Check if OpenTelemetry observability is enabled."""
-    return os.getenv("ENABLE_INSTRUMENTATION", "false").lower() == "true"
+    return get_settings().enable_instrumentation
 
 
 def configure_observability() -> None:
-    """
-    Configure Application Insights observability if enabled.
+    """Configure Application Insights observability if enabled.
 
-    Requires APPLICATIONINSIGHTS_CONNECTION_STRING to be set.
+    Reads all values from ``Settings`` rather than ``os.getenv()``.
+    Requires ``applicationinsights_connection_string`` to be set.
     """
-    if not is_observability_enabled():
-        logger.info("Observability disabled (ENABLE_INSTRUMENTATION != true)")
+    settings = get_settings()
+
+    if not settings.enable_instrumentation:
+        logger.info("Observability disabled (enable_instrumentation is false)")
         return
 
     try:
-        azure_monitor_connection = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
+        connection_string = settings.applicationinsights_connection_string
 
-        if azure_monitor_connection:
-            _configure_azure_monitor(azure_monitor_connection)
+        if connection_string:
+            _configure_azure_monitor(
+                connection_string, enable_sensitive=settings.enable_sensitive_data
+            )
         else:
             logger.warning(
-                "ENABLE_INSTRUMENTATION=true but APPLICATIONINSIGHTS_CONNECTION_STRING not set. "
+                "enable_instrumentation=true but applicationinsights_connection_string not set. "
                 "Observability will not be configured."
             )
 
@@ -48,7 +54,7 @@ def configure_observability() -> None:
         logger.exception("Failed to configure Azure Monitor")
 
 
-def _configure_azure_monitor(connection_string: str) -> None:
+def _configure_azure_monitor(connection_string: str, *, enable_sensitive: bool) -> None:
     """Configure Azure Monitor for production telemetry."""
     try:
         from agent_framework.observability import (  # noqa: PLC0415
@@ -58,8 +64,6 @@ def _configure_azure_monitor(connection_string: str) -> None:
         from azure.monitor.opentelemetry import (  # type: ignore[import-not-found]  # noqa: PLC0415
             configure_azure_monitor,
         )
-
-        enable_sensitive = os.getenv("ENABLE_SENSITIVE_DATA", "false").lower() == "true"
 
         # Configure Azure Monitor with instrumentation options
         # Enable azure_sdk to trace Azure AI Foundry/Inference calls

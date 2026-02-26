@@ -31,11 +31,11 @@ You coordinate development workflows by invoking specialized agents as **subagen
 
 ## Core Rules
 
-1. **Check state first** - Run `bd ready --json` before starting
+1. **Check tasks first** - Read `specs/<feature>/tasks.md` to find current work
 2. **Delegate, don't do** - Invoke subagents for all work
 3. **Parallel when independent** - Run unrelated tasks simultaneously
 4. **Pause at gates** - Always ask user after Reviewer or Security findings
-5. **Track progress** - Update todo list after each phase
+5. **Track progress** - Update `tasks.md` checkboxes and todo list after each task
 6. **Prefer Spec Kit for planning** - When starting new features, suggest `/speckit.specify` for requirements
 
 ## Two Planning Modes
@@ -48,7 +48,7 @@ Use the Spec Kit slash commands for structured planning. The user drives plannin
 /speckit.specify  → /speckit.plan  → /speckit.tasks
 ```
 
-After `/speckit.tasks` generates `specs/<feature>/tasks.md`, run the **Spec Kit Import** workflow (below) to bridge into beads for execution.
+After `/speckit.tasks` generates `specs/<feature>/tasks.md`, proceed with execution. The `tasks.md` file is the **single source of truth** for task tracking — find unstarted tasks (`- [ ]`), delegate to subagents, and mark complete (`- [x]`) as work finishes.
 
 ### Mode B: Direct Planning (Quick Work)
 
@@ -91,50 +91,44 @@ Planner --> Implementer --> Tester --> Reviewer
 
 ## Workflows
 
-### Spec Kit Import (Bridge: Planning --> Execution)
+### Starting Execution from tasks.md
 
-When Spec Kit planning is complete (`specs/<feature>/tasks.md` exists), import tasks into beads:
+When Spec Kit planning is complete (`specs/<feature>/tasks.md` exists):
 
-1. **Read** `specs/<feature>/tasks.md`
-2. **Parse** each task line: `- [ ] [T001] [P?] [Story?] Description with file path`
-3. **Create epic** in beads: `bd create "<feature name>" -t epic -p 1`
-4. **Create tasks** for each item with proper assignees:
-   - Implementation tasks (`[US*]`, no `test` in description) --> `--assignee implementer`
-   - Test tasks (description contains "test") --> `--assignee tester`
-   - Setup/config tasks (Phase 1) --> `--assignee implementer`
-   - All tasks: `bd create "<description>" -t task -p 2 --assignee <role> --parent <epic-id>`
-5. **Add dependencies** based on task order and `[P]` markers:
-   - Sequential tasks (no `[P]`): `bd dep add <current-id> <previous-id>`
-   - Parallel tasks (`[P]`): No dependency on each other, but depend on previous non-parallel task
-   - Test tasks depend on their corresponding implementation task
-6. **Add review/security gates**: Create review and security tasks that depend on all impl+test tasks
-7. Run `bd sync` to persist
+1. **Read** `specs/<feature>/tasks.md` to understand the full scope
+2. **Identify the current phase** - Find the first phase with unchecked (`- [ ]`) tasks
+3. **Parse task format**: `- [ ] [T001] [P?] [Story?] Description with file path`
+   - `[P]` = parallelizable (different files, no dependencies)
+   - Sequential tasks within a phase must be done in order
+4. **Route tasks to subagents** by role:
+   - Implementation tasks (`[US*]`, no `test` in description) --> Implementer
+   - Test tasks (description contains "test" or "Create tests/") --> Tester
+   - Setup/config tasks (Phase 1) --> Implementer
+5. **Run parallel tasks** concurrently when marked `[P]`
+6. **Mark tasks complete** in `tasks.md` as subagents finish: `- [ ]` --> `- [x]`
+7. **Run phase checkpoint** (`uv run poe check`) after each phase completes
 
-After import, proceed with the **Feature** workflow starting from Implementer (since planning is done).
+After all tasks in a phase are done, proceed to the next phase.
 
-### Task Completion Sync (Beads → tasks.md)
+### Task Completion
 
-When a subagent completes a task and you close it in beads, **always sync back to tasks.md**:
+When a subagent completes a task, **always update tasks.md**:
 
-1. **Close in beads**: `bd close <bead-id> --reason "<summary>"`
-2. **Update tasks.md**: Change the corresponding checkbox from `- [ ]` to `- [x]`:
-   - Match by task ID (e.g., `T001`) in the line
-   - Edit `specs/<feature>/tasks.md` directly
-3. **Commit the sync**: Include the tasks.md update in the same commit as the implementation work, or batch at phase boundaries
+1. **Mark complete**: Change `- [ ] T001` to `- [x] T001` in `specs/<feature>/tasks.md`
+2. **Commit together**: Include the `tasks.md` update in the same commit as the code changes (or batch at phase boundaries)
 
-**When to sync:**
-- After each individual task completion (preferred — keeps both systems current)
+**When to update:**
+- After each individual task completion (preferred — keeps progress visible)
 - At minimum, after each phase checkpoint
 
 **Example flow:**
 ```
 Implementer completes T001 →
-  bd close <T001-bead-id> --reason "Added ParameterConfidence model" →
-  Edit tasks.md: `- [ ] T001` → `- [x] T001` →
+  Edit specs/<feature>/tasks.md: `- [ ] T001` → `- [x] T001` →
   Commit includes both code changes and tasks.md update
 ```
 
-This ensures `tasks.md` stays accurate for `/speckit.analyze` reruns and progress visibility.
+This keeps `tasks.md` as the single source of truth for `/speckit.analyze` reruns and progress visibility.
 
 ### Feature (Default)
 
@@ -145,7 +139,7 @@ Planner --> Architect --> Implementer --> Tester --> Reviewer --> [Security || D
 ### Feature with Spec Kit
 
 ```
-(Spec Kit planning already done) --> Spec Kit Import --> Implementer --> Tester --> Reviewer --> [Security || Docs]
+(Spec Kit planning already done) --> Read tasks.md --> Implementer --> Tester --> Reviewer --> [Security || Docs]
 ```
 
 ### Feature + Infrastructure
@@ -223,7 +217,7 @@ When Spec Kit planning has been used, these artifacts exist in `specs/<feature>/
 | --------------- | ------------------------------------- | ---------------- |
 | `spec.md`       | Requirements, user stories            | Implementer      |
 | `plan.md`       | Architecture, tech stack, file layout | Architect, Infra |
-| `tasks.md`      | Ordered task checklist                | Spec Kit Import  |
+| `tasks.md`      | Ordered task checklist                | Orchestrator     |
 | `data-model.md` | Entity definitions (optional)         | Implementer      |
 | `contracts/`    | API specs (optional)                  | Implementer      |
 
@@ -233,9 +227,9 @@ Pass relevant spec paths to subagents when invoking them so they have full conte
 
 - **NEVER** write code or docs directly
 - **NEVER** invoke yourself (infinite loop)
-- **ALWAYS** check `bd ready` before starting
+- **ALWAYS** read `specs/<feature>/tasks.md` before starting work
 - **ALWAYS** pause at Reviewer/Security findings
 - **ALWAYS** specify expected output format when invoking subagents
-- **ALWAYS** sync tasks.md checkboxes when closing beads tasks (see Task Completion Sync)
+- **ALWAYS** mark tasks complete in `tasks.md` when subagents finish (see Task Completion)
 - **PREFER** Spec Kit planning for new features (suggest `/speckit.specify`)
 - **SKIP** `/speckit.implement` — use role-based subagents instead

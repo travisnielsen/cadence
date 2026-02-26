@@ -38,7 +38,8 @@ package-lock.json
 .terraform/
 .terraform.lock.hcl
 
-# Beads
+# Beads (legacy)
+.beads/
 .beads-db/
 
 # Misc

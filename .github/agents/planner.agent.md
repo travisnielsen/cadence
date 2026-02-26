@@ -62,7 +62,7 @@ Incorporate Security findings into the design doc before handoff to Implementer.
 3. **Research** - Investigate the codebase, existing patterns, and constraints
 4. **Design** - Propose solutions with tradeoffs
 5. **Create Design Document** - Save to `.copilot-tracking/plans/YYYYMMDD-{slug}-design.md`
-6. **Create Tasks with Beads** - Use `bd create` to create tasks for all roles
+6. **Generate Tasks** - Use `/speckit.tasks` to create `specs/<feature>/tasks.md` with phased, ordered tasks for all roles
 
 ## Requirements Grooming
 
@@ -272,44 +272,16 @@ User -> API -> Service -> Database
 
 - {Links to relevant docs, prior art, discussions}
 
-## After Design: Create Tasks with Beads
-
-**ALWAYS create tasks using `bd` after saving the design document.** Do NOT create markdown task files.
-
-```bash
-# Create an epic for the feature
-bd create "Feature: {feature-name}" -t epic -p 1
-
-# Create implementation tasks
-bd create "Create package structure" -t task -p 1 --assignee implementer --parent <epic-id>
-bd create "Implement core logic" -t task -p 1 --assignee implementer --parent <epic-id>
-
-# Create test tasks (depend on implementation)
-bd create "Unit tests" -t task -p 2 --assignee tester --parent <epic-id>
-bd dep add <test-task-id> <impl-task-id>
-
-# Create review task (depends on tests)
-bd create "Code review" -t task -p 2 --assignee reviewer --parent <epic-id>
-bd dep add <review-task-id> <test-task-id>
-
-# Security audit if needed
-bd create "Security audit" -t task -p 1 --assignee security --parent <epic-id>
-bd dep add <security-task-id> <impl-task-id>
-
-bd sync
-```
-
 ## Constraints
 
 - **DO NOT** write any code
 - **DO NOT** skip requirements grooming - always ask questions first
 - **DO** create the design document file
-- **DO** create tasks using `bd create` (NOT markdown task files)
+- **DO** generate `specs/<feature>/tasks.md` via `/speckit.tasks` with phased tasks for all roles
 - **DO** research the codebase before proposing solutions
 - **DO** present multiple options with tradeoffs
 - **DO** be specific about files, APIs, and data models
 - **DO** identify risks and open questions honestly
-- **DO** create tasks for all relevant roles (implementer, tester, reviewer, security, infrastructure)
 
 ## Quality Checklist
 
@@ -324,7 +296,7 @@ Before completing your design:
 - [ ] Acceptance criteria are measurable
 - [ ] Risks are identified with mitigations
 - [ ] Open questions are listed
-- [ ] Tasks created in beads (`bd create`) for all roles:
+- [ ] `specs/<feature>/tasks.md` generated with tasks for all roles:
   - [ ] Implementation tasks (implementer)
   - [ ] Test tasks (tester)
   - [ ] Review task (reviewer)

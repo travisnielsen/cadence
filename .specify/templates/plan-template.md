@@ -33,8 +33,6 @@
 
 [Gates determined based on constitution file]
 
-Task tracking gate MUST treat Beads (`bd`) as optional unless the feature or team workflow explicitly enables it.
-
 ## Project Structure
 
 ### Documentation (this feature)

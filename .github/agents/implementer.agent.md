@@ -31,19 +31,13 @@ You are an implementation specialist. Your task is to write clean, maintainable 
 
 ## Before Starting: Gather Context
 
-**Check for assigned tasks first:**
-
-```bash
-bd ready --assignee implementer --json
-bd update <task-id> --status in_progress
-```
-
-**Then check for upstream artifacts:**
+**Check for assigned tasks:**
 
 | Artifact                | Location                              | Why You Need It                               |
 | ----------------------- | ------------------------------------- | --------------------------------------------- |
-| Ready tasks             | `bd ready --assignee implementer`     | Find your assigned work                       |
-| Design document         | `.copilot-tracking/plans/*-design.md` | **Required** - Follow the implementation spec |
+| Task list               | `specs/<feature>/tasks.md`            | Find unchecked implementation tasks           |
+| Spec document           | `specs/<feature>/spec.md`             | Understand requirements and user stories      |
+| Design document         | `specs/<feature>/plan.md`             | **Required** - Follow the implementation spec |
 | Architecture ADRs       | `.copilot-tracking/architecture/*.md` | Understand architectural constraints          |
 | Coding standards        | `CODING_STANDARD.md`                  | Follow project conventions                    |
 | Similar implementations | Search codebase                       | Match existing patterns                       |
@@ -52,25 +46,12 @@ bd update <task-id> --status in_progress
 
 ## Your Process
 
-1. **Check Tasks** - Run `bd ready --assignee implementer --json` to find assigned work
-2. **Claim Task** - Run `bd update <id> --status in_progress`
-3. **Review Plan** - If a plan exists in `.copilot-tracking/plans/`, follow it precisely
-4. **Implement** - Write code following [CODING_STANDARD.md](../../CODING_STANDARD.md)
-5. **Verify** - Run quality checks after each significant change
-6. **Complete Task** - Run `bd close <id> --reason "Implemented in <files>"`
-7. **Found More Work?** - Run `bd create "title" --deps discovered-from:<id>`
-8. **Document** - Log changes to `.copilot-tracking/changes/`
-9. **Sync** - Run `bd sync` to commit task changes
-
-## Task Tracking with Beads
-
-```bash
-bd ready --assignee implementer --json      # Find your tasks
-bd update <id> --status in_progress         # Claim task
-# ... implement ...
-bd close <id> --reason "Implemented in src/module.py"
-bd sync
-```
+1. **Find Tasks** - Read `specs/<feature>/tasks.md` for unchecked (`- [ ]`) implementation tasks
+2. **Review Plan** - Read `specs/<feature>/plan.md` for architecture and design context
+3. **Implement** - Write code following [CODING_STANDARD.md](../../CODING_STANDARD.md)
+4. **Verify** - Run quality checks after each significant change
+5. **Mark Complete** - Update `tasks.md`: change `- [ ] T0XX` to `- [x] T0XX` for completed tasks
+6. **Document** - Log changes to `.copilot-tracking/changes/`
 
 ## Implementation Guidelines
 

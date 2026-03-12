@@ -84,8 +84,13 @@ def _configure_azure_monitor(connection_string: str, *, enable_sensitive: bool) 
         # scenarios, but the spans are still captured and exported correctly.
         enable_instrumentation(enable_sensitive_data=enable_sensitive)
 
-        # Suppress the noisy context detach error logs (they're harmless warnings)
+        # Suppress noisy logs that are harmless warnings:
+        # - context detach errors from SSE streaming
+        # - "Data drop 400" duration-format errors from Azure SDK spans
         logging.getLogger("opentelemetry.context").setLevel(logging.CRITICAL)
+        logging.getLogger("azure.monitor.opentelemetry.exporter.export._base").setLevel(
+            logging.CRITICAL
+        )
 
         logger.info(
             "OpenTelemetry configured with Azure Monitor (sensitive_data=%s)", enable_sensitive

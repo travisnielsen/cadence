@@ -1,0 +1,310 @@
+openapi: 3.0.3
+info:
+  title: Cadence Scenario Chat Contract
+  version: 0.1.0
+  description: |
+    Contract extension for assumption-based what-if responses produced by the
+    existing chat SSE endpoint. This defines payload shape, not a new transport.
+paths:
+  /api/chat/stream:
+    post:
+      summary: Stream chat response including scenario payloads
+      description: |
+        Existing SSE endpoint that may emit scenario-capable tool results when
+        what-if intent is detected.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+      responses:
+        "200":
+          description: text/event-stream where one or more events may include ScenarioToolResult
+          content:
+            text/event-stream:
+              schema:
+                type: string
+components:
+  schemas:
+    ChatRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        conversation_id:
+          type: string
+          nullable: true
+
+    ScenarioToolResult:
+      type: object
+      required: [tool_name, result]
+      properties:
+        tool_name:
+          type: string
+          enum: [scenario_analysis]
+        tool_call_id:
+          type: string
+        result:
+          $ref: "#/components/schemas/ScenarioResponse"
+      example:
+        tool_name: scenario_analysis
+        tool_call_id: scenario_12345
+        result:
+          mode: scenario
+          scenario_type: price_delta
+          assumptions:
+            - name: price_delta_pct
+              scope: global
+              value: 5.0
+              unit: pct
+              source: user
+          metrics:
+            - metric: Revenue
+              dimension_key: Widget A
+              baseline: 1000.0
+              scenario: 1050.0
+              delta_abs: 50.0
+              delta_pct: 5.0
+          narrative:
+            headline: "Revenue increases 5% under price delta scenario"
+            key_changes:
+              - "Revenue (Widget A) increases by 5% (+50.00)"
+            confidence_note: null
+          visualization:
+            chart_type: bar
+            x_key: StockItemName
+            series:
+              - key: baseline
+                label: Baseline
+                kind: baseline
+              - key: scenario
+                label: Scenario
+                kind: scenario
+            rows:
+              - StockItemName: Widget A
+                baseline: 1000.0
+                scenario: 1050.0
+            labels:
+              baseline: "Current (Baseline)"
+              scenario: "Projected (Scenario)"
+          prompt_hints: []
+          data_limitations: []
+
+    ScenarioResponse:
+      type: object
+      required:
+        - mode
+        - scenario_type
+        - assumptions
+        - metrics
+        - narrative
+        - visualization
+        - prompt_hints
+      properties:
+        mode:
+          type: string
+          enum: [scenario]
+        scenario_type:
+          type: string
+        assumptions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScenarioAssumption"
+        metrics:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScenarioMetricValue"
+        narrative:
+          $ref: "#/components/schemas/ScenarioNarrativeSummary"
+        visualization:
+          $ref: "#/components/schemas/ScenarioVisualizationPayload"
+        prompt_hints:
+          type: array
+          items:
+            $ref: "#/components/schemas/PromptHint"
+        data_limitations:
+          type: array
+          items:
+            type: string
+        fallback_table:
+          $ref: "#/components/schemas/FallbackTable"
+
+    ScenarioAssumption:
+      type: object
+      required: [name, scope, value, unit, source]
+      properties:
+        name:
+          type: string
+        scope:
+          type: string
+        value:
+          type: number
+        unit:
+          type: string
+          enum: [pct, absolute, days, count]
+        source:
+          type: string
+          enum: [user, default, inferred]
+      example:
+        name: price_delta_pct
+        scope: global
+        value: 5.0
+        unit: pct
+        source: user
+
+    ScenarioMetricValue:
+      type: object
+      required:
+        [metric, dimension_key, baseline, scenario, delta_abs, delta_pct]
+      properties:
+        metric:
+          type: string
+        dimension_key:
+          type: string
+        baseline:
+          type: number
+        scenario:
+          type: number
+        delta_abs:
+          type: number
+        delta_pct:
+          type: number
+      example:
+        metric: Revenue
+        dimension_key: Widget A
+        baseline: 1000.0
+        scenario: 1050.0
+        delta_abs: 50.0
+        delta_pct: 5.0
+
+    ScenarioNarrativeSummary:
+      type: object
+      required: [headline, key_changes]
+      properties:
+        headline:
+          type: string
+        key_changes:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            type: string
+        confidence_note:
+          type: string
+          nullable: true
+      example:
+        headline: "Revenue increases 5% under price delta scenario"
+        key_changes:
+          - "Revenue (Widget B) increases by 5% (+100.00)"
+          - "Revenue (Widget A) increases by 5% (+50.00)"
+        confidence_note: null
+
+    ScenarioVisualizationPayload:
+      type: object
+      required: [chart_type, x_key, series, rows, labels]
+      properties:
+        chart_type:
+          type: string
+          enum: [bar, line, combo]
+        x_key:
+          type: string
+        series:
+          type: array
+          minItems: 2
+          items:
+            type: object
+            required: [key, label]
+            properties:
+              key:
+                type: string
+              label:
+                type: string
+              kind:
+                type: string
+                enum: [baseline, scenario, delta]
+        rows:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+      example:
+        chart_type: bar
+        x_key: StockItemName
+        series:
+          - key: baseline
+            label: Baseline
+            kind: baseline
+          - key: scenario
+            label: Scenario
+            kind: scenario
+        rows:
+          - StockItemName: Widget A
+            baseline: 1000.0
+            scenario: 1050.0
+          - StockItemName: Widget B
+            baseline: 2000.0
+            scenario: 2100.0
+        labels:
+          baseline: "Current (Baseline)"
+          scenario: "Projected (Scenario)"
+          StockItemName: "Stock Item Name"
+
+    PromptHint:
+      type: object
+      required: [kind, message, examples, supported_types]
+      properties:
+        kind:
+          type: string
+          enum: [clarification, discoverability]
+        message:
+          type: string
+        examples:
+          type: array
+          items:
+            type: string
+        supported_types:
+          type: array
+          items:
+            type: string
+      example:
+        kind: discoverability
+        message: "I support the following what-if scenario types: Price changes, Demand changes, Supplier cost changes, Inventory policy changes."
+        examples:
+          - "What if we raise prices by 10%?"
+          - "What if demand increases 20% next quarter?"
+        supported_types:
+          - price_delta
+          - demand_delta
+          - supplier_cost_delta
+          - inventory_policy_delta
+
+    FallbackTable:
+      type: object
+      nullable: true
+      required: [columns, rows]
+      properties:
+        columns:
+          type: array
+          items:
+            type: string
+        rows:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      example:
+        columns:
+          [metric, dimension_key, baseline, scenario, delta_abs, delta_pct]
+        rows:
+          - metric: Revenue
+            dimension_key: Widget A
+            baseline: 1000.0
+            scenario: 1050.0
+            delta_abs: 50.0
+            delta_pct: 5.0

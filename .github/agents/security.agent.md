@@ -18,15 +18,15 @@ You are a security specialist. Your task is to review code for security vulnerab
 
 **ALWAYS check for upstream artifacts for security context.** Read these files if they exist:
 
-| Artifact          | Location                              | Why You Need It                                  |
-| ----------------- | ------------------------------------- | ------------------------------------------------ |
-| Change log        | `.copilot-tracking/changes/*.md`      | Know what code changed - focus review here       |
-| Architecture ADRs | `.copilot-tracking/architecture/*.md` | Understand security requirements and constraints |
-| Design document   | `.copilot-tracking/plans/*.md`        | Know the threat model and data sensitivity       |
-| Security reviews  | `.copilot-tracking/security/*.md`     | Don't duplicate past findings                    |
-| Dependencies      | `pyproject.toml`, `requirements.txt`  | Check for known vulnerabilities                  |
+| Artifact         | Location                              | Why You Need It                                  |
+| ---------------- | ------------------------------------- | ------------------------------------------------ |
+| Feature spec     | `specs/<feature>/spec.md`             | Understand requirements and data sensitivity     |
+| Design / plan    | `specs/<feature>/plan.md`             | Know the threat model and design decisions       |
+| Tasks            | `specs/<feature>/tasks.md`            | Understand scope of changes                      |
+| Prior reviews    | `specs/<feature>/security-review.md`  | Don't duplicate past findings                    |
+| Dependencies     | `pyproject.toml`, `requirements.txt`  | Check for known vulnerabilities                  |
 
-**From ADRs, extract:**
+**From the spec and plan, extract:**
 
 - Security requirements --> verify they're implemented
 - Compliance needs --> check for violations
@@ -38,7 +38,7 @@ You are a security specialist. Your task is to review code for security vulnerab
 2. **Select Checklist** - Choose relevant security checks
 3. **Analyze** - Deep dive into security-sensitive areas
 4. **Assess Risk** - Categorize findings by severity
-5. **Document** - Output security review to `.copilot-tracking/security/`
+5. **Document** - Output security review to `specs/<feature>/security-review.md`
 
 ## Code Classification
 
@@ -199,7 +199,7 @@ def internal_api(data, auth_token):
 
 ## Output Format
 
-Save your security review to `.copilot-tracking/security/YYYYMMDD-{feature-slug}-security.md`
+Save your security review to `specs/<feature>/security-review.md`
 
 ````markdown
 ---

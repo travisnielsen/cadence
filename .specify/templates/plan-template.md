@@ -31,7 +31,12 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- **Async-first architecture**: Any I/O path in scope uses `async def` and async libraries; no blocking calls on the event loop.
+- **Typed interfaces**: New/changed functions include parameter and return annotations; no untyped public interfaces.
+- **Pydantic boundaries**: All boundary payloads (API/config/inter-agent/external response contracts) are modeled and validated with Pydantic.
+- **Executor responsibility**: Workflow changes preserve single-responsibility per executor and shared utilities stay centralized.
+- **Quality gate plan**: Implementation and task plan includes running `uv run poe check` before completion.
+- **Commit discipline**: Delivery notes and PR plan use Conventional Commits (`type(scope): description`).
 
 ## Project Structure
 

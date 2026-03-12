@@ -1,12 +1,13 @@
 <!--
 Sync Impact Report
-- Version change: 1.1.0 → 2.0.0
+- Version change: 2.0.0 -> 2.0.1
 - Modified principles:
-	- Development Workflow / Task tracking rule: "All work tracked via bd" → "Task tracking via bd is optional"
+	- I. Async-First (clarified explicit prohibition on blocking libraries)
+	- II. Validated Data at Boundaries (clarified boundary scope and no-raw-dict rule)
+	- III. Fully Typed (clarified full signature typing and static typing gate)
+	- V. Automated Quality Gates (clarified required command and pre-commit requirement)
 - Added sections:
-	- Governance amendment procedure
-	- Governance versioning policy
-	- Governance compliance review expectations
+	- None
 - Removed sections:
 	- None
 - Templates requiring updates:
@@ -15,7 +16,7 @@ Sync Impact Report
 	- ✅ .specify/templates/tasks-template.md (reviewed, no change required)
 	- ⚠ .specify/templates/commands/*.md (directory not present in repository)
 - Follow-up TODOs:
-	- TODO(COMMAND_TEMPLATES_DIR): Confirm whether command templates are stored outside this repo or intentionally omitted.
+	- TODO(COMMAND_TEMPLATES_DIR): Confirm whether command templates are intentionally omitted from this repo.
 -->
 
 # Cadence Constitution
@@ -24,17 +25,21 @@ Sync Impact Report
 
 ### I. Async-First
 
-All I/O-bound operations must be asynchronous. Never block the event loop. Use async-compatible libraries exclusively.
+All I/O-bound operations MUST be asynchronous. The event loop MUST NOT be blocked.
+Use async-compatible libraries exclusively for network and filesystem I/O.
 Rationale: predictable concurrency and responsiveness are required for streaming agent workflows.
 
 ### II. Validated Data at Boundaries
 
-All data crossing boundaries (API, config, inter-agent messages) must be validated through Pydantic models. No raw dicts or untyped data.
+All data crossing boundaries (API payloads, environment/config loading, inter-agent
+messages, and external service responses) MUST be validated through Pydantic models.
+Raw dict contracts at boundaries are prohibited.
 Rationale: boundary validation reduces runtime ambiguity and prevents malformed data propagation.
 
 ### III. Fully Typed
 
-All function parameters and return types must have type annotations. Static type checking must pass.
+All function parameters and return values MUST have explicit type annotations.
+Static type checks MUST pass before merge.
 Rationale: strong typing is required for safe refactoring and reliable multi-agent integration.
 
 ### IV. Single-Responsibility Executors
@@ -44,7 +49,8 @@ Rationale: strict ownership limits cross-cutting drift and keeps workflow routin
 
 ### V. Automated Quality Gates (NON-NEGOTIABLE)
 
-All quality checks must pass before any commit. No exceptions, no overrides.
+All quality checks MUST pass before any commit. The canonical gate is
+`uv run poe check`. No exceptions and no bypasses.
 Rationale: mandatory automated gates preserve baseline correctness and code health.
 
 ## Technology Stack
@@ -61,8 +67,8 @@ Rationale: mandatory automated gates preserve baseline correctness and code heal
 ## Development Workflow
 
 1. **Conventional commits** — `type(scope): description` format required.
-3. **Quality before commit** — Automated checks must pass.
-4. **Push before done** — All changes committed AND pushed before ending a session.
+2. **Quality before commit** — `uv run poe check` MUST pass.
+3. **Push before done** — All changes committed AND pushed before ending a session.
 
 ## Governance
 
@@ -71,17 +77,11 @@ This constitution states principles. Implementation details (file conventions, t
 ### Amendment Procedure
 
 Any constitutional change MUST:
-
-
-
 1. Update this file with clear normative language.
 2. Include a Sync Impact Report at the top of this file.
 3. Propagate aligned updates to affected templates and runtime guidance docs in the same change.
 
 ### Versioning Policy
-
-
-
 Constitution versions follow semantic versioning:
 
 - **MAJOR**: backward-incompatible governance or principle removals/redefinitions.
@@ -92,4 +92,4 @@ Constitution versions follow semantic versioning:
 
 Every planning cycle MUST include a constitution check. Any violations MUST be documented with explicit justification and a simpler alternative considered.
 
-**Version**: 2.0.0 | **Ratified**: 2026-02-09 | **Last Amended**: 2026-02-22
+**Version**: 2.0.1 | **Ratified**: 2026-02-09 | **Last Amended**: 2026-03-11

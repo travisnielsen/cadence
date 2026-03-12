@@ -150,6 +150,30 @@ class FakeSqlExecutor:
         }
 
 
+class SequentialFakeSqlExecutor:
+    """Fake that returns different results for sequential SQL calls.
+
+    Each call to ``execute`` pops the next result from ``responses``.
+    Falls back to the last response if more calls are made than responses
+    provided.
+    """
+
+    def __init__(self, responses: list[dict[str, Any]]) -> None:
+        self._responses = list(responses)
+        self._index = 0
+        self.calls: list[tuple[str, list[Any] | None]] = []
+
+    async def execute(
+        self,
+        query: str,
+        params: list[Any] | None = None,
+    ) -> dict[str, Any]:
+        self.calls.append((query, params))
+        idx = min(self._index, len(self._responses) - 1)
+        self._index += 1
+        return self._responses[idx]
+
+
 class SpyReporter:
     """Spy satisfying the ``ProgressReporter`` protocol.
 

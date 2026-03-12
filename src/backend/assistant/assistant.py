@@ -13,7 +13,20 @@ from pathlib import Path
 from typing import Any
 
 from agent_framework import Agent, AgentSession
-from models import NL2SQLRequest, NL2SQLResponse, SchemaSuggestion
+from models import (
+    NL2SQLRequest,
+    NL2SQLResponse,
+    ScenarioAssumptionSet,
+    ScenarioIntent,
+    SchemaSuggestion,
+)
+from shared.scenario_constants import (
+    SCENARIO_ROUTING_CONFIDENCE_THRESHOLD,
+    SCENARIO_TYPE_DEMAND,
+    SCENARIO_TYPE_INVENTORY_POLICY,
+    SCENARIO_TYPE_PRICE,
+    SCENARIO_TYPE_SUPPLIER_COST,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -135,10 +148,12 @@ class ConversationContext:
 class ClassificationResult:
     """Result of intent classification."""
 
-    intent: str  # "data_query", "refinement", "conversation"
+    intent: str  # "data_query", "refinement", "conversation", "scenario"
     query: str = ""  # The query to process (may be rewritten for refinements)
     param_overrides: dict = field(default_factory=dict)  # For refinements
     confirmation_action: str | None = None  # "accept" | "revise" | "none"
+    scenario_intent: ScenarioIntent | None = None  # Populated for scenario intent
+    scenario_discovery: bool = False  # LLM signals user is asking about scenario capabilities
 
 
 def load_assistant_prompt() -> str:
@@ -269,6 +284,35 @@ Respond with ONE of these JSON formats:
 3. For general CONVERSATION (greetings, jokes, help, off-topic):
 {{"intent": "conversation"}}
 
+3b. For conversation where the user is ASKING ABOUT SCENARIO CAPABILITIES (what scenarios exist, what analyses are available, what what-if options they can explore):
+{{"intent": "conversation", "scenario_discovery": true}}
+
+4. For a WHAT-IF/SCENARIO question (hypothetical changes, assumptions about alternate outcomes):
+{{"intent": "scenario", "query": "<the question>", "scenario_confidence": <0.0-1.0>, "detected_patterns": ["<key phrases>"], "reason": "<brief explanation>"}}
+
+Examples of SCENARIO questions:
+- "What if we raise prices by 5%?"
+- "Assume costs increase 10%, what happens to profit?"
+- "If we changed supplier pricing, how would revenue be affected?"
+- "Show me the impact of raising demand by 20%"
+
+NOT scenarios (these are conversation with scenario_discovery=true):
+- "What scenarios can you do?" (conversation + scenario_discovery)
+- "What what-if analyses are available?" (conversation + scenario_discovery)
+- "Tell me about your what-if capabilities" (conversation + scenario_discovery)
+- "What kinds of analysis can you run?" (conversation + scenario_discovery)
+
+NOT scenario_discovery (these are data_query — exploring actual data):
+- "Explore stock groups and item categories" (data_query — browsing data)
+- "Explore customer orders" (data_query — browsing data)
+- "What are the top selling products?" (data_query — descriptive analytics)
+- "Show me product categories" (data_query — listing data)
+- "If there are orders from Seattle, show them" (data_query — conditional filter)
+- "Show me what happened last month" (data_query — historical lookup)
+scenario_discovery is ONLY when the user explicitly asks about what-if capabilities or scenario features.
+A query that explores or browses actual business data is ALWAYS a data_query, never scenario_discovery.
+A scenario MUST involve a hypothetical assumption or change to explore alternate outcomes.
+
 If pending dynamic confirmation context exists, include:
 {{"confirmation_action": "accept" | "revise" | "none"}}
 
@@ -304,6 +348,33 @@ JSON response:"""
                 else:
                     confirmation_action = None
 
+                scenario_intent_obj = None
+                if intent == "scenario":
+                    try:
+                        sc_conf = float(parsed.get("scenario_confidence", 0.0))
+                    except (ValueError, TypeError):
+                        sc_conf = 0.0
+                    detected = parsed.get("detected_patterns", [])
+                    if not isinstance(detected, list):
+                        detected = []
+                    reason = parsed.get("reason", "Scenario intent detected")
+
+                    if sc_conf >= SCENARIO_ROUTING_CONFIDENCE_THRESHOLD and detected:
+                        scenario_intent_obj = ScenarioIntent(
+                            mode="scenario",
+                            confidence=sc_conf,
+                            reason=reason,
+                            detected_patterns=detected,
+                        )
+                    else:
+                        logger.info(
+                            "Scenario below threshold (%.3f) or "
+                            "no patterns — falling back to "
+                            "data_query",
+                            sc_conf,
+                        )
+                        intent = "data_query"
+
                 logger.debug(
                     "Classified intent: %s (query=%s, overrides=%s, confirmation_action=%s, conversation_id=%s)",
                     intent,
@@ -312,11 +383,15 @@ JSON response:"""
                     confirmation_action,
                     self.conversation_id,
                 )
+                scenario_discovery = bool(parsed.get("scenario_discovery", False))
+
                 return ClassificationResult(
                     intent=intent,
                     query=query,
                     param_overrides=overrides,
                     confirmation_action=confirmation_action,
+                    scenario_intent=scenario_intent_obj,
+                    scenario_discovery=scenario_discovery,
                 )
         except json.JSONDecodeError as e:
             logger.warning("Failed to parse classification response: %s", e)
@@ -383,6 +458,52 @@ JSON response:"""
         return NL2SQLRequest(
             user_query=classification.query,
             is_refinement=False,
+        )
+
+    @staticmethod
+    def _infer_scenario_type(detected_patterns: list[str]) -> str:
+        """Infer the scenario type from detected language patterns.
+
+        Args:
+            detected_patterns: Phrases from intent classification.
+
+        Returns:
+            A supported scenario type constant.
+        """
+        text = " ".join(detected_patterns).lower()
+        if any(kw in text for kw in ("demand", "volume", "order")):
+            return SCENARIO_TYPE_DEMAND
+        if any(kw in text for kw in ("supplier", "purchasing")):
+            return SCENARIO_TYPE_SUPPLIER_COST
+        if any(kw in text for kw in ("inventory", "reorder", "stock")):
+            return SCENARIO_TYPE_INVENTORY_POLICY
+        return SCENARIO_TYPE_PRICE
+
+    def build_scenario_assumption_set(
+        self,
+        scenario_intent: ScenarioIntent,
+        _user_query: str,
+    ) -> ScenarioAssumptionSet:
+        """Build a preliminary ScenarioAssumptionSet from intent.
+
+        Phase 3 creates an incomplete set identifying the scenario
+        type.  Full assumption extraction is in later phases.
+
+        Args:
+            scenario_intent: Classified scenario intent.
+            _user_query: Original user message (reserved for future use).
+
+        Returns:
+            An incomplete ``ScenarioAssumptionSet``.
+        """
+        scenario_type = self._infer_scenario_type(
+            scenario_intent.detected_patterns,
+        )
+        return ScenarioAssumptionSet(
+            scenario_type=scenario_type,
+            assumptions=[],
+            missing_requirements=["Full assumption extraction pending"],
+            is_complete=False,
         )
 
     _CROSS_AREA_DEPTH_THRESHOLD = 3
@@ -537,6 +658,8 @@ JSON response:"""
                     "query_summary": response.query_summary or None,
                     "query_confidence": response.query_confidence,
                     "error_suggestions": [s.model_dump() for s in response.error_suggestions],
+                    "is_scenario": response.is_scenario,
+                    "scenario_type": response.scenario_type,
                 },
             },
         }

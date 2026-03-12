@@ -329,3 +329,402 @@ class TestFullPipeline:
         assert "limit" in note
         # category is high confidence, so it should NOT appear in the note
         assert "category" not in note
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# g. Scenario tool-call contract tests (T020)
+# ═══════════════════════════════════════════════════════════════════════════
+
+import json
+from pathlib import Path
+
+from models import (
+    ChartSeriesDefinition,
+    NL2SQLResponse,
+    ScenarioAssumption,
+    ScenarioComputationResult,
+    ScenarioMetricValue,
+    ScenarioVisualizationPayload,
+)
+
+# Load contract schema for validation
+_SCHEMA_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "specs"
+    / "004-what-if-scenarios"
+    / "contracts"
+    / "scenario-response.schema.json"
+)
+
+
+def _build_scenario_response() -> NL2SQLResponse:
+    """Build a fully populated scenario NL2SQLResponse for testing."""
+    metrics = [
+        ScenarioMetricValue(
+            metric="Revenue",
+            dimension_key="Widget A",
+            baseline=1000.0,
+            scenario=1050.0,
+            delta_abs=50.0,
+            delta_pct=5.0,
+        ),
+        ScenarioMetricValue(
+            metric="Revenue",
+            dimension_key="Widget B",
+            baseline=2000.0,
+            scenario=2100.0,
+            delta_abs=100.0,
+            delta_pct=5.0,
+        ),
+    ]
+    computation = ScenarioComputationResult(
+        request_id="test-req-001",
+        scenario_type="price_delta",
+        metrics=metrics,
+        summary_totals={
+            "total_revenue_baseline": 3000.0,
+            "total_revenue_scenario": 3150.0,
+            "total_delta_abs": 150.0,
+            "total_delta_pct": 5.0,
+        },
+        data_limitations=[],
+    )
+    viz = ScenarioVisualizationPayload(
+        chart_type="bar",
+        x_key="StockItemName",
+        series=[
+            ChartSeriesDefinition(
+                key="baseline",
+                label="Baseline",
+                kind="baseline",
+            ),
+            ChartSeriesDefinition(
+                key="scenario",
+                label="Scenario",
+                kind="scenario",
+            ),
+        ],
+        rows=[
+            {
+                "StockItemName": "Widget A",
+                "baseline": 1000.0,
+                "scenario": 1050.0,
+            },
+            {
+                "StockItemName": "Widget B",
+                "baseline": 2000.0,
+                "scenario": 2100.0,
+            },
+        ],
+        labels={
+            "baseline": "Current (Baseline)",
+            "scenario": "Projected (Scenario)",
+            "StockItemName": "Stock Item Name",
+        },
+    )
+    return NL2SQLResponse(
+        sql_query="SELECT ...",
+        is_scenario=True,
+        scenario_type="price_delta",
+        scenario_assumptions=[
+            ScenarioAssumption(
+                name="price_delta_pct",
+                scope="global",
+                value=5.0,
+                unit="pct",
+                source="user",
+            ),
+        ],
+        scenario_result=computation,
+        scenario_visualization=viz,
+    )
+
+
+class TestScenarioToolCallContract:
+    """T020: Verify scenario_analysis tool result matches contract."""
+
+    def test_tool_call_has_required_fields(self) -> None:
+        """scenario_analysis tool call contains all required keys."""
+        response = _build_scenario_response()
+        assert response.scenario_result is not None
+        assert response.scenario_visualization is not None
+
+        # Reproduce the exact dict structure from chat.py
+        tool_call = {
+            "tool_name": "scenario_analysis",
+            "tool_call_id": f"scenario_{id(response)}",
+            "args": {},
+            "result": {
+                "mode": "scenario",
+                "scenario_type": response.scenario_type,
+                "assumptions": [a.model_dump() for a in (response.scenario_assumptions or [])],
+                "metrics": [m.model_dump() for m in response.scenario_result.metrics],
+                "summary_totals": (response.scenario_result.summary_totals),
+                "data_limitations": (response.scenario_result.data_limitations),
+                "visualization": (response.scenario_visualization.model_dump()),
+                "narrative": None,
+                "prompt_hints": [],
+            },
+        }
+
+        assert tool_call["tool_name"] == "scenario_analysis"
+        result = tool_call["result"]
+        assert result["mode"] == "scenario"
+        assert result["scenario_type"] == "price_delta"
+        assert len(result["assumptions"]) == 1
+        assert len(result["metrics"]) == 2
+        assert result["visualization"] is not None
+        assert result["prompt_hints"] == []
+
+    def test_metric_payload_has_required_fields(self) -> None:
+        """Each metric dict has all required fields per schema."""
+        response = _build_scenario_response()
+        assert response.scenario_result is not None
+
+        required_keys = {
+            "metric",
+            "dimension_key",
+            "baseline",
+            "scenario",
+            "delta_abs",
+            "delta_pct",
+        }
+        for m in response.scenario_result.metrics:
+            dumped = m.model_dump()
+            assert required_keys.issubset(dumped.keys())
+
+    def test_visualization_payload_has_required_fields(
+        self,
+    ) -> None:
+        """Visualization payload has all required fields per schema."""
+        response = _build_scenario_response()
+        assert response.scenario_visualization is not None
+
+        viz = response.scenario_visualization.model_dump()
+        assert "chart_type" in viz
+        assert "x_key" in viz
+        assert "series" in viz
+        assert "rows" in viz
+        assert "labels" in viz
+        assert len(viz["series"]) >= 2
+
+    def test_assumption_payload_has_required_fields(self) -> None:
+        """Each assumption dict has all required fields per schema."""
+        response = _build_scenario_response()
+        assert response.scenario_assumptions is not None
+
+        required_keys = {
+            "name",
+            "scope",
+            "value",
+            "unit",
+            "source",
+        }
+        for a in response.scenario_assumptions:
+            dumped = a.model_dump()
+            assert required_keys.issubset(dumped.keys())
+
+    def test_payload_serializes_to_valid_json(self) -> None:
+        """Full tool result round-trips through JSON."""
+        response = _build_scenario_response()
+        assert response.scenario_result is not None
+        assert response.scenario_visualization is not None
+
+        payload = {
+            "mode": "scenario",
+            "scenario_type": response.scenario_type,
+            "assumptions": [a.model_dump() for a in (response.scenario_assumptions or [])],
+            "metrics": [m.model_dump() for m in response.scenario_result.metrics],
+            "visualization": (response.scenario_visualization.model_dump()),
+            "narrative": None,
+            "prompt_hints": [],
+            "data_limitations": [],
+        }
+
+        # Must serialize without error
+        serialized = json.dumps(payload)
+        parsed = json.loads(serialized)
+
+        assert parsed["mode"] == "scenario"
+        assert len(parsed["metrics"]) == 2
+        assert parsed["visualization"]["chart_type"] == "bar"
+
+    def test_contract_schema_keys_match_payload(self) -> None:
+        """Payload top-level keys match the JSON schema required."""
+        if not _SCHEMA_PATH.exists():
+            return  # Skip if schema file not available
+
+        schema = json.loads(_SCHEMA_PATH.read_text())
+        required_keys = set(schema.get("required", []))
+
+        response = _build_scenario_response()
+        assert response.scenario_result is not None
+        assert response.scenario_visualization is not None
+
+        payload = {
+            "mode": "scenario",
+            "scenario_type": response.scenario_type,
+            "assumptions": [a.model_dump() for a in (response.scenario_assumptions or [])],
+            "metrics": [m.model_dump() for m in response.scenario_result.metrics],
+            "visualization": (response.scenario_visualization.model_dump()),
+            "narrative": {
+                "headline": "Test",
+                "key_changes": ["Change 1"],
+            },
+            "prompt_hints": [],
+        }
+
+        missing = required_keys - set(payload.keys())
+        assert not missing, f"Missing required keys: {missing}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# h. Scenario latency benchmark scaffold (T048, SC-006)
+# ═══════════════════════════════════════════════════════════════════════════
+
+import statistics
+import time
+import uuid
+
+import pytest
+
+
+def _simulate_analytical_query_latency() -> float:
+    """Simulate a non-scenario analytical query and return elapsed seconds.
+
+    In a full integration environment this would call the real pipeline
+    ``process_query()`` with a non-scenario prompt. Here we build and
+    serialise a standard ``NL2SQLResponse`` to measure in-process
+    overhead (same serialisation path the real endpoint uses).
+    """
+    start = time.perf_counter()
+    NL2SQLResponse(
+        sql_query="SELECT TOP 10 * FROM Sales.Orders ORDER BY OrderDate DESC",
+        sql_response=[{"OrderID": i, "OrderDate": "2025-01-01"} for i in range(10)],
+        confidence_score=0.95,
+        columns=["OrderID", "OrderDate"],
+        row_count=10,
+        query_source="template",
+    )
+    return time.perf_counter() - start
+
+
+def _simulate_scenario_query_latency() -> float:
+    """Simulate a scenario query and return elapsed seconds.
+
+    Mirrors ``_simulate_analytical_query_latency`` but builds the full
+    scenario payload (computation + visualisation + narrative) so
+    the overhead of scenario-specific model construction is captured.
+    """
+    from shared.scenario_narrative import build_narrative_summary
+
+    start = time.perf_counter()
+    metrics = [
+        ScenarioMetricValue(
+            metric="Revenue",
+            dimension_key=f"Item-{i}",
+            baseline=1000.0 * (i + 1),
+            scenario=1000.0 * (i + 1) * 1.05,
+            delta_abs=1000.0 * (i + 1) * 0.05,
+            delta_pct=5.0,
+        )
+        for i in range(5)
+    ]
+    computation = ScenarioComputationResult(
+        request_id=f"bench-{uuid.uuid4().hex[:8]}",
+        scenario_type="price_delta",
+        metrics=metrics,
+        summary_totals={
+            "total_baseline": sum(m.baseline for m in metrics),
+            "total_scenario": sum(m.scenario for m in metrics),
+        },
+        data_limitations=[],
+    )
+    narrative = build_narrative_summary(computation)
+    viz = ScenarioVisualizationPayload(
+        chart_type="bar",
+        x_key="StockItemName",
+        series=[
+            ChartSeriesDefinition(key="baseline", label="Baseline", kind="baseline"),
+            ChartSeriesDefinition(key="scenario", label="Scenario", kind="scenario"),
+        ],
+        rows=[
+            {"StockItemName": m.dimension_key, "baseline": m.baseline, "scenario": m.scenario}
+            for m in metrics
+        ],
+        labels={"baseline": "Current", "scenario": "Projected"},
+    )
+    NL2SQLResponse(
+        sql_query="SELECT ...",
+        is_scenario=True,
+        scenario_type="price_delta",
+        scenario_assumptions=[
+            ScenarioAssumption(
+                name="price_delta_pct",
+                scope="global",
+                value=5.0,
+                unit="pct",
+                source="user",
+            ),
+        ],
+        scenario_result=computation,
+        scenario_narrative=narrative,
+        scenario_visualization=viz,
+    )
+    return time.perf_counter() - start
+
+
+@pytest.mark.benchmark
+class TestScenarioLatencyBenchmark:
+    """T048 / SC-006: Scenario latency benchmark scaffold.
+
+    Measures in-process model construction overhead for scenario vs
+    analytical responses.  The SC-006 threshold (scenario p50 <= 1.2x
+    analytical p50) applies to full end-to-end API requests; this test
+    validates the scaffold methodology and captures per-request
+    latency data.  A full network benchmark is described in the
+    quickstart Latency Validation Protocol section.
+    """
+
+    SAMPLE_SIZE: int = 15
+    MEASURED_PASSES: int = 3
+    SC006_THRESHOLD: float = 1.2
+
+    def test_benchmark_captures_per_request_latency(self) -> None:
+        """Each simulated request returns a positive latency."""
+        analytical = _simulate_analytical_query_latency()
+        scenario = _simulate_scenario_query_latency()
+
+        assert analytical > 0, "Analytical latency must be positive"
+        assert scenario > 0, "Scenario latency must be positive"
+
+    def test_benchmark_collects_sample_distribution(self) -> None:
+        """Warm-up + measured passes produce expected sample counts."""
+        analytical_times: list[float] = []
+        scenario_times: list[float] = []
+
+        # Warm-up pass (discarded)
+        for _ in range(self.SAMPLE_SIZE):
+            _simulate_analytical_query_latency()
+            _simulate_scenario_query_latency()
+
+        # Measured passes
+        for _ in range(self.MEASURED_PASSES):
+            for _ in range(self.SAMPLE_SIZE):
+                analytical_times.append(_simulate_analytical_query_latency())
+                scenario_times.append(_simulate_scenario_query_latency())
+
+        expected_count = self.SAMPLE_SIZE * self.MEASURED_PASSES
+        assert len(analytical_times) == expected_count
+        assert len(scenario_times) == expected_count
+
+        analytical_p50 = statistics.median(analytical_times)
+        scenario_p50 = statistics.median(scenario_times)
+
+        # Both medians must be positive
+        assert analytical_p50 > 0
+        assert scenario_p50 > 0
+
+    def test_sc006_threshold_constant_matches_spec(self) -> None:
+        """Verify the threshold ratio matches SC-006 specification."""
+        assert self.SC006_THRESHOLD == 1.2

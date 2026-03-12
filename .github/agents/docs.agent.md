@@ -34,9 +34,9 @@ You are a technical writer specializing in developer documentation. Your task is
 | Coding standards  | `CODING_STANDARD.md`                  | Document the right patterns          |
 | API code          | `src/**/*.py`                         | Extract accurate function signatures |
 | Test files        | `tests/**/*.py`                       | Find usage examples                  |
-| Design documents  | `.copilot-tracking/plans/*.md`        | Understand intended behavior         |
-| Architecture ADRs | `.copilot-tracking/architecture/*.md` | Document design decisions            |
-| Change logs       | `.copilot-tracking/changes/*.md`      | Know what's new/changed              |
+| Design documents  | `specs/<feature>/plan.md`      | Understand intended behavior         |
+| Data models       | `specs/<feature>/data-model.md`| Document data structures             |
+| Change logs       | `specs/<feature>/changes.md`   | Know what's new/changed              |
 | Existing docs     | `docs/**/*.md`                        | Maintain consistency                 |
 
 ## Your Process

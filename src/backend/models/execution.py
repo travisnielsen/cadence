@@ -7,6 +7,14 @@ after SQL execution.
 
 from pydantic import BaseModel, Field
 
+from .scenario import (
+    PromptHint,
+    ScenarioAssumption,
+    ScenarioComputationResult,
+    ScenarioNarrativeSummary,
+    ScenarioVisualizationPayload,
+)
+
 
 class SchemaSuggestion(BaseModel):
     """A contextual follow-up suggestion anchored to a query result."""
@@ -121,4 +129,41 @@ class NL2SQLResponse(BaseModel):
     error_suggestions: list[SchemaSuggestion] = Field(
         default_factory=list,
         description="Actionable example questions on error (rendered as recovery pills)",
+    )
+
+    # ── Scenario response fields (004-what-if-scenarios) ──────────────
+
+    is_scenario: bool = Field(
+        default=False,
+        description="Whether this response was produced by scenario processing",
+    )
+
+    scenario_type: str | None = Field(
+        default=None,
+        description="Phase-1 scenario category (e.g. 'price_delta')",
+    )
+
+    scenario_assumptions: list[ScenarioAssumption] | None = Field(
+        default=None,
+        description="Assumptions applied in this scenario computation",
+    )
+
+    scenario_result: ScenarioComputationResult | None = Field(
+        default=None,
+        description="Structured baseline and scenario metric values",
+    )
+
+    scenario_narrative: ScenarioNarrativeSummary | None = Field(
+        default=None,
+        description="Brief explanatory analysis of scenario impact",
+    )
+
+    scenario_visualization: ScenarioVisualizationPayload | None = Field(
+        default=None,
+        description="Chart-ready payload for interactive visualization",
+    )
+
+    scenario_hints: list[PromptHint] | None = Field(
+        default=None,
+        description="Prompt hints for clarification or discoverability",
     )

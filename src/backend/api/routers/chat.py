@@ -220,8 +220,14 @@ async def generate_orchestrator_streaming_response(
     from assistant import DataAssistant, load_assistant_prompt
     from azure.identity.aio import DefaultAzureCredential
     from config.settings import get_settings
-    from nl2sql_controller.pipeline import process_query
+    from nl2sql_controller.pipeline import (
+        process_query,
+        process_scenario_query,
+    )
     from shared.protocols import QueueReporter
+    from shared.scenario_constants import (
+        TELEMETRY_EVENT_SCENARIO_ROUTED,
+    )
     from workflow.clients import create_pipeline_clients
 
     step_queue: asyncio.Queue[dict] = asyncio.Queue()
@@ -365,10 +371,145 @@ async def generate_orchestrator_streaming_response(
                 "conversation_id": assistant.conversation_id,
             }
             yield f"data: {json.dumps(output)}\n\n"
+
+            # Append scenario discovery hints when the LLM signals capability inquiry
+            if classification.scenario_discovery:
+                from shared.scenario_hints import build_discoverability_hint
+
+                hint = build_discoverability_hint()
+                tool_call = {
+                    "tool_name": "scenario_analysis",
+                    "tool_call_id": f"discovery_{uuid.uuid4().hex[:8]}",
+                    "args": {},
+                    "result": {
+                        "mode": "discovery",
+                        "scenario_type": "",
+                        "assumptions": [],
+                        "metrics": [],
+                        "summary_totals": {},
+                        "data_limitations": [],
+                        "visualization": None,
+                        "narrative": None,
+                        "prompt_hints": [hint.model_dump()],
+                    },
+                }
+                yield (
+                    "data: "
+                    f"{json.dumps({'tool_call': tool_call, 'done': False, 'conversation_id': assistant.conversation_id})}"
+                    "\n\n"
+                )
+
             logger.debug(
                 "[%s] Conversation response emitted: assistant_conversation_id=%s",
                 trace_id,
                 assistant.conversation_id,
+            )
+        elif classification.intent == "scenario" and classification.scenario_intent:
+            # Scenario (what-if) processing
+            assumption_set = assistant.build_scenario_assumption_set(
+                classification.scenario_intent,
+                message,
+            )
+
+            logger.info(
+                "[%s] %s: confidence=%.3f patterns=%s scenario_type=%s",
+                trace_id,
+                TELEMETRY_EVENT_SCENARIO_ROUTED,
+                classification.scenario_intent.confidence,
+                classification.scenario_intent.detected_patterns,
+                assumption_set.scenario_type,
+            )
+
+            reporter = QueueReporter(step_queue)
+            clients = create_pipeline_clients(
+                settings,
+                reporter=reporter,
+                conversation_id=assistant.conversation_id,
+            )
+
+            result = await process_scenario_query(
+                classification.scenario_intent,
+                assumption_set,
+                message,
+                clients,
+            )
+
+            # Drain step events
+            while not step_queue.empty():
+                try:
+                    evt = step_queue.get_nowait()
+                    yield (f"data: {json.dumps(_format_step_event(evt))}\n\n")
+                except asyncio.QueueEmpty:
+                    break
+
+            # T025: Emit scenario_analysis tool result
+            if result.scenario_result:
+                tool_call = {
+                    "tool_name": "scenario_analysis",
+                    "tool_call_id": f"scenario_{id(result)}",
+                    "args": {},
+                    "result": {
+                        "mode": "scenario",
+                        "scenario_type": result.scenario_type,
+                        "assumptions": [
+                            a.model_dump() for a in (result.scenario_assumptions or [])
+                        ],
+                        "metrics": [m.model_dump() for m in result.scenario_result.metrics],
+                        "summary_totals": (result.scenario_result.summary_totals),
+                        "data_limitations": (result.scenario_result.data_limitations),
+                        "visualization": (
+                            result.scenario_visualization.model_dump()
+                            if result.scenario_visualization
+                            else None
+                        ),
+                        "narrative": (
+                            result.scenario_narrative.model_dump()
+                            if result.scenario_narrative
+                            else None
+                        ),
+                        "prompt_hints": [h.model_dump() for h in (result.scenario_hints or [])],
+                    },
+                }
+                yield (
+                    "data: "
+                    f"{json.dumps({'tool_call': tool_call, 'done': False, 'conversation_id': assistant.conversation_id})}"
+                    "\n\n"
+                )
+            elif result.scenario_hints:
+                # Incomplete scenario: no computation, just clarification hints
+                tool_call = {
+                    "tool_name": "scenario_analysis",
+                    "tool_call_id": f"scenario_{id(result)}",
+                    "args": {},
+                    "result": {
+                        "mode": "scenario",
+                        "scenario_type": result.scenario_type,
+                        "assumptions": [],
+                        "metrics": [],
+                        "summary_totals": {},
+                        "data_limitations": [],
+                        "visualization": None,
+                        "narrative": None,
+                        "prompt_hints": [h.model_dump() for h in result.scenario_hints],
+                    },
+                }
+                yield (
+                    "data: "
+                    f"{json.dumps({'tool_call': tool_call, 'done': False, 'conversation_id': assistant.conversation_id})}"
+                    "\n\n"
+                )
+            else:
+                output = assistant.render_response(result)
+                yield f"data: {json.dumps(output)}\n\n"
+
+            if assistant.conversation_id:
+                store_assistant(assistant.conversation_id, assistant)
+
+            logger.debug(
+                "[%s] Scenario response emitted: conversation_id=%s is_scenario=%s",
+                trace_id,
+                assistant.conversation_id,
+                result.is_scenario,
             )
         else:
             # Data query or refinement

@@ -28,11 +28,11 @@ You are an IaC expert specializing in **secure-by-default** Azure deployments. G
 
 ### Upstream Artifacts
 
-| Artifact        | Location                              | Extract                           |
-| --------------- | ------------------------------------- | --------------------------------- |
-| Architecture    | `.copilot-tracking/architecture/*.md` | NFRs, scale, security, compliance |
-| Design document | `.copilot-tracking/plans/*.md`        | Application requirements          |
-| Existing IaC    | `infra/`, `terraform/`, `bicep/`      | Match existing patterns           |
+| Artifact        | Location                         | Extract                           |
+| --------------- | -------------------------------- | --------------------------------- |
+| Feature spec    | `specs/<feature>/spec.md`        | NFRs, scale, security, compliance |
+| Design / plan   | `specs/<feature>/plan.md`        | Application requirements          |
+| Existing IaC    | `infra/`, `terraform/`, `bicep/` | Match existing patterns           |
 
 ### Skills (MUST Read)
 

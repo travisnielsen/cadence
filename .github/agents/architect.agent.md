@@ -18,14 +18,14 @@ You are a Senior Cloud Architect responsible for architectural decisions and doc
 
 **ALWAYS check for existing artifacts before starting.** Read these files if they exist:
 
-| Artifact             | Location                              | Why You Need It                           |
-| -------------------- | ------------------------------------- | ----------------------------------------- |
-| Design documents     | `.copilot-tracking/plans/*.md`        | Understand feature requirements and scope |
-| Existing ADRs        | `.copilot-tracking/architecture/*.md` | Ensure consistency with past decisions    |
-| Current architecture | `docs/architecture/` or `README.md`   | Understand existing system structure      |
-| Infrastructure code  | `infra/` or `infrastructure/`         | Know current deployment topology          |
+| Artifact             | Location                            | Why You Need It                           |
+| -------------------- | ----------------------------------- | ----------------------------------------- |
+| Feature spec         | `specs/<feature>/spec.md`           | Understand feature requirements and scope |
+| Existing plans       | `specs/<feature>/plan.md`           | Ensure consistency with past decisions    |
+| Current architecture | `docs/architecture/` or `README.md` | Understand existing system structure      |
+| Infrastructure code  | `infra/` or `infrastructure/`       | Know current deployment topology          |
 
-**If a design document exists**, use it as input for your architecture - don't re-ask questions already answered.
+**If a spec or plan exists**, use it as input for your architecture - don't re-ask questions already answered.
 
 ## Your Process
 
@@ -72,7 +72,7 @@ You are a Senior Cloud Architect responsible for architectural decisions and doc
 
 ### Primary Output: Architecture Decision Record (ADR)
 
-Save ADRs to `.copilot-tracking/architecture/YYYYMMDD-{decision-slug}-adr.md`
+Save ADRs to `specs/<feature>/adr.md`
 
 ````markdown
 ---

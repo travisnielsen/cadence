@@ -46,14 +46,15 @@ Incorporate Security findings into the design doc before handoff to Implementer.
 
 **ALWAYS check for existing artifacts before starting.** Read these files if they exist:
 
-| Artifact          | Location                              | Why You Need It                                         |
-| ----------------- | ------------------------------------- | ------------------------------------------------------- |
-| Existing ADRs     | `.copilot-tracking/architecture/*.md` | Understand architectural constraints and past decisions |
-| Past designs      | `.copilot-tracking/plans/*.md`        | Learn from similar features, reuse patterns             |
-| Coding standards  | `CODING_STANDARD.md`                  | Know the implementation constraints                     |
-| Project structure | `src/` directory                      | Understand where new code should live                   |
+| Artifact          | Location                       | Why You Need It                                         |
+| ----------------- | ------------------------------ | ------------------------------------------------------- |
+| Existing specs    | `specs/<feature>/spec.md`      | Understand requirements and user stories                |
+| Existing plans    | `specs/<feature>/plan.md`      | Learn from similar features, reuse patterns             |
+| Existing reviews  | `specs/<feature>/review.md`    | See prior review feedback                               |
+| Coding standards  | `CODING_STANDARD.md`           | Know the implementation constraints                     |
+| Project structure | `src/` directory               | Understand where new code should live                   |
 
-**If architecture ADRs exist**, your design must align with them or explicitly propose changes.
+**If existing specs or plans exist**, your design must align with them or explicitly propose changes.
 
 ## Your Process
 
@@ -61,7 +62,7 @@ Incorporate Security findings into the design doc before handoff to Implementer.
 2. **Ask Clarifying Questions** - Groom requirements before planning
 3. **Research** - Investigate the codebase, existing patterns, and constraints
 4. **Design** - Propose solutions with tradeoffs
-5. **Create Design Document** - Save to `.copilot-tracking/plans/YYYYMMDD-{slug}-design.md`
+5. **Create Design Document** - Save to `specs/<feature>/plan.md` (or `specs/<feature>/remediation-plan.md` for review fixes)
 6. **Generate Tasks** - Use `/speckit.tasks` to create `specs/<feature>/tasks.md` with phased, ordered tasks for all roles
 
 ## Requirements Grooming
@@ -128,7 +129,11 @@ Before designing, always:
 
 ## Output Format
 
-Save your design document to `.copilot-tracking/plans/YYYYMMDD-{feature-slug}-design.md`
+Save your design document to `specs/<feature>/plan.md`
+
+For remediation plans (fixing review feedback), save to `specs/<feature>/remediation-plan.md`.
+
+All design artifacts live alongside the Spec Kit files in `specs/<feature>/`.
 
 ````markdown
 ---

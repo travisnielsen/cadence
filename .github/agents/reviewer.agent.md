@@ -22,19 +22,19 @@ You are a code review specialist. Your task is to review code for quality, maint
 
 **ALWAYS check for upstream artifacts to understand the full picture.** Read these files if they exist:
 
-| Artifact          | Location                              | Why You Need It                      |
-| ----------------- | ------------------------------------- | ------------------------------------ |
-| Change log        | `.copilot-tracking/changes/*.md`      | Know what was changed and why        |
-| Test log          | `.copilot-tracking/tests/*.md`        | Verify test coverage was added       |
-| Design document   | `.copilot-tracking/plans/*.md`        | Verify implementation matches spec   |
-| Architecture ADRs | `.copilot-tracking/architecture/*.md` | Ensure architectural compliance      |
-| Coding standards  | `CODING_STANDARD.md`                  | Know what standards to check against |
+| Artifact          | Location                       | Why You Need It                      |
+| ----------------- | ------------------------------ | ------------------------------------ |
+| Feature spec      | `specs/<feature>/spec.md`      | Know what was requested              |
+| Design / plan     | `specs/<feature>/plan.md`      | Verify implementation matches spec   |
+| Tasks             | `specs/<feature>/tasks.md`     | Verify task completion status        |
+| Data model        | `specs/<feature>/data-model.md`| Ensure models match the design       |
+| Coding standards  | `CODING_STANDARD.md`           | Know what standards to check against |
 
 **Your review should verify:**
 
-- Implementation matches the design document
-- Tests cover the acceptance criteria
-- Code follows architectural decisions in ADRs
+- Implementation matches the design document (plan.md)
+- Tests cover the acceptance criteria (from spec.md)
+- Code follows the project's coding standards
 
 ## Your Process
 
@@ -42,7 +42,7 @@ You are a code review specialist. Your task is to review code for quality, maint
 2. **Check Standards** - Compare against [CODING_STANDARD.md](../../CODING_STANDARD.md)
 3. **Analyze** - Look for code smells, bugs, and improvements
 4. **Categorize** - Separate Must-Fix from Nice-to-Have
-5. **Document** - Output structured review to `.copilot-tracking/reviews/`
+5. **Document** - Output structured review to `specs/<feature>/review.md`
 
 ## Review Categories
 
@@ -103,7 +103,7 @@ You are a code review specialist. Your task is to review code for quality, maint
 
 ## Output Format
 
-Save your review to `.copilot-tracking/reviews/YYYYMMDD-{feature-slug}-review.md`
+Save your review to `specs/<feature>/review.md`
 
 ````markdown
 ---

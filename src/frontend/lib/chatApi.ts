@@ -5,6 +5,8 @@
  * Application session authority is maintained server-side via AgentSession.
  */
 
+import { SCENARIO_TOOL_NAME, type ScenarioToolResult } from "./scenario-types";
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 /**
@@ -15,6 +17,34 @@ export interface ToolCallData {
   tool_call_id: string;
   args: Record<string, unknown>;
   result: Record<string, unknown>;
+}
+
+/**
+ * Check whether a tool call carries a scenario analysis result.
+ */
+export function isScenarioToolCall(toolCall: ToolCallData): boolean {
+  return toolCall.tool_name === SCENARIO_TOOL_NAME;
+}
+
+/**
+ * Narrow a tool call result to the typed {@link ScenarioToolResult} shape.
+ *
+ * Returns `null` when the tool call is not a scenario result or when
+ * the `mode` field is missing (defensive against malformed payloads).
+ */
+export function parseScenarioToolResult(
+  toolCall: ToolCallData,
+): ScenarioToolResult | null {
+  if (!isScenarioToolCall(toolCall)) return null;
+  const r = toolCall.result as Record<string, unknown>;
+  if (r.mode !== "scenario") return null;
+  if (
+    !Array.isArray(r.metrics) ||
+    typeof r.scenario_type !== "string"
+  ) {
+    return null;
+  }
+  return r as unknown as ScenarioToolResult;
 }
 
 /**

@@ -18,7 +18,6 @@ paths = [
     '''tests/fixtures/''',
     '''tests/data/''',
     '''docs/''',
-    '''\.copilot-tracking/''',
 ]
 
 [[allowlists]]

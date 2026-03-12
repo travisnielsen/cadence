@@ -172,7 +172,7 @@ To run Planner then wait for result:
 
 ```
 Use #tool:agent to invoke the Planner agent.
-Prompt: "Create an implementation plan for {feature}. Save the design doc to .copilot-tracking/plans/ and return the file path."
+Prompt: "Create an implementation plan for {feature}. Save the design doc to specs/<feature>/plan.md and return the file path."
 ```
 
 ### Parallel Example

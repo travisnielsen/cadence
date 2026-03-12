@@ -17,6 +17,17 @@ from .generation import (
     QueryBuilderRequest,
     SQLDraft,
 )
+from .scenario import (
+    ChartSeriesDefinition,
+    PromptHint,
+    ScenarioAssumption,
+    ScenarioAssumptionSet,
+    ScenarioComputationResult,
+    ScenarioIntent,
+    ScenarioMetricValue,
+    ScenarioNarrativeSummary,
+    ScenarioVisualizationPayload,
+)
 from .schema import (
     ParameterDefinition,
     ParameterNormalization,
@@ -27,6 +38,7 @@ from .schema import (
 )
 
 __all__ = [
+    "ChartSeriesDefinition",
     "ClarificationInfo",
     "ClarificationRequest",
     "MissingParameter",
@@ -37,9 +49,17 @@ __all__ = [
     "ParameterExtractionRequest",
     "ParameterNormalization",
     "ParameterValidation",
+    "PromptHint",
     "QueryBuilderRequest",
     "QueryTemplate",
     "SQLDraft",
+    "ScenarioAssumption",
+    "ScenarioAssumptionSet",
+    "ScenarioComputationResult",
+    "ScenarioIntent",
+    "ScenarioMetricValue",
+    "ScenarioNarrativeSummary",
+    "ScenarioVisualizationPayload",
     "SchemaSuggestion",
     "TableColumn",
     "TableMetadata",

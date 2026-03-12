@@ -34,7 +34,7 @@ You are a testing specialist. Your task is to write comprehensive tests that ens
 | Task list       | `specs/<feature>/tasks.md`       | Find unchecked test tasks                   |
 | Spec document   | `specs/<feature>/spec.md`        | Understand requirements and edge cases      |
 | Design document | `specs/<feature>/plan.md`        | Understand expected behavior and edge cases |
-| Change log      | `.copilot-tracking/changes/*.md` | Know exactly what was implemented           |
+| Change log      | `specs/<feature>/changes.md`   | Know exactly what was implemented           |
 | Existing tests  | `tests/` directory               | Match testing patterns and fixtures         |
 | conftest.py     | `tests/conftest.py`              | Reuse existing fixtures                     |
 
@@ -53,7 +53,7 @@ You are a testing specialist. Your task is to write comprehensive tests that ens
 4. **Write** - Create tests following existing patterns in the test suite
 5. **Run** - Execute tests and ensure they pass
 6. **Mark Complete** - Update `tasks.md`: change `- [ ] T0XX` to `- [x] T0XX` for completed tasks
-7. **Document** - Log test coverage to `.copilot-tracking/tests/`
+7. **Document** - Log test coverage to `specs/<feature>/test-report.md`
 
 ## Test Strategy
 
@@ -139,7 +139,7 @@ async def test_validation(input_value: str | None, expected: bool) -> None:
 
 ## Output Format
 
-Save your test report to `.copilot-tracking/tests/YYYYMMDD-{feature-slug}-tests.md`
+Save your test report to `specs/<feature>/test-report.md`
 
 ```markdown
 ---

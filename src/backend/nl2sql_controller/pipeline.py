@@ -11,17 +11,27 @@ from __future__ import annotations
 import json
 import logging
 import operator
+import re
+import uuid
+from datetime import datetime
 from typing import Any
 
 from agent_framework import Agent, AgentSession
 from models import (
+    ChartSeriesDefinition,
     ClarificationRequest,
     MissingParameter,
     NL2SQLRequest,
     NL2SQLResponse,
     ParameterExtractionRequest,
+    PromptHint,
     QueryBuilderRequest,
     QueryTemplate,
+    ScenarioAssumptionSet,
+    ScenarioComputationResult,
+    ScenarioIntent,
+    ScenarioMetricValue,
+    ScenarioVisualizationPayload,
     SQLDraft,
     TableMetadata,
 )
@@ -32,6 +42,14 @@ from query_builder.builder import build_query
 from query_validator.validator import validate_query
 from shared.column_filter import refine_columns
 from shared.error_recovery import build_error_recovery
+from shared.scenario_constants import (
+    MAX_SCENARIO_CHART_ITEMS,
+    MIN_BASELINE_ROWS,
+    MIN_DISTINCT_WEEKLY_PERIODS,
+)
+from shared.scenario_hints import build_clarification_hint, build_drill_down_hints
+from shared.scenario_math import aggregate_baseline, compute_scenario_metrics
+from shared.scenario_narrative import build_narrative_summary
 from shared.substitution import substitute_parameters
 from workflow.clients import PipelineClients
 
@@ -907,6 +925,664 @@ async def _handle_dynamic_confirmation_shortcut(
     return None
 
 
+# ── Scenario baseline configuration ──────────────────────────────────────
+
+# Maps scenario_type → (sql, metric_key, dimension_key, date_column).
+# These are internally-constructed trusted queries executed directly.
+_SCENARIO_BASELINE_CONFIG: dict[str, tuple[str, str, str, str | None]] = {
+    "price_delta": (
+        "SELECT sg.StockGroupName, "
+        "SUM(il.ExtendedPrice) AS Revenue "
+        "FROM Sales.InvoiceLines il "
+        "JOIN Warehouse.StockItems si "
+        "ON il.StockItemID = si.StockItemID "
+        "JOIN Warehouse.StockItemStockGroups sisg "
+        "ON si.StockItemID = sisg.StockItemID "
+        "JOIN Warehouse.StockGroups sg "
+        "ON sisg.StockGroupID = sg.StockGroupID "
+        "GROUP BY sg.StockGroupName "
+        "ORDER BY Revenue DESC",
+        "Revenue",
+        "StockGroupName",
+        None,
+    ),
+    "demand_delta": (
+        "SELECT sg.StockGroupName, "
+        "SUM(ol.Quantity) AS Units "
+        "FROM Sales.OrderLines ol "
+        "JOIN Warehouse.StockItems si "
+        "ON ol.StockItemID = si.StockItemID "
+        "JOIN Warehouse.StockItemStockGroups sisg "
+        "ON si.StockItemID = sisg.StockItemID "
+        "JOIN Warehouse.StockGroups sg "
+        "ON sisg.StockGroupID = sg.StockGroupID "
+        "GROUP BY sg.StockGroupName "
+        "ORDER BY Units DESC",
+        "Units",
+        "StockGroupName",
+        None,
+    ),
+    "supplier_cost_delta": (
+        "SELECT sc.SupplierCategoryName, "
+        "SUM(pol.ExpectedUnitPricePerOuter "
+        "* pol.OrderedOuters) AS Cost "
+        "FROM Purchasing.PurchaseOrderLines pol "
+        "JOIN Purchasing.PurchaseOrders po "
+        "ON pol.PurchaseOrderID = po.PurchaseOrderID "
+        "JOIN Purchasing.Suppliers s "
+        "ON po.SupplierID = s.SupplierID "
+        "JOIN Purchasing.SupplierCategories sc "
+        "ON s.SupplierCategoryID = sc.SupplierCategoryID "
+        "GROUP BY sc.SupplierCategoryName "
+        "ORDER BY Cost DESC",
+        "Cost",
+        "SupplierCategoryName",
+        None,
+    ),
+    "inventory_policy_delta": (
+        "SELECT sg.StockGroupName, "
+        "SUM(sih.QuantityOnHand) AS Units "
+        "FROM Warehouse.StockItemHoldings sih "
+        "JOIN Warehouse.StockItems si "
+        "ON sih.StockItemID = si.StockItemID "
+        "JOIN Warehouse.StockItemStockGroups sisg "
+        "ON si.StockItemID = sisg.StockItemID "
+        "JOIN Warehouse.StockGroups sg "
+        "ON sisg.StockGroupID = sg.StockGroupID "
+        "GROUP BY sg.StockGroupName "
+        "ORDER BY Units DESC",
+        "Units",
+        "StockGroupName",
+        None,
+    ),
+}
+
+
+# ── Drill-down baseline configuration ────────────────────────────────────
+
+# Maps scenario_type → (sql_template, metric_key, dimension_key, date_column).
+# SQL contains a ``?`` placeholder for the parent group name (bind-parameter).
+# These break the parent category into individual items within that group.
+_SCENARIO_DRILLDOWN_CONFIG: dict[str, tuple[str, str, str, str | None]] = {
+    "price_delta": (
+        "SELECT si.StockItemName, "
+        "SUM(il.ExtendedPrice) AS Revenue "
+        "FROM Sales.InvoiceLines il "
+        "JOIN Warehouse.StockItems si "
+        "ON il.StockItemID = si.StockItemID "
+        "JOIN Warehouse.StockItemStockGroups sisg "
+        "ON si.StockItemID = sisg.StockItemID "
+        "JOIN Warehouse.StockGroups sg "
+        "ON sisg.StockGroupID = sg.StockGroupID "
+        "WHERE sg.StockGroupName = ? "
+        "GROUP BY si.StockItemName "
+        "ORDER BY Revenue DESC",
+        "Revenue",
+        "StockItemName",
+        None,
+    ),
+    "demand_delta": (
+        "SELECT si.StockItemName, "
+        "SUM(ol.Quantity) AS Units "
+        "FROM Sales.OrderLines ol "
+        "JOIN Warehouse.StockItems si "
+        "ON ol.StockItemID = si.StockItemID "
+        "JOIN Warehouse.StockItemStockGroups sisg "
+        "ON si.StockItemID = sisg.StockItemID "
+        "JOIN Warehouse.StockGroups sg "
+        "ON sisg.StockGroupID = sg.StockGroupID "
+        "WHERE sg.StockGroupName = ? "
+        "GROUP BY si.StockItemName "
+        "ORDER BY Units DESC",
+        "Units",
+        "StockItemName",
+        None,
+    ),
+    "supplier_cost_delta": (
+        "SELECT s.SupplierName, "
+        "SUM(pol.ExpectedUnitPricePerOuter "
+        "* pol.OrderedOuters) AS Cost "
+        "FROM Purchasing.PurchaseOrderLines pol "
+        "JOIN Purchasing.PurchaseOrders po "
+        "ON pol.PurchaseOrderID = po.PurchaseOrderID "
+        "JOIN Purchasing.Suppliers s "
+        "ON po.SupplierID = s.SupplierID "
+        "JOIN Purchasing.SupplierCategories sc "
+        "ON s.SupplierCategoryID = sc.SupplierCategoryID "
+        "WHERE sc.SupplierCategoryName = ? "
+        "GROUP BY s.SupplierName "
+        "ORDER BY Cost DESC",
+        "Cost",
+        "SupplierName",
+        None,
+    ),
+    "inventory_policy_delta": (
+        "SELECT si.StockItemName, "
+        "SUM(sih.QuantityOnHand) AS Units "
+        "FROM Warehouse.StockItemHoldings sih "
+        "JOIN Warehouse.StockItems si "
+        "ON sih.StockItemID = si.StockItemID "
+        "JOIN Warehouse.StockItemStockGroups sisg "
+        "ON si.StockItemID = sisg.StockItemID "
+        "JOIN Warehouse.StockGroups sg "
+        "ON sisg.StockGroupID = sg.StockGroupID "
+        "WHERE sg.StockGroupName = ? "
+        "GROUP BY si.StockItemName "
+        "ORDER BY Units DESC",
+        "Units",
+        "StockItemName",
+        None,
+    ),
+}
+
+
+def detect_sparse_signal(
+    rows: list[dict[str, Any]],
+    date_column: str | None = None,
+) -> list[str]:
+    """Check for sparse-signal conditions (FR-010, SC-009).
+
+    Returns human-readable limitation descriptions when the
+    baseline data is too thin for reliable scenario analysis.
+
+    Args:
+        rows: Baseline query result rows.
+        date_column: Optional column name containing date values.
+
+    Returns:
+        List of limitation descriptions (empty when data is
+        sufficient).
+    """
+    limitations: list[str] = []
+
+    if len(rows) < MIN_BASELINE_ROWS:
+        limitations.append(
+            f"Baseline contains {len(rows)} group(s) "
+            f"(minimum {MIN_BASELINE_ROWS} required for "
+            "meaningful comparison)"
+        )
+
+    if date_column and rows:
+        weeks: set[tuple[int, int]] = set()
+        for row in rows:
+            date_val = row.get(date_column)
+            if date_val is None:
+                continue
+            dt: datetime | None = None
+            if isinstance(date_val, str):
+                try:
+                    dt = datetime.fromisoformat(date_val)
+                except ValueError:
+                    continue
+            elif isinstance(date_val, datetime):
+                dt = date_val
+            if dt:
+                iso = dt.isocalendar()
+                weeks.add((iso[0], iso[1]))
+
+        if len(weeks) < MIN_DISTINCT_WEEKLY_PERIODS:
+            limitations.append(
+                f"Data covers {len(weeks)} weekly periods "
+                f"(minimum {MIN_DISTINCT_WEEKLY_PERIODS} "
+                "required)"
+            )
+
+    return limitations
+
+
+def _detect_date_column(columns: list[str]) -> str | None:
+    """Find a date-like column by name pattern."""
+    for col in columns:
+        if any(kw in col.lower() for kw in ("date", "time", "period")):
+            return col
+    return None
+
+
+def _extract_pct_from_query(user_query: str) -> float | None:
+    """Extract a percentage value from a user query string.
+
+    Handles common English phrasing such as ``"5%"``,
+    ``"+5%"``, ``"5 percent"``.  Adjusts sign when negative
+    indicator words are present.
+
+    Args:
+        user_query: Raw user message.
+
+    Returns:
+        Extracted percentage or ``None``.
+    """
+    patterns = [
+        r"([+-]?\d+(?:\.\d+)?)\s*%",
+        r"([+-]?\d+(?:\.\d+)?)\s*percent",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, user_query, re.IGNORECASE)
+        if m:
+            value = float(m.group(1))
+            neg = r"\b(decrease|drop|reduce|lower|decline|cut)\b"
+            if re.search(neg, user_query, re.IGNORECASE) and value > 0:
+                value = -value
+            return value
+    return None
+
+
+def build_visualization_payload(
+    result: ScenarioComputationResult,
+    dimension_key: str,
+    scenario_type: str,
+) -> ScenarioVisualizationPayload:
+    """Transform a computation result into a chart-ready payload.
+
+    Args:
+        result: Computed scenario metrics.
+        dimension_key: X-axis grouping key name.
+        scenario_type: Scenario category (used for chart_type).
+
+    Returns:
+        ``ScenarioVisualizationPayload`` ready for frontend
+        rendering.
+    """
+    chart_type: str = "bar"
+    if scenario_type in {"demand_delta", "inventory_policy_delta"}:
+        chart_type = "bar"
+
+    series = [
+        ChartSeriesDefinition(
+            key="baseline",
+            label="Baseline",
+            kind="baseline",
+        ),
+        ChartSeriesDefinition(
+            key="scenario",
+            label="Scenario",
+            kind="scenario",
+        ),
+    ]
+
+    rows: list[dict[str, str | int | float | bool | None]] = [
+        {
+            dimension_key: m.dimension_key,
+            "baseline": m.baseline,
+            "scenario": m.scenario,
+        }
+        for m in result.metrics
+    ]
+
+    friendly_dim = dimension_key.replace("_", " ").title()
+    labels = {
+        "baseline": "Current (Baseline)",
+        "scenario": "Projected (Scenario)",
+        dimension_key: friendly_dim,
+    }
+
+    return ScenarioVisualizationPayload(
+        chart_type=chart_type,
+        x_key=dimension_key,
+        series=series,
+        rows=rows,
+        labels=labels,
+    )
+
+
+def _compute_summary_totals(
+    metrics: list[ScenarioMetricValue],
+    metric_key: str,
+) -> dict[str, float]:
+    """Build summary totals from computed scenario metrics."""
+    total_baseline = sum(m.baseline for m in metrics)
+    total_scenario = sum(m.scenario for m in metrics)
+    total_delta_abs = total_scenario - total_baseline
+    total_delta_pct = (total_delta_abs / total_baseline) * 100.0 if total_baseline != 0.0 else 0.0
+    mk = metric_key.lower()
+    return {
+        f"total_{mk}_baseline": total_baseline,
+        f"total_{mk}_scenario": total_scenario,
+        "total_delta_abs": total_delta_abs,
+        "total_delta_pct": total_delta_pct,
+    }
+
+
+# ── Scenario entry point ────────────────────────────────────────────────
+
+
+def _detect_group_scope(
+    user_query: str,
+    group_names: list[str],
+) -> str | None:
+    """Detect if the user query targets a specific group by name.
+
+    Performs case-insensitive substring matching of known group
+    names against the user query.  Returns the matching group
+    name or ``None`` when no scope is detected.
+    """
+    query_lower = user_query.lower()
+    # Match longest names first to avoid partial matches
+    for name in sorted(group_names, key=len, reverse=True):
+        if name.lower() in query_lower:
+            return name
+    return None
+
+
+async def _run_drilldown_query(
+    scoped_group: str,
+    assumption_set: ScenarioAssumptionSet,
+    pct_delta: float | None,
+    abs_delta: float | None,
+    clients: PipelineClients,
+) -> NL2SQLResponse | None:
+    """Execute an item-level drill-down query for a scoped group.
+
+    Runs a parameterised SQL query that breaks the parent-level
+    group into individual items, computes scenario metrics per
+    item, and returns results without further drill-down hints.
+
+    Returns ``None`` if no drill-down config exists for the
+    scenario type (falls back to parent behaviour).
+    """
+    drilldown_config = _SCENARIO_DRILLDOWN_CONFIG.get(assumption_set.scenario_type)
+    if not drilldown_config:
+        return None
+
+    dd_sql, dd_metric, dd_dimension, dd_date_col = drilldown_config
+
+    clients.reporter.step_start("Retrieving item-level data")
+    sql_result = await clients.sql_executor.execute(dd_sql, [scoped_group])
+    clients.reporter.step_end("Retrieving item-level data")
+
+    if not sql_result.get("success"):
+        return NL2SQLResponse(
+            sql_query=dd_sql,
+            is_scenario=True,
+            scenario_type=assumption_set.scenario_type,
+            error=sql_result.get("error", "Drill-down query failed"),
+        )
+
+    rows: list[dict[str, Any]] = sql_result.get("rows", [])
+    columns: list[str] = sql_result.get("columns", [])
+
+    if not rows:
+        return NL2SQLResponse(
+            sql_query=dd_sql,
+            is_scenario=True,
+            scenario_type=assumption_set.scenario_type,
+            error=f"No item-level data for {scoped_group}",
+        )
+
+    if not dd_date_col:
+        dd_date_col = _detect_date_column(columns)
+    data_limitations = detect_sparse_signal(rows, dd_date_col)
+
+    aggregates = aggregate_baseline(rows, dd_metric, dd_dimension)
+    metrics = compute_scenario_metrics(
+        aggregates,
+        dd_metric,
+        pct_delta=pct_delta,
+        abs_delta=abs_delta,
+    )
+    metrics = _limit_to_top_n(metrics, dd_metric)
+
+    summary_totals = _compute_summary_totals(metrics, dd_metric)
+    computation_result = ScenarioComputationResult(
+        request_id=str(uuid.uuid4()),
+        scenario_type=assumption_set.scenario_type,
+        metrics=metrics,
+        summary_totals=summary_totals,
+        data_limitations=data_limitations,
+    )
+    viz = build_visualization_payload(
+        computation_result,
+        dd_dimension,
+        assumption_set.scenario_type,
+    )
+    narrative = build_narrative_summary(computation_result)
+
+    return NL2SQLResponse(
+        sql_query=dd_sql,
+        sql_response=rows,
+        columns=columns,
+        row_count=len(rows),
+        is_scenario=True,
+        scenario_type=assumption_set.scenario_type,
+        scenario_assumptions=(assumption_set.assumptions or None),
+        scenario_result=computation_result,
+        scenario_narrative=narrative,
+        scenario_visualization=viz,
+        scenario_hints=None,
+    )
+
+
+def _limit_to_top_n(
+    metrics: list[ScenarioMetricValue],
+    metric_key: str,
+) -> list[ScenarioMetricValue]:
+    """Keep top N metrics by baseline and bucket the rest as 'Other'."""
+    metrics.sort(key=operator.attrgetter("baseline"), reverse=True)
+    if len(metrics) <= MAX_SCENARIO_CHART_ITEMS:
+        return metrics
+    top = metrics[:MAX_SCENARIO_CHART_ITEMS]
+    rest = metrics[MAX_SCENARIO_CHART_ITEMS:]
+    other_baseline = sum(m.baseline for m in rest)
+    other_scenario = sum(m.scenario for m in rest)
+    other_delta_abs = other_scenario - other_baseline
+    other_delta_pct = (other_delta_abs / other_baseline) * 100.0 if other_baseline != 0.0 else 0.0
+    top.append(
+        ScenarioMetricValue(
+            metric=metric_key,
+            dimension_key="Other",
+            baseline=other_baseline,
+            scenario=other_scenario,
+            delta_abs=other_delta_abs,
+            delta_pct=other_delta_pct,
+        )
+    )
+    return top
+
+
+def _build_scenario_hints(
+    assumption_set: ScenarioAssumptionSet,
+) -> list[PromptHint]:
+    """Build prompt hints based on assumption completeness."""
+    hints: list[PromptHint] = []
+
+    if not assumption_set.is_complete and assumption_set.missing_requirements:
+        hints.append(
+            build_clarification_hint(
+                assumption_set.missing_requirements,
+                assumption_set.scenario_type,
+            )
+        )
+
+    return hints
+
+
+async def process_scenario_query(
+    scenario_intent: ScenarioIntent,
+    assumption_set: ScenarioAssumptionSet,
+    user_query: str,
+    clients: PipelineClients,
+) -> NL2SQLResponse:
+    """Process a scenario (what-if) query with full computation.
+
+    Executes a baseline SQL query, checks for sparse-signal
+    conditions, applies assumption transforms, and assembles
+    structured scenario results with visualization data.
+
+    Args:
+        scenario_intent: Classified intent with confidence metadata.
+        assumption_set: Assumptions from the user prompt.
+        user_query: The original user message.
+        clients: Pipeline I/O dependencies.
+
+    Returns:
+        ``NL2SQLResponse`` with scenario computation fields
+        populated.
+    """
+    logger.info(
+        "Scenario query: confidence=%.3f patterns=%s type=%s complete=%s query=%.80s",
+        scenario_intent.confidence,
+        scenario_intent.detected_patterns,
+        assumption_set.scenario_type,
+        assumption_set.is_complete,
+        user_query,
+    )
+
+    clients.reporter.step_start("Processing scenario request")
+
+    # 0. Resolve baseline config for the scenario type
+    config = _SCENARIO_BASELINE_CONFIG.get(
+        assumption_set.scenario_type,
+    )
+    if not config:
+        clients.reporter.step_end("Processing scenario request")
+        return NL2SQLResponse(
+            sql_query="",
+            is_scenario=True,
+            scenario_type=assumption_set.scenario_type,
+            error=(f"Unsupported scenario type: {assumption_set.scenario_type}"),
+        )
+
+    baseline_sql, metric_key, dimension_key, date_col = config
+
+    # 1. Determine assumption values before deciding whether to proceed
+    pct_delta: float | None = None
+    abs_delta: float | None = None
+
+    for assumption in assumption_set.assumptions:
+        if assumption.unit == "pct":
+            pct_delta = assumption.value
+            break
+        if assumption.unit in {"absolute", "days", "count"}:
+            abs_delta = assumption.value
+            break
+
+    # Fallback: extract percentage from user query text
+    if pct_delta is None and abs_delta is None:
+        pct_delta = _extract_pct_from_query(user_query)
+
+    # 2. If no values could be extracted, return clarification hints and wait
+    if pct_delta is None and abs_delta is None:
+        scenario_hints = _build_scenario_hints(assumption_set)
+        clients.reporter.step_end("Processing scenario request")
+        return NL2SQLResponse(
+            sql_query="",
+            is_scenario=True,
+            scenario_type=assumption_set.scenario_type,
+            scenario_hints=scenario_hints or None,
+        )
+
+    # 3. Execute baseline query
+    clients.reporter.step_start("Retrieving baseline data")
+    sql_result = await clients.sql_executor.execute(baseline_sql)
+    clients.reporter.step_end("Retrieving baseline data")
+
+    if not sql_result.get("success"):
+        clients.reporter.step_end("Processing scenario request")
+        return NL2SQLResponse(
+            sql_query=baseline_sql,
+            is_scenario=True,
+            scenario_type=assumption_set.scenario_type,
+            error=sql_result.get("error", "Baseline query failed"),
+        )
+
+    baseline_rows: list[dict[str, Any]] = sql_result.get("rows", [])
+    columns: list[str] = sql_result.get("columns", [])
+
+    if not baseline_rows:
+        clients.reporter.step_end("Processing scenario request")
+        return NL2SQLResponse(
+            sql_query=baseline_sql,
+            is_scenario=True,
+            scenario_type=assumption_set.scenario_type,
+            error="No baseline data for scenario analysis",
+        )
+
+    # 4. Detect date column and check sparse signal (T047)
+    if not date_col:
+        date_col = _detect_date_column(columns)
+    data_limitations = detect_sparse_signal(
+        baseline_rows,
+        date_col,
+    )
+
+    # 5. Aggregate baseline by dimension
+    aggregates = aggregate_baseline(
+        baseline_rows,
+        metric_key,
+        dimension_key,
+    )
+
+    # 5b. Detect group scope — when user targets a specific group
+    #     (e.g. a drill-down click), run item-level query instead.
+    scoped_group = _detect_group_scope(user_query, list(aggregates.keys()))
+    if scoped_group:
+        result = await _run_drilldown_query(
+            scoped_group,
+            assumption_set,
+            pct_delta,
+            abs_delta,
+            clients,
+        )
+        if result is not None:
+            clients.reporter.step_end("Processing scenario request")
+            return result
+
+    # 6. Compute scenario metrics
+    metrics = compute_scenario_metrics(
+        aggregates,
+        metric_key,
+        pct_delta=pct_delta,
+        abs_delta=abs_delta,
+    )
+
+    # 6b. Limit to top N groups, bucket remainder as "Other"
+    metrics = _limit_to_top_n(metrics, metric_key)
+
+    # 7. Summary totals (computed from ALL original metrics before bucketing)
+    summary_totals = _compute_summary_totals(metrics, metric_key)
+
+    # 8. Assemble ScenarioComputationResult (T023)
+    computation_result = ScenarioComputationResult(
+        request_id=str(uuid.uuid4()),
+        scenario_type=assumption_set.scenario_type,
+        metrics=metrics,
+        summary_totals=summary_totals,
+        data_limitations=data_limitations,
+    )
+
+    # 9. Build visualization payload (T024)
+    viz = build_visualization_payload(
+        computation_result,
+        dimension_key,
+        assumption_set.scenario_type,
+    )
+
+    # 10. Build narrative summary (T032)
+    narrative = build_narrative_summary(computation_result)
+
+    clients.reporter.step_end("Processing scenario request")
+
+    # 11. Build drill-down hints for top-level queries
+    return NL2SQLResponse(
+        sql_query=baseline_sql,
+        sql_response=baseline_rows,
+        columns=columns,
+        row_count=len(baseline_rows),
+        is_scenario=True,
+        scenario_type=assumption_set.scenario_type,
+        scenario_assumptions=(assumption_set.assumptions or None),
+        scenario_result=computation_result,
+        scenario_narrative=narrative,
+        scenario_visualization=viz,
+        scenario_hints=[
+            build_drill_down_hints(
+                [m.dimension_key for m in metrics if m.dimension_key != "Other"],
+                assumption_set.scenario_type,
+                pct_delta if pct_delta is not None else (abs_delta or 0.0),
+            )
+        ],
+    )
+
+
 # ── Public entry point ───────────────────────────────────────────────────
 
 
@@ -975,6 +1651,9 @@ async def process_query(
         )
         return await _dynamic_path(request, search_result, clients)
 
-    except Exception as exc:
-        logger.exception("NL2SQL pipeline error")
-        return NL2SQLResponse(sql_query="", error=str(exc))
+    except (ValueError, RuntimeError, OSError, ValidationError) as exc:
+        logger.exception("NL2SQL pipeline error: %s", type(exc).__name__)
+        return NL2SQLResponse(
+            sql_query="",
+            error="An error occurred processing your query. Please try again.",
+        )

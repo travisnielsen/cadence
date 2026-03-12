@@ -16,7 +16,13 @@ from assistant.assistant import (
     DataAssistant,
     _detect_schema_area,
 )
-from models import ClarificationInfo, NL2SQLResponse, SchemaSuggestion
+from models import (
+    ClarificationInfo,
+    NL2SQLResponse,
+    ScenarioIntent,
+    SchemaSuggestion,
+)
+from shared.scenario_constants import SCENARIO_ROUTING_CONFIDENCE_THRESHOLD
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -177,6 +183,34 @@ class TestClassifyIntent:
         assert result.intent == "refinement"
         assert result.confirmation_action == "accept"
         assert assistant.agent.run.await_count == 1
+
+    async def test_scenario_discovery_flag_parsed(self) -> None:
+        response = '{"intent": "conversation", "scenario_discovery": true}'
+        assistant = _make_assistant(response)
+
+        result = await assistant.classify_intent("What scenarios can you do?")
+
+        assert result.intent == "conversation"
+        assert result.scenario_discovery is True
+
+    async def test_scenario_discovery_defaults_false(self) -> None:
+        response = '{"intent": "conversation"}'
+        assistant = _make_assistant(response)
+
+        result = await assistant.classify_intent("Hello!")
+
+        assert result.intent == "conversation"
+        assert result.scenario_discovery is False
+
+    async def test_explore_data_not_scenario_discovery(self) -> None:
+        """'Explore stock groups' is a data query, not scenario discovery."""
+        response = '{"intent": "data_query", "query": "Explore stock groups and item categories"}'
+        assistant = _make_assistant(response)
+
+        result = await assistant.classify_intent("Explore stock groups and item categories")
+
+        assert result.intent == "data_query"
+        assert result.scenario_discovery is False
 
 
 # ── build_nl2sql_request ─────────────────────────────────────────────────
@@ -618,3 +652,286 @@ class TestConstructor:
         await assistant.get_or_create_conversation()
 
         assert assistant.conversation_id == "test-thread-123"
+
+
+# ── Scenario intent classification (T012) ────────────────────────────────
+
+
+class TestScenarioIntentClassification:
+    """Tests for scenario (what-if) intent classification."""
+
+    async def test_what_if_phrasing_classified_as_scenario(self) -> None:
+        response = json.dumps({
+            "intent": "scenario",
+            "query": "what if prices increase 5%",
+            "scenario_confidence": 0.92,
+            "detected_patterns": ["what if", "prices increase"],
+            "reason": "User proposes hypothetical price change",
+        })
+        assistant = _make_assistant(response)
+
+        result = await assistant.classify_intent("what if prices increase 5%")
+
+        assert result.intent == "scenario"
+        assert result.scenario_intent is not None
+        assert result.scenario_intent.mode == "scenario"
+
+    async def test_assume_phrasing_classified_as_scenario(
+        self,
+    ) -> None:
+        response = json.dumps({
+            "intent": "scenario",
+            "query": "assume costs rise 10%",
+            "scenario_confidence": 0.88,
+            "detected_patterns": ["assume", "costs rise"],
+            "reason": "User assumes cost increase",
+        })
+        assistant = _make_assistant(response)
+
+        result = await assistant.classify_intent("assume costs rise 10%")
+
+        assert result.intent == "scenario"
+        assert result.scenario_intent is not None
+
+    async def test_if_changed_phrasing_classified_as_scenario(
+        self,
+    ) -> None:
+        response = json.dumps({
+            "intent": "scenario",
+            "query": "if we changed supplier pricing",
+            "scenario_confidence": 0.85,
+            "detected_patterns": [
+                "if we changed",
+                "supplier pricing",
+            ],
+            "reason": "Hypothetical supplier pricing change",
+        })
+        assistant = _make_assistant(response)
+
+        result = await assistant.classify_intent("if we changed supplier pricing")
+
+        assert result.intent == "scenario"
+        assert result.scenario_intent is not None
+
+    async def test_impact_phrasing_classified_as_scenario(
+        self,
+    ) -> None:
+        response = json.dumps({
+            "intent": "scenario",
+            "query": "show me the impact of raising demand",
+            "scenario_confidence": 0.80,
+            "detected_patterns": ["impact", "raising demand"],
+            "reason": "User wants impact of demand change",
+        })
+        assistant = _make_assistant(response)
+
+        result = await assistant.classify_intent("show me the impact of raising demand")
+
+        assert result.intent == "scenario"
+        assert result.scenario_intent is not None
+        assert result.scenario_intent.mode == "scenario"
+
+    async def test_scenario_intent_fields_populated(self) -> None:
+        response = json.dumps({
+            "intent": "scenario",
+            "query": "what if prices increase 5%",
+            "scenario_confidence": 0.95,
+            "detected_patterns": [
+                "what if",
+                "prices increase",
+                "5%",
+            ],
+            "reason": "Clear what-if with numeric assumption",
+        })
+        assistant = _make_assistant(response)
+
+        result = await assistant.classify_intent("what if prices increase 5%")
+
+        assert result.scenario_intent is not None
+        intent = result.scenario_intent
+        assert intent.mode == "scenario"
+        assert intent.confidence == 0.95
+        assert intent.reason == "Clear what-if with numeric assumption"
+        assert len(intent.detected_patterns) == 3
+        assert "what if" in intent.detected_patterns
+
+    async def test_scenario_below_confidence_falls_back(
+        self,
+    ) -> None:
+        response = json.dumps({
+            "intent": "scenario",
+            "query": "something about changing things",
+            "scenario_confidence": 0.3,
+            "detected_patterns": ["changing"],
+            "reason": "Possible scenario intent",
+        })
+        assistant = _make_assistant(response)
+
+        result = await assistant.classify_intent("something about changing things")
+
+        assert result.intent == "data_query"
+        assert result.scenario_intent is None
+
+    async def test_scenario_at_threshold_classified(self) -> None:
+        response = json.dumps({
+            "intent": "scenario",
+            "query": "what if costs go up",
+            "scenario_confidence": (SCENARIO_ROUTING_CONFIDENCE_THRESHOLD),
+            "detected_patterns": ["what if", "costs"],
+            "reason": "At threshold",
+        })
+        assistant = _make_assistant(response)
+
+        result = await assistant.classify_intent("what if costs go up")
+
+        assert result.intent == "scenario"
+        assert result.scenario_intent is not None
+
+    async def test_scenario_prompt_includes_what_if_rules(
+        self,
+    ) -> None:
+        response = json.dumps({
+            "intent": "scenario",
+            "query": "what if prices go up",
+            "scenario_confidence": 0.9,
+            "detected_patterns": ["what if"],
+            "reason": "Scenario",
+        })
+        assistant = _make_assistant(response)
+
+        await assistant.classify_intent("what if prices go up")
+
+        prompt_arg = assistant.agent.run.call_args[0][0]
+        assert "scenario" in prompt_arg.lower()
+
+    def test_build_assumption_set_infers_price(self) -> None:
+        assistant = _make_assistant()
+        intent = ScenarioIntent(
+            mode="scenario",
+            confidence=0.9,
+            reason="Price change",
+            detected_patterns=["prices increase"],
+        )
+
+        result = assistant.build_scenario_assumption_set(
+            intent,
+            "what if prices increase 5%",
+        )
+
+        assert result.scenario_type == "price_delta"
+        assert not result.is_complete
+        assert len(result.missing_requirements) > 0
+
+    def test_build_assumption_set_infers_demand(self) -> None:
+        assistant = _make_assistant()
+        intent = ScenarioIntent(
+            mode="scenario",
+            confidence=0.9,
+            reason="Demand change",
+            detected_patterns=["demand increases"],
+        )
+
+        result = assistant.build_scenario_assumption_set(
+            intent,
+            "what if demand increases 20%",
+        )
+
+        assert result.scenario_type == "demand_delta"
+
+    def test_build_assumption_set_infers_supplier(
+        self,
+    ) -> None:
+        assistant = _make_assistant()
+        intent = ScenarioIntent(
+            mode="scenario",
+            confidence=0.9,
+            reason="Supplier cost change",
+            detected_patterns=["supplier cost increase"],
+        )
+
+        result = assistant.build_scenario_assumption_set(
+            intent,
+            "what if supplier costs go up",
+        )
+
+        assert result.scenario_type == "supplier_cost_delta"
+
+
+# ── Non-scenario regression routing (T013) ───────────────────────────────
+
+
+class TestNonScenarioRegressionRouting:
+    """Regression tests ensuring non-scenario prompts stay routed."""
+
+    async def test_analytics_query_not_scenario(self) -> None:
+        response = json.dumps({
+            "intent": "data_query",
+            "query": "show me total sales by category",
+        })
+        assistant = _make_assistant(response)
+
+        result = await assistant.classify_intent("show me total sales by category")
+
+        assert result.intent == "data_query"
+        assert result.scenario_intent is None
+
+    async def test_greeting_not_scenario(self) -> None:
+        response = '{"intent": "conversation"}'
+        assistant = _make_assistant(response)
+
+        result = await assistant.classify_intent("hello")
+
+        assert result.intent == "conversation"
+        assert result.scenario_intent is None
+
+    async def test_thanks_not_scenario(self) -> None:
+        response = '{"intent": "conversation"}'
+        assistant = _make_assistant(response)
+
+        result = await assistant.classify_intent("thanks")
+
+        assert result.intent == "conversation"
+        assert result.scenario_intent is None
+
+    async def test_what_query_not_scenario(self) -> None:
+        """'What' in a query does not trigger scenario."""
+        response = json.dumps({
+            "intent": "data_query",
+            "query": "what is the total revenue",
+        })
+        assistant = _make_assistant(response)
+
+        result = await assistant.classify_intent("what is the total revenue?")
+
+        assert result.intent == "data_query"
+        assert result.scenario_intent is None
+
+    async def test_refinement_not_scenario(self) -> None:
+        response = json.dumps({
+            "intent": "refinement",
+            "query": "make it 90 days",
+        })
+        assistant = _make_assistant(response)
+
+        result = await assistant.classify_intent("make it 90 days")
+
+        assert result.intent == "refinement"
+        assert result.scenario_intent is None
+
+    async def test_scenario_without_patterns_falls_back(
+        self,
+    ) -> None:
+        """Scenario with no detected patterns falls back."""
+        response = json.dumps({
+            "intent": "scenario",
+            "query": "some question",
+            "scenario_confidence": 0.8,
+            "detected_patterns": [],
+            "reason": "Uncertain",
+        })
+        assistant = _make_assistant(response)
+
+        result = await assistant.classify_intent("some question")
+
+        assert result.intent == "data_query"
+        assert result.scenario_intent is None

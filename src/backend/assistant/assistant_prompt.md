@@ -40,8 +40,38 @@ Example messages that are conversation:
 - "Hello"
 - "Thanks!"
 - "Tell me a joke"
-- "What can you do?"
 - "Who are you?"
+- "What scenarios can you do?" (scenario discovery)
+- "What what-if analyses are available?" (scenario discovery)
+- "What scenarios are possible?" (scenario discovery)
+- "Tell me about your what-if capabilities" (scenario discovery)
+- "What kinds of analysis can you run?" (scenario discovery)
+
+NOT conversation/scenario discovery (these are data queries):
+- "Explore stock groups and item categories" (data query — browsing data)
+- "Explore customer orders" (data query — browsing data)
+- "Show me product categories" (data query — listing data)
+Queries that explore or browse actual business data are always data queries, not scenario discovery.
+
+When the user asks about scenario capabilities (scenario discovery), respond helpfully describing what you can do, then the system will automatically show interactive hint cards.
+
+### Scenario / What-If
+A request to explore a hypothetical change or assumption. The user wants to see what would happen if some business variable changed.
+
+Example messages that are scenario:
+- "What if we raise prices by 5%?"
+- "Assume costs increase 10%, what happens to profit?"
+- "If we changed supplier pricing, how would revenue be affected?"
+- "Show me the impact of raising demand by 20%"
+- "What would happen if inventory reorder points increased by 25%?"
+
+NOT scenarios (these are data queries):
+- "What are the top selling products?" (descriptive analytics — no hypothetical)
+- "If there are orders from Seattle, show them" (conditional filter, not a what-if)
+- "Show me what happened last month" (historical lookup)
+- "What is our total revenue?" (factual question, not hypothetical)
+
+A scenario MUST involve a hypothetical assumption or change to explore an alternate outcome.
 
 ## Response Format
 

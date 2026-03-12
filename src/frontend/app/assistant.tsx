@@ -8,6 +8,7 @@
  */
 
 import { NL2SQLToolUI } from "@/components/assistant-ui/nl2sql-tool-ui";
+import { ScenarioToolUI } from "@/components/assistant-ui/scenario-tool-ui";
 import { Thread } from "@/components/assistant-ui/thread";
 import { ThreadListSidebar } from "@/components/assistant-ui/threadlist-sidebar";
 import { AuthButton } from "@/components/ui/authButton";
@@ -23,6 +24,7 @@ export const Assistant = () => {
     <AssistantRuntimeProvider runtime={runtime}>
       {/* Register tool UIs for generative UI rendering */}
       <NL2SQLToolUI />
+      <ScenarioToolUI />
 
       <SidebarProvider>
         <ThreadListSidebar />

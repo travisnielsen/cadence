@@ -1,0 +1,495 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://cadence/specs/004-what-if-scenarios/contracts/scenario-response.schema.json",
+    "title": "ScenarioResponse",
+    "type": "object",
+    "required": [
+        "mode",
+        "scenario_type",
+        "assumptions",
+        "metrics",
+        "narrative",
+        "visualization",
+        "prompt_hints"
+    ],
+    "properties": {
+        "mode": {
+            "type": "string",
+            "enum": [
+                "scenario"
+            ],
+            "examples": [
+                "scenario"
+            ]
+        },
+        "scenario_type": {
+            "type": "string",
+            "description": "Phase-1 supported scenario category",
+            "examples": [
+                "price_delta",
+                "demand_delta",
+                "supplier_cost_delta",
+                "inventory_policy_delta"
+            ]
+        },
+        "assumptions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "name",
+                    "scope",
+                    "value",
+                    "unit",
+                    "source"
+                ],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "examples": [
+                            "price_delta_pct"
+                        ]
+                    },
+                    "scope": {
+                        "type": "string",
+                        "examples": [
+                            "global",
+                            "category",
+                            "item",
+                            "supplier"
+                        ]
+                    },
+                    "value": {
+                        "type": "number",
+                        "examples": [
+                            5.0
+                        ]
+                    },
+                    "unit": {
+                        "type": "string",
+                        "enum": [
+                            "pct",
+                            "absolute",
+                            "days",
+                            "count"
+                        ],
+                        "examples": [
+                            "pct"
+                        ]
+                    },
+                    "source": {
+                        "type": "string",
+                        "enum": [
+                            "user",
+                            "default",
+                            "inferred"
+                        ],
+                        "examples": [
+                            "user"
+                        ]
+                    }
+                },
+                "additionalProperties": false
+            },
+            "examples": [
+                [
+                    {
+                        "name": "price_delta_pct",
+                        "scope": "global",
+                        "value": 5.0,
+                        "unit": "pct",
+                        "source": "user"
+                    }
+                ]
+            ]
+        },
+        "metrics": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "metric",
+                    "dimension_key",
+                    "baseline",
+                    "scenario",
+                    "delta_abs",
+                    "delta_pct"
+                ],
+                "properties": {
+                    "metric": {
+                        "type": "string",
+                        "examples": [
+                            "Revenue"
+                        ]
+                    },
+                    "dimension_key": {
+                        "type": "string",
+                        "examples": [
+                            "Widget A"
+                        ]
+                    },
+                    "baseline": {
+                        "type": "number",
+                        "examples": [
+                            1000.0
+                        ]
+                    },
+                    "scenario": {
+                        "type": "number",
+                        "examples": [
+                            1050.0
+                        ]
+                    },
+                    "delta_abs": {
+                        "type": "number",
+                        "examples": [
+                            50.0
+                        ]
+                    },
+                    "delta_pct": {
+                        "type": "number",
+                        "examples": [
+                            5.0
+                        ]
+                    }
+                },
+                "additionalProperties": false
+            },
+            "examples": [
+                [
+                    {
+                        "metric": "Revenue",
+                        "dimension_key": "Widget A",
+                        "baseline": 1000.0,
+                        "scenario": 1050.0,
+                        "delta_abs": 50.0,
+                        "delta_pct": 5.0
+                    },
+                    {
+                        "metric": "Revenue",
+                        "dimension_key": "Widget B",
+                        "baseline": 2000.0,
+                        "scenario": 2100.0,
+                        "delta_abs": 100.0,
+                        "delta_pct": 5.0
+                    }
+                ]
+            ]
+        },
+        "narrative": {
+            "type": "object",
+            "required": [
+                "headline",
+                "key_changes"
+            ],
+            "properties": {
+                "headline": {
+                    "type": "string",
+                    "examples": [
+                        "Revenue increases 5% under price delta scenario"
+                    ]
+                },
+                "key_changes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "examples": [
+                        [
+                            "Revenue (Widget B) increases by 5% (+100.00)",
+                            "Revenue (Widget A) increases by 5% (+50.00)"
+                        ]
+                    ]
+                },
+                "confidence_note": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "examples": [
+                        null,
+                        "Note: Limited historical data for this category"
+                    ]
+                }
+            },
+            "additionalProperties": false,
+            "examples": [
+                {
+                    "headline": "Revenue increases 5% under price delta scenario",
+                    "key_changes": [
+                        "Revenue (Widget B) increases by 5% (+100.00)",
+                        "Revenue (Widget A) increases by 5% (+50.00)"
+                    ],
+                    "confidence_note": null
+                }
+            ]
+        },
+        "visualization": {
+            "type": "object",
+            "required": [
+                "chart_type",
+                "x_key",
+                "series",
+                "rows",
+                "labels"
+            ],
+            "properties": {
+                "chart_type": {
+                    "type": "string",
+                    "enum": [
+                        "bar",
+                        "line",
+                        "combo"
+                    ],
+                    "examples": [
+                        "bar"
+                    ]
+                },
+                "x_key": {
+                    "type": "string",
+                    "examples": [
+                        "StockItemName"
+                    ]
+                },
+                "series": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": [
+                            "key",
+                            "label"
+                        ],
+                        "properties": {
+                            "key": {
+                                "type": "string",
+                                "examples": [
+                                    "baseline"
+                                ]
+                            },
+                            "label": {
+                                "type": "string",
+                                "examples": [
+                                    "Baseline"
+                                ]
+                            },
+                            "kind": {
+                                "type": "string",
+                                "enum": [
+                                    "baseline",
+                                    "scenario",
+                                    "delta"
+                                ],
+                                "examples": [
+                                    "baseline"
+                                ]
+                            }
+                        },
+                        "additionalProperties": false
+                    },
+                    "minItems": 2,
+                    "examples": [
+                        [
+                            {
+                                "key": "baseline",
+                                "label": "Baseline",
+                                "kind": "baseline"
+                            },
+                            {
+                                "key": "scenario",
+                                "label": "Scenario",
+                                "kind": "scenario"
+                            }
+                        ]
+                    ]
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": [
+                                "string",
+                                "number",
+                                "boolean",
+                                "null"
+                            ]
+                        }
+                    },
+                    "examples": [
+                        [
+                            {
+                                "StockItemName": "Widget A",
+                                "baseline": 1000.0,
+                                "scenario": 1050.0
+                            },
+                            {
+                                "StockItemName": "Widget B",
+                                "baseline": 2000.0,
+                                "scenario": 2100.0
+                            }
+                        ]
+                    ]
+                },
+                "labels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    },
+                    "examples": [
+                        {
+                            "baseline": "Current (Baseline)",
+                            "scenario": "Projected (Scenario)",
+                            "StockItemName": "Stock Item Name"
+                        }
+                    ]
+                }
+            },
+            "additionalProperties": false
+        },
+        "prompt_hints": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "kind",
+                    "message",
+                    "examples",
+                    "supported_types"
+                ],
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "clarification",
+                            "discoverability"
+                        ],
+                        "examples": [
+                            "clarification"
+                        ]
+                    },
+                    "message": {
+                        "type": "string",
+                        "examples": [
+                            "Your price changes scenario request is missing: price_delta_pct. Please include a specific value so I can run the analysis."
+                        ]
+                    },
+                    "examples": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "examples": [
+                            [
+                                "What if we raise prices by 10%?",
+                                "What happens to revenue if prices drop 5%?"
+                            ]
+                        ]
+                    },
+                    "supported_types": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "examples": [
+                            [
+                                "price_delta"
+                            ]
+                        ]
+                    }
+                },
+                "additionalProperties": false
+            },
+            "examples": [
+                [
+                    {
+                        "kind": "discoverability",
+                        "message": "I support the following what-if scenario types: Price changes, Demand changes, Supplier cost changes, Inventory policy changes. Try asking a question like one of the examples below.",
+                        "examples": [
+                            "What if we raise prices by 10%?",
+                            "What if demand increases 20% next quarter?",
+                            "What if supplier costs go up 8%?",
+                            "What if we increase reorder points by 25%?"
+                        ],
+                        "supported_types": [
+                            "price_delta",
+                            "demand_delta",
+                            "supplier_cost_delta",
+                            "inventory_policy_delta"
+                        ]
+                    }
+                ]
+            ]
+        },
+        "data_limitations": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "default": [],
+            "examples": [
+                [],
+                [
+                    "Fewer than 30 baseline rows available; results may lack precision"
+                ]
+            ]
+        },
+        "fallback_table": {
+            "type": [
+                "object",
+                "null"
+            ],
+            "required": [
+                "columns",
+                "rows"
+            ],
+            "properties": {
+                "columns": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "examples": [
+                        [
+                            "metric",
+                            "dimension_key",
+                            "baseline",
+                            "scenario",
+                            "delta_abs",
+                            "delta_pct"
+                        ]
+                    ]
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": [
+                                "string",
+                                "number",
+                                "boolean",
+                                "null"
+                            ]
+                        }
+                    },
+                    "examples": [
+                        [
+                            {
+                                "metric": "Revenue",
+                                "dimension_key": "Widget A",
+                                "baseline": 1000.0,
+                                "scenario": 1050.0,
+                                "delta_abs": 50.0,
+                                "delta_pct": 5.0
+                            }
+                        ]
+                    ]
+                }
+            },
+            "additionalProperties": false
+        }
+    },
+    "additionalProperties": false
+}

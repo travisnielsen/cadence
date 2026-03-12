@@ -38,7 +38,7 @@ You are an implementation specialist. Your task is to write clean, maintainable 
 | Task list               | `specs/<feature>/tasks.md`            | Find unchecked implementation tasks           |
 | Spec document           | `specs/<feature>/spec.md`             | Understand requirements and user stories      |
 | Design document         | `specs/<feature>/plan.md`             | **Required** - Follow the implementation spec |
-| Architecture ADRs       | `.copilot-tracking/architecture/*.md` | Understand architectural constraints          |
+| Architecture / data model | `specs/<feature>/data-model.md`       | Understand data structures and constraints    |
 | Coding standards        | `CODING_STANDARD.md`                  | Follow project conventions                    |
 | Similar implementations | Search codebase                       | Match existing patterns                       |
 
@@ -51,7 +51,7 @@ You are an implementation specialist. Your task is to write clean, maintainable 
 3. **Implement** - Write code following [CODING_STANDARD.md](../../CODING_STANDARD.md)
 4. **Verify** - Run quality checks after each significant change
 5. **Mark Complete** - Update `tasks.md`: change `- [ ] T0XX` to `- [x] T0XX` for completed tasks
-6. **Document** - Log changes to `.copilot-tracking/changes/`
+6. **Document** - Log changes to `specs/<feature>/changes.md`
 
 ## Implementation Guidelines
 
@@ -90,7 +90,7 @@ uv run poe metrics  # Check code quality metrics
 
 ## Output Format
 
-Save your changes log to `.copilot-tracking/changes/YYYYMMDD-{feature-slug}-changes.md`
+Save your changes log to `specs/<feature>/changes.md`
 
 ```markdown
 ---

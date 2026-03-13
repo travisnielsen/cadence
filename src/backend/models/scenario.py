@@ -8,6 +8,7 @@ and prompt hints.  Follows the data model specification in
 
 from __future__ import annotations
 
+from math import isclose
 from typing import Final, Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -113,8 +114,8 @@ class ScenarioMetricValue(BaseModel):
         if abs(self.delta_abs - expected_abs) > _ABS_DELTA_TOLERANCE:
             msg = f"delta_abs ({self.delta_abs}) must equal scenario - baseline ({expected_abs})"
             raise ValueError(msg)
-        if self.baseline == 0.0:
-            if self.delta_pct != _ZERO_BASELINE_DELTA_PCT_FALLBACK:
+        if isclose(self.baseline, 0.0, abs_tol=_ABS_DELTA_TOLERANCE):
+            if abs(self.delta_pct - _ZERO_BASELINE_DELTA_PCT_FALLBACK) > _PCT_DELTA_TOLERANCE:
                 msg = f"delta_pct must be {_ZERO_BASELINE_DELTA_PCT_FALLBACK} when baseline is zero"
                 raise ValueError(msg)
         else:

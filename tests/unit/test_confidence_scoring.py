@@ -21,22 +21,22 @@ class TestComputeConfidence:
     """Tests for _compute_confidence resolution method scoring."""
 
     def test_exact_match(self) -> None:
-        assert _compute_confidence("exact_match", 1.0) == 1.0
+        assert _compute_confidence("exact_match", 1.0) == pytest.approx(1.0)
 
     def test_fuzzy_match(self) -> None:
-        assert _compute_confidence("fuzzy_match", 1.0) == 0.85
+        assert _compute_confidence("fuzzy_match", 1.0) == pytest.approx(0.85)
 
     def test_default_value(self) -> None:
-        assert _compute_confidence("default_value", 1.0) == 0.7
+        assert _compute_confidence("default_value", 1.0) == pytest.approx(0.7)
 
     def test_llm_validated(self) -> None:
-        assert _compute_confidence("llm_validated", 1.0) == 0.75
+        assert _compute_confidence("llm_validated", 1.0) == pytest.approx(0.75)
 
     def test_llm_unvalidated(self) -> None:
-        assert _compute_confidence("llm_unvalidated", 1.0) == 0.65
+        assert _compute_confidence("llm_unvalidated", 1.0) == pytest.approx(0.65)
 
     def test_llm_failed_validation(self) -> None:
-        assert _compute_confidence("llm_failed_validation", 1.0) == 0.3
+        assert _compute_confidence("llm_failed_validation", 1.0) == pytest.approx(0.3)
 
     def test_with_weight(self) -> None:
         """LLM-validated has no floor, so weight applies directly."""

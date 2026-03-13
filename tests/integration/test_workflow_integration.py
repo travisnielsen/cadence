@@ -727,4 +727,4 @@ class TestScenarioLatencyBenchmark:
 
     def test_sc006_threshold_constant_matches_spec(self) -> None:
         """Verify the threshold ratio matches SC-006 specification."""
-        assert self.SC006_THRESHOLD == 1.2
+        assert abs(self.SC006_THRESHOLD - 1.2) < 1e-9

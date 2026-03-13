@@ -44,7 +44,7 @@ class TestTemplateDraftPassthrough:
     def test_no_query_confidence(self) -> None:
         """Template responses should have zero query confidence (template doesn't set it)."""
         response = self._make_template_response()
-        assert response.query_confidence == 0.0
+        assert abs(response.query_confidence - 0.0) < 1e-9
 
     def test_no_error_suggestions(self) -> None:
         """Template responses should have no error suggestions."""

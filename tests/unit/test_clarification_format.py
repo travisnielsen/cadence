@@ -113,5 +113,5 @@ class TestThresholdConstants:
     """Verify exported threshold constants."""
 
     def test_threshold_values(self) -> None:
-        assert _CONFIDENCE_THRESHOLD_HIGH == 0.85
-        assert _CONFIDENCE_THRESHOLD_LOW == 0.6
+        assert abs(_CONFIDENCE_THRESHOLD_HIGH - 0.85) < 1e-9
+        assert abs(_CONFIDENCE_THRESHOLD_LOW - 0.6) < 1e-9

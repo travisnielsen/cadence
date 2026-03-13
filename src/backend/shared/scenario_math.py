@@ -9,10 +9,13 @@ predictive modeling in phase 1.
 
 from __future__ import annotations
 
+from math import isclose
 from typing import Any
 
 from models.scenario import ScenarioMetricValue
 from shared.scenario_constants import ZERO_BASELINE_DELTA_PCT_FALLBACK
+
+_ZERO_TOLERANCE = 1e-12
 
 
 def compute_delta_abs(baseline: float, scenario: float) -> float:
@@ -42,7 +45,7 @@ def compute_delta_pct(baseline: float, delta_abs: float) -> float:
         Percent change as ``(delta_abs / baseline) * 100``, or
         the zero-baseline fallback when baseline is zero.
     """
-    if baseline == 0.0:
+    if isclose(baseline, 0.0, abs_tol=_ZERO_TOLERANCE):
         return ZERO_BASELINE_DELTA_PCT_FALLBACK
     return (delta_abs / baseline) * 100.0
 

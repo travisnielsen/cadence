@@ -9,6 +9,7 @@ specific routing branches.
 from __future__ import annotations
 
 import json
+import math
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from models import (
@@ -885,9 +886,9 @@ class TestAggregateBaseline:
             "Revenue",
             "StockGroupName",
         )
-        assert result["Novelty Items"] == 1500.0
-        assert result["Packaging Materials"] == 2000.0
-        assert result["Clothing"] == 3000.0
+        assert math.isclose(result["Novelty Items"], 1500.0, abs_tol=1e-9)
+        assert math.isclose(result["Packaging Materials"], 2000.0, abs_tol=1e-9)
+        assert math.isclose(result["Clothing"], 3000.0, abs_tol=1e-9)
 
     def test_single_dimension_value(self) -> None:
         """Single unique dimension returns one entry."""
@@ -907,7 +908,7 @@ class TestAggregateBaseline:
         """Row without metric column contributes 0."""
         rows = [{"Dim": "A"}, {"Dim": "A", "Val": 5.0}]
         result = aggregate_baseline(rows, "Val", "Dim")
-        assert result["A"] == 5.0
+        assert math.isclose(result["A"], 5.0, abs_tol=1e-9)
 
 
 class TestComputeScenarioMetrics:
@@ -923,9 +924,9 @@ class TestComputeScenarioMetrics:
         )
         assert len(metrics) == 2
         m_a = next(m for m in metrics if m.dimension_key == "A")
-        assert m_a.baseline == 1000.0
-        assert m_a.scenario == 1050.0
-        assert m_a.delta_abs == 50.0
+        assert math.isclose(m_a.baseline, 1000.0, abs_tol=1e-9)
+        assert math.isclose(m_a.scenario, 1050.0, abs_tol=1e-9)
+        assert math.isclose(m_a.delta_abs, 50.0, abs_tol=1e-9)
         assert abs(m_a.delta_pct - 5.0) < 1e-6
 
     def test_pct_delta_negative(self) -> None:
@@ -937,8 +938,8 @@ class TestComputeScenarioMetrics:
             pct_delta=-10.0,
         )
         m = metrics[0]
-        assert m.scenario == 450.0
-        assert m.delta_abs == -50.0
+        assert math.isclose(m.scenario, 450.0, abs_tol=1e-9)
+        assert math.isclose(m.delta_abs, -50.0, abs_tol=1e-9)
         assert abs(m.delta_pct - (-10.0)) < 1e-6
 
     def test_abs_delta(self) -> None:
@@ -950,8 +951,8 @@ class TestComputeScenarioMetrics:
             abs_delta=100.0,
         )
         m = metrics[0]
-        assert m.scenario == 900.0
-        assert m.delta_abs == 100.0
+        assert math.isclose(m.scenario, 900.0, abs_tol=1e-9)
+        assert math.isclose(m.delta_abs, 100.0, abs_tol=1e-9)
 
     def test_zero_baseline_delta_pct(self) -> None:
         """Baseline=0 returns fallback delta_pct=0.0."""
@@ -962,16 +963,16 @@ class TestComputeScenarioMetrics:
             pct_delta=10.0,
         )
         m = metrics[0]
-        assert m.baseline == 0.0
-        assert m.scenario == 0.0
-        assert m.delta_pct == 0.0
+        assert math.isclose(m.baseline, 0.0, abs_tol=1e-9)
+        assert math.isclose(m.scenario, 0.0, abs_tol=1e-9)
+        assert math.isclose(m.delta_pct, 0.0, abs_tol=1e-9)
 
     def test_no_delta_returns_baseline_as_scenario(self) -> None:
         """No pct or abs delta → scenario equals baseline."""
         aggregates = {"Q": 42.0}
         metrics = compute_scenario_metrics(aggregates, "Units")
-        assert metrics[0].scenario == 42.0
-        assert metrics[0].delta_abs == 0.0
+        assert math.isclose(metrics[0].scenario, 42.0, abs_tol=1e-9)
+        assert math.isclose(metrics[0].delta_abs, 0.0, abs_tol=1e-9)
 
 
 # ── Scenario Pipeline Shape (T019) ──────────────────────────────────────
@@ -1060,9 +1061,9 @@ class TestScenarioPayloadShape:
         )
         assert result.scenario_result is not None
         m_a = next(m for m in result.scenario_result.metrics if m.dimension_key == "Novelty Items")
-        assert m_a.baseline == 1500.0
-        assert m_a.scenario == 1575.0
-        assert m_a.delta_abs == 75.0
+        assert math.isclose(m_a.baseline, 1500.0, abs_tol=1e-9)
+        assert math.isclose(m_a.scenario, 1575.0, abs_tol=1e-9)
+        assert math.isclose(m_a.delta_abs, 75.0, abs_tol=1e-9)
         assert abs(m_a.delta_pct - 5.0) < 1e-6
 
     async def test_summary_totals_present(self) -> None:
@@ -1081,8 +1082,8 @@ class TestScenarioPayloadShape:
         totals = result.scenario_result.summary_totals
         assert "total_revenue_baseline" in totals
         assert "total_revenue_scenario" in totals
-        assert totals["total_revenue_baseline"] == 6500.0
-        assert totals["total_revenue_scenario"] == 7150.0
+        assert math.isclose(totals["total_revenue_baseline"], 6500.0, abs_tol=1e-9)
+        assert math.isclose(totals["total_revenue_scenario"], 7150.0, abs_tol=1e-9)
 
     async def test_visualization_payload_present(self) -> None:
         """Response includes ScenarioVisualizationPayload."""
@@ -1124,7 +1125,7 @@ class TestScenarioPayloadShape:
             m for m in result.scenario_result.metrics if m.dimension_key == "Packaging Materials"
         )
         # 15% of 2000 = 300
-        assert m_b.scenario == 2300.0
+        assert math.isclose(m_b.scenario, 2300.0, abs_tol=1e-9)
 
     async def test_unsupported_scenario_type_returns_error(
         self,

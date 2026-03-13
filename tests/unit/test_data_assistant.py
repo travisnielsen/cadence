@@ -750,7 +750,7 @@ class TestScenarioIntentClassification:
         assert result.scenario_intent is not None
         intent = result.scenario_intent
         assert intent.mode == "scenario"
-        assert intent.confidence == 0.95
+        assert abs(intent.confidence - 0.95) < 1e-9
         assert intent.reason == "Clear what-if with numeric assumption"
         assert len(intent.detected_patterns) == 3
         assert "what if" in intent.detected_patterns

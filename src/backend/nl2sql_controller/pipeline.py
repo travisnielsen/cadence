@@ -48,7 +48,7 @@ from shared.scenario_constants import (
     MIN_DISTINCT_WEEKLY_PERIODS,
 )
 from shared.scenario_hints import build_clarification_hint, build_drill_down_hints
-from shared.scenario_math import aggregate_baseline, compute_scenario_metrics
+from shared.scenario_math import aggregate_baseline, compute_delta_pct, compute_scenario_metrics
 from shared.scenario_narrative import build_narrative_summary
 from shared.substitution import substitute_parameters
 from workflow.clients import PipelineClients
@@ -1232,7 +1232,7 @@ def _compute_summary_totals(
     total_baseline = sum(m.baseline for m in metrics)
     total_scenario = sum(m.scenario for m in metrics)
     total_delta_abs = total_scenario - total_baseline
-    total_delta_pct = (total_delta_abs / total_baseline) * 100.0 if total_baseline != 0.0 else 0.0
+    total_delta_pct = compute_delta_pct(total_baseline, total_delta_abs)
     mk = metric_key.lower()
     return {
         f"total_{mk}_baseline": total_baseline,
@@ -1364,7 +1364,7 @@ def _limit_to_top_n(
     other_baseline = sum(m.baseline for m in rest)
     other_scenario = sum(m.scenario for m in rest)
     other_delta_abs = other_scenario - other_baseline
-    other_delta_pct = (other_delta_abs / other_baseline) * 100.0 if other_baseline != 0.0 else 0.0
+    other_delta_pct = compute_delta_pct(other_baseline, other_delta_abs)
     top.append(
         ScenarioMetricValue(
             metric=metric_key,

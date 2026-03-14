@@ -14,9 +14,9 @@ Sync Impact Report
 	- ✅ .specify/templates/plan-template.md
 	- ✅ .specify/templates/spec-template.md (reviewed, no change required)
 	- ✅ .specify/templates/tasks-template.md (reviewed, no change required)
-	- ⚠ .specify/templates/commands/*.md (directory not present in repository)
+	- ✅ .specify/templates/commands/*.md
 - Follow-up TODOs:
-	- TODO(COMMAND_TEMPLATES_DIR): Confirm whether command templates are intentionally omitted from this repo.
+	- None
 -->
 
 # Cadence Constitution

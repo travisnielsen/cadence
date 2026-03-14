@@ -99,7 +99,7 @@ variable "sql_database_name" {
 variable "enable_local_exec_provisioning" {
   type        = bool
   default     = false
-  description = "Whether to run local-exec provisioning (SQL import and Search data-plane setup)."
+  description = "Whether to run legacy local-exec SQL import from Terraform. Prefer Phase 2 GitHub private-runner workflows for private data-plane provisioning (storage, Search, and SQL)."
 }
 
 variable "private_endpoints" {

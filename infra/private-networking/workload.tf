@@ -34,7 +34,7 @@ module "container_registry" {
   location                      = azurerm_resource_group.private_rg.location
   sku                           = "Standard"
   zone_redundancy_enabled       = false
-  public_network_access_enabled = false
+  public_network_access_enabled = true
   admin_enabled                 = false
   tags                          = local.tags
 
@@ -499,99 +499,12 @@ resource "null_resource" "import_wideworldimporters" {
 
 
 #################################################################################
-# Search configuration (private data-plane provisioning)
+# Search configuration for private deployments
 #################################################################################
 
-resource "null_resource" "search_config" {
-  count = var.enable_local_exec_provisioning ? 1 : 0
-
-  depends_on = [
-    module.ai_search,
-    module.ai_storage,
-    module.ai_foundry,
-    azurerm_storage_blob.nl2sql_tables,
-    azurerm_storage_blob.nl2sql_query_templates
-  ]
-
-  triggers = {
-    search_name      = module.ai_search.resource.name
-    storage_id       = module.ai_storage.resource_id
-    ai_foundry_id    = module.ai_foundry.ai_foundry_id
-    ai_services_name = module.ai_foundry.ai_foundry_name
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      set -e
-      SEARCH_NAME="${module.ai_search.resource.name}"
-      SEARCH_URL="https://$${SEARCH_NAME}.search.windows.net"
-      API_VERSION="2024-05-01-preview"
-      STORAGE_RESOURCE_ID="${module.ai_storage.resource_id}"
-      AI_FOUNDRY_ID="${module.ai_foundry.ai_foundry_id}"
-      AI_SERVICES_NAME="${module.ai_foundry.ai_foundry_name}"
-
-      SEARCH_PRINCIPAL_ID=$(az search service show --name "$${SEARCH_NAME}" --resource-group "${azurerm_resource_group.private_rg.name}" --query identity.principalId -o tsv)
-
-      az role assignment create \
-        --role "Storage Blob Data Reader" \
-        --assignee-object-id "$${SEARCH_PRINCIPAL_ID}" \
-        --assignee-principal-type ServicePrincipal \
-        --scope "$${STORAGE_RESOURCE_ID}" \
-        --only-show-errors || true
-
-      az role assignment create \
-        --role "Cognitive Services OpenAI User" \
-        --assignee-object-id "$${SEARCH_PRINCIPAL_ID}" \
-        --assignee-principal-type ServicePrincipal \
-        --scope "$${AI_FOUNDRY_ID}" \
-        --only-show-errors || true
-
-      sleep 60
-
-      TOKEN=$(az account get-access-token --resource https://search.azure.com --query accessToken -o tsv)
-
-      curl -s -X PUT "$${SEARCH_URL}/datasources/agentic-tables?api-version=$${API_VERSION}" \
-        -H "Authorization: Bearer $${TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d '{"name":"agentic-tables","type":"azureblob","credentials":{"connectionString":"ResourceId='"$${STORAGE_RESOURCE_ID}"';"},"container":{"name":"nl2sql","query":"tables"}}'
-
-      curl -s -X PUT "$${SEARCH_URL}/datasources/agentic-query-templates?api-version=$${API_VERSION}" \
-        -H "Authorization: Bearer $${TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d '{"name":"agentic-query-templates","type":"azureblob","credentials":{"connectionString":"ResourceId='"$${STORAGE_RESOURCE_ID}"';"},"container":{"name":"nl2sql","query":"query_templates"}}'
-
-      curl -s -X PUT "$${SEARCH_URL}/indexes/tables?api-version=$${API_VERSION}" \
-        -H "Authorization: Bearer $${TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d @${path.module}/../search-config/tables_index.json
-
-      curl -s -X PUT "$${SEARCH_URL}/indexes/query_templates?api-version=$${API_VERSION}" \
-        -H "Authorization: Bearer $${TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d @${path.module}/../search-config/query_templates_index.json
-
-      curl -s -X PUT "$${SEARCH_URL}/skillsets/table-embed-skill?api-version=$${API_VERSION}" \
-        -H "Authorization: Bearer $${TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d '{"name":"table-embed-skill","description":"OpenAI Embedding skill for table descriptions","skills":[{"@odata.type":"#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill","name":"vector-embed-field-description","description":"vector embedding for the description field","context":"/document","resourceUri":"https://'"$${AI_SERVICES_NAME}"'.openai.azure.com","deploymentId":"embedding-large","dimensions":3072,"modelName":"text-embedding-3-large","inputs":[{"name":"text","source":"/document/description"}],"outputs":[{"name":"embedding","targetName":"content_embeddings"}]}]}'
-
-      curl -s -X PUT "$${SEARCH_URL}/skillsets/query-template-embed-skill?api-version=$${API_VERSION}" \
-        -H "Authorization: Bearer $${TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d '{"name":"query-template-embed-skill","description":"OpenAI Embedding skill for query template questions","skills":[{"@odata.type":"#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill","name":"vector-embed-field-question","description":"vector embedding for the question field","context":"/document","resourceUri":"https://'"$${AI_SERVICES_NAME}"'.openai.azure.com","deploymentId":"embedding-large","dimensions":3072,"modelName":"text-embedding-3-large","inputs":[{"name":"text","source":"/document/question"}],"outputs":[{"name":"embedding","targetName":"content_embeddings"}]}]}'
-
-      curl -s -X PUT "$${SEARCH_URL}/indexers/indexer-tables?api-version=$${API_VERSION}" \
-        -H "Authorization: Bearer $${TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d '{"name":"indexer-tables","dataSourceName":"agentic-tables","skillsetName":"table-embed-skill","targetIndexName":"tables","parameters":{"configuration":{"dataToExtract":"contentAndMetadata","parsingMode":"json"}},"fieldMappings":[],"outputFieldMappings":[{"sourceFieldName":"/document/content_embeddings","targetFieldName":"content_vector"}]}'
-
-      curl -s -X PUT "$${SEARCH_URL}/indexers/indexer-query-templates?api-version=$${API_VERSION}" \
-        -H "Authorization: Bearer $${TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d '{"name":"indexer-query-templates","dataSourceName":"agentic-query-templates","skillsetName":"query-template-embed-skill","targetIndexName":"query_templates","parameters":{"configuration":{"dataToExtract":"contentAndMetadata","parsingMode":"json"}},"fieldMappings":[],"outputFieldMappings":[{"sourceFieldName":"/document/content_embeddings","targetFieldName":"content_vector"}]}'
-    EOT
-  }
-}
+# AI Search data-plane setup is performed by the one-time private runner workflow:
+# .github/workflows/provision-private-data.yml
+# which calls infra/scripts/configure-ai-search.sh from inside private networking.
 
 
 #################################################################################

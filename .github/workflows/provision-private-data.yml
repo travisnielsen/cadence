@@ -1,0 +1,101 @@
+name: Provision Private Data Plane (One-Time)
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_reimport_sql:
+        description: Recreate SQL database from BACPAC
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  provision:
+    name: Seed Storage and SQL from Private Runner
+    runs-on: [self-hosted, linux, x64, cadence-private]
+    env:
+      AZURE_STORAGE_ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT }}
+      AZURE_SQL_SERVER_NAME: ${{ vars.AZURE_SQL_SERVER_NAME }}
+      AZURE_SQL_DATABASE_NAME: ${{ vars.AZURE_SQL_DATABASE_NAME }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_SEARCH_SERVICE_NAME: ${{ vars.AZURE_SEARCH_SERVICE_NAME }}
+      AZURE_AI_FOUNDRY_ACCOUNT_NAME: ${{ vars.AZURE_AI_FOUNDRY_ACCOUNT_NAME }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2.3.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate required variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          required_vars=(AZURE_STORAGE_ACCOUNT AZURE_SQL_SERVER_NAME AZURE_RESOURCE_GROUP AZURE_SEARCH_SERVICE_NAME AZURE_AI_FOUNDRY_ACCOUNT_NAME)
+          for var_name in "${required_vars[@]}"; do
+            value="${!var_name:-}"
+            if [[ -z "$value" ]]; then
+              echo "Missing required repository variable: $var_name"
+              exit 1
+            fi
+          done
+
+      - name: Upload NL2SQL table metadata to private storage
+        shell: bash
+        run: |
+          az storage blob upload-batch \
+            --account-name $AZURE_STORAGE_ACCOUNT \
+            --destination nl2sql \
+            --destination-path tables \
+            --source infra/data/tables \
+            --overwrite \
+            --auth-mode login
+
+      - name: Upload NL2SQL query templates to private storage
+        shell: bash
+        run: |
+          az storage blob upload-batch \
+            --account-name $AZURE_STORAGE_ACCOUNT \
+            --destination nl2sql \
+            --destination-path query_templates \
+            --source infra/data/query_templates \
+            --overwrite \
+            --auth-mode login
+
+      - name: Configure AI Search data-plane resources
+        shell: bash
+        run: |
+          bash ./infra/scripts/configure-ai-search.sh \
+            "$AZURE_SEARCH_SERVICE_NAME" \
+            "$AZURE_RESOURCE_GROUP" \
+            "$AZURE_STORAGE_ACCOUNT" \
+            "$AZURE_AI_FOUNDRY_ACCOUNT_NAME"
+
+      - name: Import WideWorldImporters to private SQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB_NAME="$AZURE_SQL_DATABASE_NAME"
+          if [[ -z "$DB_NAME" ]]; then
+            DB_NAME="WideWorldImportersStd"
+          fi
+
+          FORCE_FLAG=""
+          if [[ "${{ github.event.inputs.force_reimport_sql }}" == "true" ]]; then
+            FORCE_FLAG="-Force"
+          fi
+
+          pwsh ./infra/scripts/import-wideworldimporters.ps1 \
+            -SqlServerName "$AZURE_SQL_SERVER_NAME" \
+            -ResourceGroup "$AZURE_RESOURCE_GROUP" \
+            -DatabaseName "$DB_NAME" \
+            $FORCE_FLAG

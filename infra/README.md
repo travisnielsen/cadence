@@ -124,6 +124,12 @@ is intentionally ignored by git for environment-specific and potentially sensiti
 > **Note:** `private_endpoints` are optional. You can deploy only network and DNS
 > foundation first, then add private endpoint entries later once target resource IDs are known.
 
+For private data-plane seeding and hardened GitHub runner authentication prerequisites
+(GitHub App recommended, PAT fallback), see
+`infra/private-networking/README.md` under "Phase 2: Private Runner Provisioning Model".
+That Phase 2 flow now includes private AI Search data-plane configuration in addition
+to storage uploads and SQL import.
+
 ### SQL Database Import
 
 After deploying infrastructure, import the Wide World Importers sample data into Azure SQL. The import script automatically installs required dependencies (`sqlpackage`, `.NET 8 runtime`) if they are missing.

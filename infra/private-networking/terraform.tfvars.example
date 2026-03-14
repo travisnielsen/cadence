@@ -1,0 +1,36 @@
+subscription_id = "00000000-0000-0000-0000-000000000000"
+region          = "eastus2"
+region_aifoundry = "eastus2"
+region_search    = "eastus"
+name_prefix       = "cadence"
+
+frontend_app_client_id = "00000000-0000-0000-0000-000000000000"
+
+resource_group_name             = null
+vnet_address_space              = ["10.40.0.0/16"]
+private_endpoints_subnet_cidr   = "10.40.0.0/24"
+application_subnet_cidr         = "10.40.1.0/24"
+data_subnet_cidr                = "10.40.2.0/24"
+container_apps_subnet_cidr      = "10.40.3.0/23"
+ai_agent_services_subnet_cidr   = "10.40.5.0/24"
+
+sql_database_name               = "WideWorldImportersStd"
+enable_local_exec_provisioning = false
+
+private_dns_zone_names = [
+  "privatelink.azurecr.io",
+  "privatelink.blob.core.windows.net",
+  "privatelink.openai.azure.com",
+  "privatelink.cognitiveservices.azure.com",
+  "privatelink.services.ai.azure.com",
+  "privatelink.database.windows.net",
+  "privatelink.documents.azure.com",
+  "privatelink.search.windows.net",
+  "privatelink.vaultcore.azure.net"
+]
+
+tags = {
+  Environment = "Dev"
+  Owner       = "your-name"
+  Workload    = "cadence"
+}

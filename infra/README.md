@@ -80,6 +80,50 @@ terraform plan
 terraform apply
 ```
 
+#### Private Networking Services
+
+Use the private networking stack to deploy a dedicated VNet foundation, subnets,
+private DNS zones, and optional private endpoints to existing Azure resources.
+
+From the repo root:
+
+```bash
+cd infra/private-networking
+
+# Create local variables file from starter template (or edit directly)
+cp terraform.tfvars.example terraform.tfvars
+
+# Download and initialize dependencies
+terraform init
+
+# Validate configuration before planning
+terraform validate
+
+# Execute the deployment plan
+terraform plan
+
+# Deploy resources
+terraform apply
+```
+
+At minimum, set these values in `infra/private-networking/terraform.tfvars`:
+
+```terraform
+subscription_id          = "<your_subscription_id>"
+region                   = "<azure_region_name>"
+region_aifoundry         = "<azure_region_name>"
+region_search            = "<azure_region_name>"
+frontend_app_client_id   = "<client_id_of_app_registration>"
+enable_local_exec_provisioning = false
+```
+
+Starter values are available in `infra/private-networking/terraform.tfvars` and
+`infra/private-networking/terraform.tfvars.example`. The `terraform.tfvars` file
+is intentionally ignored by git for environment-specific and potentially sensitive values.
+
+> **Note:** `private_endpoints` are optional. You can deploy only network and DNS
+> foundation first, then add private endpoint entries later once target resource IDs are known.
+
 ### SQL Database Import
 
 After deploying infrastructure, import the Wide World Importers sample data into Azure SQL. The import script automatically installs required dependencies (`sqlpackage`, `.NET 8 runtime`) if they are missing.

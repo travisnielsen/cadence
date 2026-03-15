@@ -785,6 +785,10 @@ resource "azurerm_container_app" "api" {
         value = var.frontend_app_client_id
       }
       env {
+        name  = "CORS_ALLOWED_ORIGINS"
+        value = "https://${azurerm_static_web_app.frontend.default_host_name}"
+      }
+      env {
         name  = "AZURE_AI_PROJECT_ENDPOINT"
         value = local.ai_project_endpoint
       }

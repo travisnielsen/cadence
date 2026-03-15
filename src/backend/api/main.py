@@ -53,6 +53,21 @@ ALLOW_ANONYMOUS = os.getenv("ALLOW_ANONYMOUS", "").lower() in {"true", "1", "yes
 _ALWAYS_PUBLIC_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
 
 
+def _get_cors_origins() -> list[str]:
+    """Resolve CORS origins from env, with safe local defaults."""
+    default_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    raw_origins = os.getenv("CORS_ALLOWED_ORIGINS", "").strip()
+    if not raw_origins:
+        return default_origins
+
+    parsed_origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+    if not parsed_origins:
+        return default_origins
+
+    # Keep local development origins available unless explicitly removed.
+    return list(dict.fromkeys([*parsed_origins, *default_origins]))
+
+
 class _FailClosedMiddleware(BaseHTTPMiddleware):
     """Return 503 on all non-health endpoints when auth is not configured."""
 
@@ -138,7 +153,7 @@ elif not ALLOW_ANONYMOUS:
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=_get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

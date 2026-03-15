@@ -1,279 +1,323 @@
 name: Bootstrap Private GitHub Runner (One-Time)
 
 on:
-    workflow_dispatch:
-        inputs:
-            runner_job_name:
-                description: Container Apps job name for ephemeral runners
-                required: false
-                default: cadence-gh-runner-job
-            runner_scope:
-                description: GitHub runner scope (repo, org, ent)
-                required: false
-                default: repo
-            runner_labels:
-                description: Comma-separated custom labels
-                required: false
-                default: cadence-private
+  workflow_dispatch:
+    inputs:
+      runner_job_name:
+        description: Container Apps job name for ephemeral runners
+        required: false
+        default: cadence-gh-runner-job
+      runner_scope:
+        description: GitHub runner scope (repo, org, ent)
+        required: false
+        default: repo
+      runner_labels:
+        description: Comma-separated custom labels
+        required: false
+        default: cadence-private
 
 env:
-    RUNNER_IMAGE_NAME: cadence-gh-runner
+  RUNNER_IMAGE_NAME: cadence-gh-runner
 
 permissions:
-    id-token: write
-    contents: read
+  id-token: write
+  contents: read
 
 jobs:
-    bootstrap:
-        runs-on: ubuntu-latest
-        env:
-            AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
-            AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
-            AZURE_CONTAINER_APP_ENVIRONMENT: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
-            AZURE_GH_RUNNER_IDENTITY_NAME: ${{ vars.AZURE_GH_RUNNER_IDENTITY_NAME }}
-            AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
-            GH_RUNNER_REPO_OWNER: ${{ vars.GH_RUNNER_REPO_OWNER }}
-            GH_RUNNER_REPO_NAME: ${{ vars.GH_RUNNER_REPO_NAME }}
-            GH_RUNNER_APP_ID: ${{ vars.GH_RUNNER_APP_ID }}
-            GH_RUNNER_INSTALLATION_ID: ${{ vars.GH_RUNNER_INSTALLATION_ID }}
-            GH_RUNNER_PAT: ${{ secrets.GH_RUNNER_PAT }}
-            GH_RUNNER_APP_PRIVATE_KEY: ${{ secrets.GH_RUNNER_APP_PRIVATE_KEY }}
+  bootstrap:
+    runs-on: ubuntu-latest
+    env:
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+      AZURE_CONTAINER_APP_ENVIRONMENT: ${{ vars.AZURE_CONTAINER_APP_ENVIRONMENT }}
+      AZURE_GH_RUNNER_IDENTITY_NAME: ${{ vars.AZURE_GH_RUNNER_IDENTITY_NAME }}
+      AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+      GH_RUNNER_REPO_OWNER: ${{ vars.GH_RUNNER_REPO_OWNER }}
+      GH_RUNNER_REPO_NAME: ${{ vars.GH_RUNNER_REPO_NAME }}
+      GH_RUNNER_APP_ID: ${{ vars.GH_RUNNER_APP_ID }}
+      GH_RUNNER_INSTALLATION_ID: ${{ vars.GH_RUNNER_INSTALLATION_ID }}
+      GH_RUNNER_PAT: ${{ secrets.GH_RUNNER_PAT }}
+      GH_RUNNER_APP_PRIVATE_KEY: ${{ secrets.GH_RUNNER_APP_PRIVATE_KEY }}
 
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-            - name: Login to Azure
-              uses: azure/login@v2.3.0
-              with:
-                  client-id: ${{ vars.AZURE_CLIENT_ID }}
-                  tenant-id: ${{ vars.AZURE_TENANT_ID }}
-                  subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Login to Azure
+        uses: azure/login@v2.3.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-            - name: Validate required repository variables
-              shell: bash
-              run: |
-                  set -euo pipefail
-                  required_vars=(AZURE_RESOURCE_GROUP AZURE_CONTAINER_REGISTRY AZURE_CONTAINER_APP_ENVIRONMENT)
-                  for var_name in "${required_vars[@]}"; do
-                    value="${!var_name:-}"
-                    if [[ -z "$value" ]]; then
-                      echo "Missing required repository variable: $var_name"
-                      exit 1
-                    fi
-                  done
+      - name: Validate required repository variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          required_vars=(AZURE_RESOURCE_GROUP AZURE_CONTAINER_REGISTRY AZURE_CONTAINER_APP_ENVIRONMENT)
+          for var_name in "${required_vars[@]}"; do
+            value="${!var_name:-}"
+            if [[ -z "$value" ]]; then
+              echo "Missing required repository variable: $var_name"
+              exit 1
+            fi
+          done
 
-                  if [[ -n "${GH_RUNNER_APP_ID:-}" && -n "${GH_RUNNER_INSTALLATION_ID:-}" && -n "${GH_RUNNER_APP_PRIVATE_KEY:-}" ]]; then
-                    echo "AUTH_MODE=app" >> "$GITHUB_ENV"
-                  elif [[ -n "${GH_RUNNER_PAT:-}" ]]; then
-                    echo "AUTH_MODE=pat" >> "$GITHUB_ENV"
-                  else
-                    echo "Missing auth: provide GH_RUNNER_PAT OR (GH_RUNNER_APP_ID + GH_RUNNER_INSTALLATION_ID + GH_RUNNER_APP_PRIVATE_KEY)"
-                    exit 1
-                  fi
+          if [[ -n "${GH_RUNNER_APP_ID:-}" && -n "${GH_RUNNER_INSTALLATION_ID:-}" && -n "${GH_RUNNER_APP_PRIVATE_KEY:-}" ]]; then
+            echo "AUTH_MODE=app" >> "$GITHUB_ENV"
+          elif [[ -n "${GH_RUNNER_PAT:-}" ]]; then
+            echo "AUTH_MODE=pat" >> "$GITHUB_ENV"
+          else
+            echo "Missing auth: provide GH_RUNNER_PAT OR (GH_RUNNER_APP_ID + GH_RUNNER_INSTALLATION_ID + GH_RUNNER_APP_PRIVATE_KEY)"
+            exit 1
+          fi
 
-            - name: Variable audit (presence only)
-              shell: bash
-              run: |
-                  set -euo pipefail
+      - name: Variable audit (presence only)
+        shell: bash
+        run: |
+          set -euo pipefail
 
-                  echo "Repository variable/secrets presence audit (values not shown):"
+          echo "Repository variable/secrets presence audit (values not shown):"
 
-                  check_present() {
-                    local name="$1"
-                    local value="$2"
-                    local required="$3"
+          check_present() {
+            local name="$1"
+            local value="$2"
+            local required="$3"
 
-                    if [[ -n "$value" ]]; then
-                      echo "PRESENT [$required] $name"
-                    else
-                      echo "MISSING [$required] $name"
-                    fi
-                  }
+            if [[ -n "$value" ]]; then
+              echo "PRESENT [$required] $name"
+            else
+              echo "MISSING [$required] $name"
+            fi
+          }
 
-                  check_present "AZURE_CLIENT_ID" "${{ vars.AZURE_CLIENT_ID }}" "required"
-                  check_present "AZURE_TENANT_ID" "${{ vars.AZURE_TENANT_ID }}" "required"
-                  check_present "AZURE_SUBSCRIPTION_ID" "${{ vars.AZURE_SUBSCRIPTION_ID }}" "required"
-                  check_present "AZURE_RESOURCE_GROUP" "${AZURE_RESOURCE_GROUP:-}" "required"
-                  check_present "AZURE_CONTAINER_REGISTRY" "${AZURE_CONTAINER_REGISTRY:-}" "required"
-                  check_present "AZURE_CONTAINER_APP_ENVIRONMENT" "${AZURE_CONTAINER_APP_ENVIRONMENT:-}" "required"
-                  check_present "AZURE_LOCATION" "${AZURE_LOCATION:-}" "optional"
-                  check_present "AZURE_GH_RUNNER_IDENTITY_NAME" "${AZURE_GH_RUNNER_IDENTITY_NAME:-}" "optional"
-                  check_present "GH_RUNNER_REPO_OWNER" "${GH_RUNNER_REPO_OWNER:-}" "optional"
-                  check_present "GH_RUNNER_REPO_NAME" "${GH_RUNNER_REPO_NAME:-}" "optional"
-                  check_present "GH_RUNNER_APP_ID" "${GH_RUNNER_APP_ID:-}" "github-app"
-                  check_present "GH_RUNNER_INSTALLATION_ID" "${GH_RUNNER_INSTALLATION_ID:-}" "github-app"
-                  check_present "GH_RUNNER_APP_PRIVATE_KEY" "${GH_RUNNER_APP_PRIVATE_KEY:-}" "github-app-secret"
-                  check_present "GH_RUNNER_PAT" "${GH_RUNNER_PAT:-}" "pat-fallback-secret"
+          check_present "AZURE_CLIENT_ID" "${{ vars.AZURE_CLIENT_ID }}" "required"
+          check_present "AZURE_TENANT_ID" "${{ vars.AZURE_TENANT_ID }}" "required"
+          check_present "AZURE_SUBSCRIPTION_ID" "${{ vars.AZURE_SUBSCRIPTION_ID }}" "required"
+          check_present "AZURE_RESOURCE_GROUP" "${AZURE_RESOURCE_GROUP:-}" "required"
+          check_present "AZURE_CONTAINER_REGISTRY" "${AZURE_CONTAINER_REGISTRY:-}" "required"
+          check_present "AZURE_CONTAINER_APP_ENVIRONMENT" "${AZURE_CONTAINER_APP_ENVIRONMENT:-}" "required"
+          check_present "AZURE_LOCATION" "${AZURE_LOCATION:-}" "optional"
+          check_present "AZURE_GH_RUNNER_IDENTITY_NAME" "${AZURE_GH_RUNNER_IDENTITY_NAME:-}" "optional"
+          check_present "GH_RUNNER_REPO_OWNER" "${GH_RUNNER_REPO_OWNER:-}" "optional"
+          check_present "GH_RUNNER_REPO_NAME" "${GH_RUNNER_REPO_NAME:-}" "optional"
+          check_present "GH_RUNNER_APP_ID" "${GH_RUNNER_APP_ID:-}" "github-app"
+          check_present "GH_RUNNER_INSTALLATION_ID" "${GH_RUNNER_INSTALLATION_ID:-}" "github-app"
+          check_present "GH_RUNNER_APP_PRIVATE_KEY" "${GH_RUNNER_APP_PRIVATE_KEY:-}" "github-app-secret"
+          check_present "GH_RUNNER_PAT" "${GH_RUNNER_PAT:-}" "pat-fallback-secret"
 
-            - name: Authentication preflight
-              shell: bash
-              run: |
-                  set -euo pipefail
-                  echo "Selected authentication mode: $AUTH_MODE"
-                  if [[ "$AUTH_MODE" == "pat" ]]; then
-                    echo "::warning::Using PAT fallback mode. GitHub App auth is the recommended hardening path for production."
-                  else
-                    echo "::notice::Using GitHub App mode (recommended)."
-                  fi
+      - name: Authentication preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Selected authentication mode: $AUTH_MODE"
+          if [[ "$AUTH_MODE" == "pat" ]]; then
+            echo "::warning::Using PAT fallback mode. GitHub App auth is the recommended hardening path for production."
+          else
+            echo "::notice::Using GitHub App mode (recommended)."
+          fi
 
-            - name: Build and push private runner image
-              uses: azure/cli@v2.2.0
-              with:
-                  inlineScript: |
-                      az acr build \
-                        --registry $AZURE_CONTAINER_REGISTRY \
-                        --image ${{ env.RUNNER_IMAGE_NAME }}:${{ github.sha }} \
-                        --image ${{ env.RUNNER_IMAGE_NAME }}:latest \
-                        --file ./infra/github-runner/Dockerfile \
-                        ./infra/github-runner
+      - name: Resolve and validate Azure Container Registry
+        shell: bash
+        run: |
+          set -euo pipefail
 
-            - name: Ensure ACR ARM token auth is enabled
-              uses: azure/cli@v2.2.0
-              with:
-                  inlineScript: |
-                      az acr config authentication-as-arm update \
-                        --registry $AZURE_CONTAINER_REGISTRY \
-                        --status enabled
+          CURRENT_SUBSCRIPTION=$(az account show --query id -o tsv)
+          echo "Azure subscription context: $CURRENT_SUBSCRIPTION"
 
-            - name: Create or update identity and role assignments
-              uses: azure/cli@v2.2.0
-              with:
-                  inlineScript: |
-                      set -euo pipefail
+          if [[ "$CURRENT_SUBSCRIPTION" != "${{ vars.AZURE_SUBSCRIPTION_ID }}" ]]; then
+            echo "::warning::azure/login subscription differs from expected repository variable AZURE_SUBSCRIPTION_ID"
+            echo "Expected: ${{ vars.AZURE_SUBSCRIPTION_ID }}"
+            echo "Actual:   $CURRENT_SUBSCRIPTION"
+          fi
 
-                      IDENTITY_NAME="${{ vars.AZURE_GH_RUNNER_IDENTITY_NAME }}"
-                      if [[ -z "$IDENTITY_NAME" ]]; then
-                        IDENTITY_NAME="cadence-gh-runner-id"
-                      fi
+          if ! az group show --name "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
+            echo "Resource group not found in current subscription: $AZURE_RESOURCE_GROUP"
+            exit 1
+          fi
 
-                      LOCATION="$AZURE_LOCATION"
-                      if [[ -z "$LOCATION" ]]; then
-                        LOCATION=$(az group show --name "$AZURE_RESOURCE_GROUP" --query location -o tsv)
-                      fi
+          configured_acr="$AZURE_CONTAINER_REGISTRY"
+          resolved_acr=""
 
-                      az identity show \
-                        --name "$IDENTITY_NAME" \
-                        --resource-group $AZURE_RESOURCE_GROUP >/dev/null 2>&1 \
-                        || az identity create \
-                          --name "$IDENTITY_NAME" \
-                          --resource-group $AZURE_RESOURCE_GROUP \
-                          --location "$LOCATION"
+          if [[ -n "$configured_acr" ]] && az acr show --name "$configured_acr" >/dev/null 2>&1; then
+            resolved_acr="$configured_acr"
+          else
+            mapfile -t rg_acrs < <(az acr list --resource-group "$AZURE_RESOURCE_GROUP" --query "[].name" -o tsv)
 
-                      IDENTITY_ID=$(az identity show \
-                        --name "$IDENTITY_NAME" \
-                        --resource-group $AZURE_RESOURCE_GROUP \
-                        --query id -o tsv)
+            if [[ "${#rg_acrs[@]}" -eq 1 ]]; then
+              resolved_acr="${rg_acrs[0]}"
+              if [[ -n "$configured_acr" ]]; then
+                echo "::warning::Configured AZURE_CONTAINER_REGISTRY '$configured_acr' was not found. Falling back to '$resolved_acr' from resource group $AZURE_RESOURCE_GROUP."
+              fi
+            else
+              echo "Could not resolve Azure Container Registry automatically."
+              echo "Configured AZURE_CONTAINER_REGISTRY: ${configured_acr:-<empty>}"
+              echo "ACR resources in $AZURE_RESOURCE_GROUP: ${rg_acrs[*]:-<none>}"
+              echo "Set repository variable AZURE_CONTAINER_REGISTRY to the correct registry name."
+              exit 1
+            fi
+          fi
 
-                      PRINCIPAL_ID=$(az identity show \
-                        --name "$IDENTITY_NAME" \
-                        --resource-group $AZURE_RESOURCE_GROUP \
-                        --query principalId -o tsv)
+          echo "Using Azure Container Registry: $resolved_acr"
+          echo "AZURE_CONTAINER_REGISTRY=$resolved_acr" >> "$GITHUB_ENV"
 
-                      ACR_ID=$(az acr show \
-                        --name $AZURE_CONTAINER_REGISTRY \
-                        --resource-group $AZURE_RESOURCE_GROUP \
-                        --query id -o tsv)
+      - name: Build and push private runner image
+        uses: azure/cli@v2.2.0
+        with:
+          inlineScript: |
+            az acr build \
+              --registry $AZURE_CONTAINER_REGISTRY \
+              --image ${{ env.RUNNER_IMAGE_NAME }}:${{ github.sha }} \
+              --image ${{ env.RUNNER_IMAGE_NAME }}:latest \
+              --file ./infra/github-runner/Dockerfile \
+              ./infra/github-runner
 
-                      az role assignment create \
-                        --assignee-object-id "$PRINCIPAL_ID" \
-                        --assignee-principal-type ServicePrincipal \
-                        --role AcrPull \
-                        --scope "$ACR_ID" \
-                        --only-show-errors || true
+      - name: Ensure ACR ARM token auth is enabled
+        uses: azure/cli@v2.2.0
+        with:
+          inlineScript: |
+            az acr config authentication-as-arm update \
+              --registry $AZURE_CONTAINER_REGISTRY \
+              --status enabled
 
-                      echo "IDENTITY_ID=$IDENTITY_ID" >> $GITHUB_ENV
+      - name: Create or update identity and role assignments
+        uses: azure/cli@v2.2.0
+        with:
+          inlineScript: |
+            set -euo pipefail
 
-            - name: Recreate Container Apps runner job
-              uses: azure/cli@v2.2.0
-              with:
-                  inlineScript: |
-                      set -euo pipefail
+            IDENTITY_NAME="${{ vars.AZURE_GH_RUNNER_IDENTITY_NAME }}"
+            if [[ -z "$IDENTITY_NAME" ]]; then
+              IDENTITY_NAME="cadence-gh-runner-id"
+            fi
 
-                      OWNER="${{ vars.GH_RUNNER_REPO_OWNER }}"
-                      REPO_NAME="${{ vars.GH_RUNNER_REPO_NAME }}"
+            LOCATION="$AZURE_LOCATION"
+            if [[ -z "$LOCATION" ]]; then
+              LOCATION=$(az group show --name "$AZURE_RESOURCE_GROUP" --query location -o tsv)
+            fi
 
-                      if [[ -z "$OWNER" ]]; then
-                        OWNER="${{ github.repository_owner }}"
-                      fi
+            az identity show \
+              --name "$IDENTITY_NAME" \
+              --resource-group $AZURE_RESOURCE_GROUP >/dev/null 2>&1 \
+              || az identity create \
+                --name "$IDENTITY_NAME" \
+                --resource-group $AZURE_RESOURCE_GROUP \
+                --location "$LOCATION"
 
-                      if [[ -z "$REPO_NAME" ]]; then
-                        REPO_NAME="${GITHUB_REPOSITORY#*/}"
-                      fi
+            IDENTITY_ID=$(az identity show \
+              --name "$IDENTITY_NAME" \
+              --resource-group $AZURE_RESOURCE_GROUP \
+              --query id -o tsv)
 
-                      RUNNER_SCOPE="${{ github.event.inputs.runner_scope }}"
-                      RUNNER_LABELS="${{ github.event.inputs.runner_labels }}"
-                      JOB_NAME="${{ github.event.inputs.runner_job_name }}"
+            PRINCIPAL_ID=$(az identity show \
+              --name "$IDENTITY_NAME" \
+              --resource-group $AZURE_RESOURCE_GROUP \
+              --query principalId -o tsv)
 
-                      GH_URL="https://github.com/$OWNER/$REPO_NAME"
-                      REG_TOKEN_URL="https://api.github.com/repos/$OWNER/$REPO_NAME/actions/runners/registration-token"
+            ACR_ID=$(az acr show \
+              --name $AZURE_CONTAINER_REGISTRY \
+              --resource-group $AZURE_RESOURCE_GROUP \
+              --query id -o tsv)
 
-                      ACR_SERVER=$(az acr show \
-                        --name $AZURE_CONTAINER_REGISTRY \
-                        --resource-group $AZURE_RESOURCE_GROUP \
-                        --query loginServer -o tsv)
+            az role assignment create \
+              --assignee-object-id "$PRINCIPAL_ID" \
+              --assignee-principal-type ServicePrincipal \
+              --role AcrPull \
+              --scope "$ACR_ID" \
+              --only-show-errors || true
 
-                      if az containerapp job show --name "$JOB_NAME" --resource-group $AZURE_RESOURCE_GROUP >/dev/null 2>&1; then
-                        az containerapp job delete --name "$JOB_NAME" --resource-group $AZURE_RESOURCE_GROUP --yes
-                      fi
+            echo "IDENTITY_ID=$IDENTITY_ID" >> $GITHUB_ENV
 
-                      if [[ "$AUTH_MODE" == "app" ]]; then
-                        az containerapp job create \
-                          --name "$JOB_NAME" \
-                          --resource-group $AZURE_RESOURCE_GROUP \
-                          --environment $AZURE_CONTAINER_APP_ENVIRONMENT \
-                          --trigger-type Event \
-                          --replica-timeout 3600 \
-                          --replica-retry-limit 0 \
-                          --replica-completion-count 1 \
-                          --parallelism 1 \
-                          --image "$ACR_SERVER/${{ env.RUNNER_IMAGE_NAME }}:latest" \
-                          --cpu "2.0" \
-                          --memory "4Gi" \
-                          --min-executions 0 \
-                          --max-executions 5 \
-                          --polling-interval 30 \
-                          --scale-rule-name github-runner \
-                          --scale-rule-type github-runner \
-                          --scale-rule-metadata "githubAPIURL=https://api.github.com" "owner=$OWNER" "runnerScope=$RUNNER_SCOPE" "repos=$REPO_NAME" "labels=$RUNNER_LABELS" "targetWorkflowQueueLength=1" "enableEtags=true" "applicationID=$GH_RUNNER_APP_ID" "installationID=$GH_RUNNER_INSTALLATION_ID" \
-                          --scale-rule-auth "appKey=github-app-private-key" \
-                          --secrets "github-app-private-key=$GH_RUNNER_APP_PRIVATE_KEY" \
-                          --env-vars "GH_APP_ID=$GH_RUNNER_APP_ID" "GH_APP_INSTALLATION_ID=$GH_RUNNER_INSTALLATION_ID" "GH_APP_PRIVATE_KEY=secretref:github-app-private-key" "GH_URL=$GH_URL" "REGISTRATION_TOKEN_API_URL=$REG_TOKEN_URL" "RUNNER_LABELS=$RUNNER_LABELS" \
-                          --registry-server "$ACR_SERVER" \
-                          --mi-user-assigned "$IDENTITY_ID" \
-                          --registry-identity "$IDENTITY_ID"
-                      else
-                        az containerapp job create \
-                          --name "$JOB_NAME" \
-                          --resource-group $AZURE_RESOURCE_GROUP \
-                          --environment $AZURE_CONTAINER_APP_ENVIRONMENT \
-                          --trigger-type Event \
-                          --replica-timeout 3600 \
-                          --replica-retry-limit 0 \
-                          --replica-completion-count 1 \
-                          --parallelism 1 \
-                          --image "$ACR_SERVER/${{ env.RUNNER_IMAGE_NAME }}:latest" \
-                          --cpu "2.0" \
-                          --memory "4Gi" \
-                          --min-executions 0 \
-                          --max-executions 5 \
-                          --polling-interval 30 \
-                          --scale-rule-name github-runner \
-                          --scale-rule-type github-runner \
-                          --scale-rule-metadata "githubAPIURL=https://api.github.com" "owner=$OWNER" "runnerScope=$RUNNER_SCOPE" "repos=$REPO_NAME" "labels=$RUNNER_LABELS" "targetWorkflowQueueLength=1" "enableEtags=true" \
-                          --scale-rule-auth "personalAccessToken=github-runner-pat" \
-                          --secrets "github-runner-pat=$GH_RUNNER_PAT" \
-                          --env-vars "GITHUB_PAT=secretref:github-runner-pat" "GH_URL=$GH_URL" "REGISTRATION_TOKEN_API_URL=$REG_TOKEN_URL" "RUNNER_LABELS=$RUNNER_LABELS" \
-                          --registry-server "$ACR_SERVER" \
-                          --mi-user-assigned "$IDENTITY_ID" \
-                          --registry-identity "$IDENTITY_ID"
-                      fi
+      - name: Recreate Container Apps runner job
+        uses: azure/cli@v2.2.0
+        with:
+          inlineScript: |
+            set -euo pipefail
 
-            - name: Bootstrap summary
-              shell: bash
-              run: |
-                  echo "Bootstrap complete."
-                  echo "Auth mode: $AUTH_MODE"
-                  echo "Runner job name: ${{ github.event.inputs.runner_job_name }}"
-                  echo "Runner labels: ${{ github.event.inputs.runner_labels }}"
-                  echo "Use runs-on: [self-hosted, linux, x64, cadence-private] for private jobs."
+            OWNER="${{ vars.GH_RUNNER_REPO_OWNER }}"
+            REPO_NAME="${{ vars.GH_RUNNER_REPO_NAME }}"
+
+            if [[ -z "$OWNER" ]]; then
+              OWNER="${{ github.repository_owner }}"
+            fi
+
+            if [[ -z "$REPO_NAME" ]]; then
+              REPO_NAME="${GITHUB_REPOSITORY#*/}"
+            fi
+
+            RUNNER_SCOPE="${{ github.event.inputs.runner_scope }}"
+            RUNNER_LABELS="${{ github.event.inputs.runner_labels }}"
+            JOB_NAME="${{ github.event.inputs.runner_job_name }}"
+
+            GH_URL="https://github.com/$OWNER/$REPO_NAME"
+            REG_TOKEN_URL="https://api.github.com/repos/$OWNER/$REPO_NAME/actions/runners/registration-token"
+
+            ACR_SERVER=$(az acr show \
+              --name $AZURE_CONTAINER_REGISTRY \
+              --resource-group $AZURE_RESOURCE_GROUP \
+              --query loginServer -o tsv)
+
+            if az containerapp job show --name "$JOB_NAME" --resource-group $AZURE_RESOURCE_GROUP >/dev/null 2>&1; then
+              az containerapp job delete --name "$JOB_NAME" --resource-group $AZURE_RESOURCE_GROUP --yes
+            fi
+
+            if [[ "$AUTH_MODE" == "app" ]]; then
+              az containerapp job create \
+                --name "$JOB_NAME" \
+                --resource-group $AZURE_RESOURCE_GROUP \
+                --environment $AZURE_CONTAINER_APP_ENVIRONMENT \
+                --trigger-type Event \
+                --replica-timeout 3600 \
+                --replica-retry-limit 0 \
+                --replica-completion-count 1 \
+                --parallelism 1 \
+                --image "$ACR_SERVER/${{ env.RUNNER_IMAGE_NAME }}:latest" \
+                --cpu "2.0" \
+                --memory "4Gi" \
+                --min-executions 0 \
+                --max-executions 5 \
+                --polling-interval 30 \
+                --scale-rule-name github-runner \
+                --scale-rule-type github-runner \
+                --scale-rule-metadata "githubAPIURL=https://api.github.com" "owner=$OWNER" "runnerScope=$RUNNER_SCOPE" "repos=$REPO_NAME" "labels=$RUNNER_LABELS" "targetWorkflowQueueLength=1" "enableEtags=true" "applicationID=$GH_RUNNER_APP_ID" "installationID=$GH_RUNNER_INSTALLATION_ID" \
+                --scale-rule-auth "appKey=github-app-private-key" \
+                --secrets "github-app-private-key=$GH_RUNNER_APP_PRIVATE_KEY" \
+                --env-vars "GH_APP_ID=$GH_RUNNER_APP_ID" "GH_APP_INSTALLATION_ID=$GH_RUNNER_INSTALLATION_ID" "GH_APP_PRIVATE_KEY=secretref:github-app-private-key" "GH_URL=$GH_URL" "REGISTRATION_TOKEN_API_URL=$REG_TOKEN_URL" "RUNNER_LABELS=$RUNNER_LABELS" \
+                --registry-server "$ACR_SERVER" \
+                --mi-user-assigned "$IDENTITY_ID" \
+                --registry-identity "$IDENTITY_ID"
+            else
+              az containerapp job create \
+                --name "$JOB_NAME" \
+                --resource-group $AZURE_RESOURCE_GROUP \
+                --environment $AZURE_CONTAINER_APP_ENVIRONMENT \
+                --trigger-type Event \
+                --replica-timeout 3600 \
+                --replica-retry-limit 0 \
+                --replica-completion-count 1 \
+                --parallelism 1 \
+                --image "$ACR_SERVER/${{ env.RUNNER_IMAGE_NAME }}:latest" \
+                --cpu "2.0" \
+                --memory "4Gi" \
+                --min-executions 0 \
+                --max-executions 5 \
+                --polling-interval 30 \
+                --scale-rule-name github-runner \
+                --scale-rule-type github-runner \
+                --scale-rule-metadata "githubAPIURL=https://api.github.com" "owner=$OWNER" "runnerScope=$RUNNER_SCOPE" "repos=$REPO_NAME" "labels=$RUNNER_LABELS" "targetWorkflowQueueLength=1" "enableEtags=true" \
+                --scale-rule-auth "personalAccessToken=github-runner-pat" \
+                --secrets "github-runner-pat=$GH_RUNNER_PAT" \
+                --env-vars "GITHUB_PAT=secretref:github-runner-pat" "GH_URL=$GH_URL" "REGISTRATION_TOKEN_API_URL=$REG_TOKEN_URL" "RUNNER_LABELS=$RUNNER_LABELS" \
+                --registry-server "$ACR_SERVER" \
+                --mi-user-assigned "$IDENTITY_ID" \
+                --registry-identity "$IDENTITY_ID"
+            fi
+
+      - name: Bootstrap summary
+        shell: bash
+        run: |
+          echo "Bootstrap complete."
+          echo "Auth mode: $AUTH_MODE"
+          echo "Runner job name: ${{ github.event.inputs.runner_job_name }}"
+          echo "Runner labels: ${{ github.event.inputs.runner_labels }}"
+          echo "Use runs-on: [self-hosted, linux, x64, cadence-private] for private jobs."

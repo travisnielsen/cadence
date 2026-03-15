@@ -60,34 +60,33 @@ jobs:
 
       - name: Resolve Static Web App deployment token
         id: swa-token
-        uses: azure/cli@v2.2.0
-        with:
-          inlineScript: |
-            set -euo pipefail
+        shell: bash
+        run: |
+          set -euo pipefail
 
-            if [ -z "${{ env.AZURE_STATIC_WEB_APP_NAME }}" ]; then
-              echo "AZURE_STATIC_WEB_APP_NAME is required"
-              exit 1
-            fi
+          if [ -z "${{ env.AZURE_STATIC_WEB_APP_NAME }}" ]; then
+            echo "AZURE_STATIC_WEB_APP_NAME is required"
+            exit 1
+          fi
 
-            if [ -z "${{ env.AZURE_RESOURCE_GROUP }}" ]; then
-              echo "AZURE_RESOURCE_GROUP is required"
-              exit 1
-            fi
+          if [ -z "${{ env.AZURE_RESOURCE_GROUP }}" ]; then
+            echo "AZURE_RESOURCE_GROUP is required"
+            exit 1
+          fi
 
-            SWA_TOKEN=$(az staticwebapp secrets list \
-              --name "${{ env.AZURE_STATIC_WEB_APP_NAME }}" \
-              --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
-              --query properties.apiKey \
-              -o tsv)
+          SWA_TOKEN=$(az staticwebapp secrets list \
+            --name "${{ env.AZURE_STATIC_WEB_APP_NAME }}" \
+            --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+            --query properties.apiKey \
+            -o tsv)
 
-            if [ -z "$SWA_TOKEN" ]; then
-              echo "Failed to retrieve Static Web App deployment token"
-              exit 1
-            fi
+          if [ -z "$SWA_TOKEN" ]; then
+            echo "Failed to retrieve Static Web App deployment token"
+            exit 1
+          fi
 
-            echo "::add-mask::$SWA_TOKEN"
-            echo "deployment_token=$SWA_TOKEN" >> "$GITHUB_OUTPUT"
+          echo "::add-mask::$SWA_TOKEN"
+          echo "deployment_token=$SWA_TOKEN" >> "$GITHUB_OUTPUT"
 
       - name: Deploy to Azure Static Web Apps
         run: |

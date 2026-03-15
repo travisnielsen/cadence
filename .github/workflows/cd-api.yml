@@ -34,47 +34,48 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Build and push image using ACR Tasks
-        uses: azure/cli@v2.2.0
-        with:
-          inlineScript: |
-            az acr build \
-              --registry ${{ env.REGISTRY }} \
-              --image ${{ env.IMAGE_NAME }}:${{ github.sha }} \
-              --image ${{ env.IMAGE_NAME }}:latest \
-              --file ./src/backend/Dockerfile \
-              .
+        shell: bash
+        run: |
+          set -euo pipefail
+          az acr build \
+            --registry "${{ env.REGISTRY }}" \
+            --image "${{ env.IMAGE_NAME }}:${{ github.sha }}" \
+            --image "${{ env.IMAGE_NAME }}:latest" \
+            --file ./src/backend/Dockerfile \
+            .
 
       - name: Deploy to Azure Container Apps
-        uses: azure/cli@v2.2.0
-        with:
-          inlineScript: |
-            az containerapp update \
-              --name ${{ env.CONTAINER_APP_NAME }} \
-              --resource-group ${{ env.RESOURCE_GROUP }} \
-              --image ${{ env.REGISTRY }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          az containerapp update \
+            --name "${{ env.CONTAINER_APP_NAME }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --image "${{ env.REGISTRY }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}"
 
       - name: Verify deployment
-        uses: azure/cli@v2.2.0
-        with:
-          inlineScript: |
-            # Wait for the new revision to be ready
-            echo "Waiting for deployment to complete..."
-            sleep 30
+        shell: bash
+        run: |
+          set -euo pipefail
 
-            # Get the container app URL
-            FQDN=$(az containerapp show \
-              --name ${{ env.CONTAINER_APP_NAME }} \
-              --resource-group ${{ env.RESOURCE_GROUP }} \
-              --query "properties.configuration.ingress.fqdn" \
-              --output tsv)
+          # Wait for the new revision to be ready
+          echo "Waiting for deployment to complete..."
+          sleep 30
 
-            echo "Container App URL: https://$FQDN"
+          # Get the container app URL
+          FQDN=$(az containerapp show \
+            --name "${{ env.CONTAINER_APP_NAME }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --query "properties.configuration.ingress.fqdn" \
+            --output tsv)
 
-            # Health check
-            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://$FQDN/health" || echo "000")
+          echo "Container App URL: https://$FQDN"
 
-            if [ "$HTTP_STATUS" = "200" ]; then
-              echo "✅ Health check passed (HTTP $HTTP_STATUS)"
-            else
-              echo "⚠️ Health check returned HTTP $HTTP_STATUS (may still be starting)"
-            fi
+          # Health check
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://$FQDN/health" || echo "000")
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Health check passed (HTTP $HTTP_STATUS)"
+          else
+            echo "⚠️ Health check returned HTTP $HTTP_STATUS (may still be starting)"
+          fi

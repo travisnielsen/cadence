@@ -6,6 +6,14 @@ name_prefix       = "cadence"
 
 frontend_app_client_id = "00000000-0000-0000-0000-000000000000"
 
+# Existing GitHub OIDC federated service principal used by private-runner and CI/CD workflows.
+github_federated_principal_object_id = "00000000-0000-0000-0000-000000000000"
+github_federated_principal_client_id = "00000000-0000-0000-0000-000000000000"
+
+# Optional SQL Entra admin override (recommended: Entra group object ID + display name).
+# sql_azuread_admin_object_id      = "00000000-0000-0000-0000-000000000000"
+# sql_azuread_admin_login_username = "cadence-sql-admins"
+
 resource_group_name             = null
 vnet_address_space              = ["10.40.0.0/16"]
 private_endpoints_subnet_cidr   = "10.40.0.0/24"

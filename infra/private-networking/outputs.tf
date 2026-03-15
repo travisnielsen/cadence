@@ -13,6 +13,11 @@ output "resource_group_name" {
   value       = azurerm_resource_group.private_rg.name
 }
 
+output "azure_location" {
+  description = "Azure location for resources in this private networking deployment."
+  value       = azurerm_resource_group.private_rg.location
+}
+
 output "virtual_network_id" {
   description = "Virtual network resource ID."
   value       = azurerm_virtual_network.private_vnet.id
@@ -60,12 +65,58 @@ output "container_app_identity_client_id" {
   value       = azurerm_user_assigned_identity.api_identity.client_id
 }
 
+output "container_app_identity_name" {
+  description = "Container App managed identity name"
+  value       = azurerm_user_assigned_identity.api_identity.name
+}
+
 output "container_registry_login_server" {
   description = "Container Registry login server"
   value       = module.container_registry.resource.login_server
 }
 
+output "container_registry_name" {
+  description = "Container Registry resource name"
+  value       = element(reverse(split("/", module.container_registry.resource_id)), 0)
+}
+
+output "container_app_environment_name" {
+  description = "Container Apps environment name"
+  value       = element(reverse(split("/", module.container_app_environment.resource_id)), 0)
+}
+
+output "storage_account_name" {
+  description = "Storage account name used for NL2SQL assets"
+  value       = module.ai_storage.name
+}
+
+output "search_service_name" {
+  description = "AI Search service name"
+  value       = module.ai_search.resource.name
+}
+
+output "ai_foundry_account_name" {
+  description = "AI Foundry account name"
+  value       = element(reverse(split("/", module.ai_foundry.ai_foundry_id)), 0)
+}
+
+output "sql_database_name" {
+  description = "Azure SQL database name"
+  value       = var.sql_database_name
+}
+
+output "container_app_name" {
+  description = "Container App name for backend API"
+  value       = azurerm_container_app.api.name
+}
+
+output "container_app_url" {
+  description = "Container App API URL"
+  value       = "https://${azurerm_container_app.api.ingress[0].fqdn}"
+}
+
 output "sql_server_name" {
   description = "Azure SQL server name"
   value       = module.sql_server.resource.name
+  sensitive   = true
 }

@@ -26,6 +26,30 @@ variable "frontend_app_client_id" {
   description = "Azure AD App Registration client ID for frontend authentication."
 }
 
+variable "github_federated_principal_object_id" {
+  type        = string
+  default     = null
+  description = "Optional object ID of the GitHub OIDC federated service principal used by CI/CD and private runner workflows. When set, Terraform grants required data-plane and CI roles to this principal."
+}
+
+variable "github_federated_principal_client_id" {
+  type        = string
+  default     = null
+  description = "Optional client ID (application ID) for the GitHub OIDC federated principal. Used as SQL Entra admin login_username fallback when sql_azuread_admin_login_username is not provided."
+}
+
+variable "sql_azuread_admin_object_id" {
+  type        = string
+  default     = null
+  description = "Optional object ID to configure as Azure SQL Entra administrator. Defaults to github_federated_principal_object_id when set, otherwise current deployment principal object ID."
+}
+
+variable "sql_azuread_admin_login_username" {
+  type        = string
+  default     = null
+  description = "Optional login username for Azure SQL Entra administrator. Defaults to github_federated_principal_client_id when set, otherwise current deployment principal client ID."
+}
+
 variable "name_prefix" {
   type        = string
   default     = "cadence"

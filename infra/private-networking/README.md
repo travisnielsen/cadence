@@ -5,10 +5,12 @@ This stack creates a private networking foundation plus private service deployme
 ## What It Deploys
 
 - Resource Group
-- Virtual Network with 3 subnets:
-  - `private-endpoints`
-  - `application`
-  - `data`
+- Virtual Network with 5 subnets:
+  - `private-endpoints` (Private Endpoints for PaaS services)
+  - `application` (general app-tier workloads)
+  - `container-apps` (delegated to `Microsoft.App/environments` for Container Apps)
+  - `ai-agent-services` (AI Foundry Agent Service network injection)
+  - `data` (data-tier workloads)
 - Network Security Groups for `application` and `data` subnets
 - Private DNS zones and VNet links
 - Optional private endpoints to existing Azure services
@@ -26,6 +28,45 @@ This stack creates a private networking foundation plus private service deployme
 1. Copy `terraform.tfvars.example` to `terraform.tfvars`.
 2. Update required values:
    - `subscription_id`
+
+- `frontend_app_client_id`
+
+Commonly customized values:
+
+- `region`, `region_aifoundry`, `region_search`
+- `resource_group_name` (optional override)
+- subnet CIDR variables (`*_subnet_cidr`)
+- `tags`
+
+For GitHub Actions OIDC/federated access (recommended for private runner and standard CI/CD):
+
+1. Set `github_federated_principal_object_id` to your existing GitHub federated service principal object ID.
+2. Set `github_federated_principal_client_id` to the same principal client ID (app ID).
+3. Optionally set SQL Entra admin explicitly with `sql_azuread_admin_object_id` and `sql_azuread_admin_login_username`.
+
+If you use an Entra group for SQL admin (recommended), ensure the federated principal is a member of that group.
+
+Terraform grants this federated principal the required roles for this stack:
+
+- `Storage Blob Data Contributor` on the NL2SQL storage account
+- `Search Service Contributor` on AI Search
+- `SQL DB Contributor` on SQL server
+- `AcrPush` on Container Registry
+
+Terraform also grants the AI Search managed identity the required roles for indexer embedding pipeline:
+
+- `Storage Blob Data Reader` on storage
+- `Cognitive Services OpenAI User` on AI Foundry account
+
+For remote Terraform state in Azure Storage (recommended for multi-machine workflows):
+
+1. Copy `backend.hcl.example` to `backend.hcl`.
+2. Set `storage_account_name` in `backend.hcl`.
+3. Initialize with:
+
+```bash
+terraform init -reconfigure -backend-config=backend.hcl
+```
 
 Optionally add `private_endpoints` entries for existing resources.
 
@@ -48,9 +89,21 @@ This repo uses a two-phase deployment model for private data-plane work:
   - Configures ephemeral runners (`--ephemeral`) with label-based routing.
 - `.github/workflows/provision-private-data.yml`
   - Runs on the private self-hosted runner (`runs-on: [self-hosted, linux, x64, cadence-private]`).
+  - Uses the same GitHub OIDC federated principal via `azure/login` (no extra runtime managed identity required for data-plane workflow auth).
+  - Runs a variable presence audit and preflight role validation before mutating storage/search/sql resources.
   - Uploads NL2SQL data files to private blob storage.
   - Configures AI Search datasources, indexes, skillsets, and indexers via private data-plane calls.
   - Imports WideWorldImporters into private SQL.
+  - Grants SQL data access to the API user-assigned identity via `setup-sql-user.ps1`.
+
+### Workflow Variable Audit Output
+
+Both bootstrap and private data workflows print a presence-only variable audit step before execution.
+
+- Output format is `PRESENT [required|optional|mode] VARIABLE_NAME` or `MISSING [...] VARIABLE_NAME`.
+- Secrets and variable values are never printed.
+- For bootstrap, auth mode is still selected by workflow logic after the audit.
+- For private data provisioning, missing required variables fail fast in the validation step.
 
 ### Regular CI/CD
 
@@ -58,6 +111,13 @@ Regular CI/CD workflows continue to use GitHub-hosted runners unless private net
 Use the private self-hosted runner only for jobs that must reach private endpoints.
 
 ### Required GitHub Configuration
+
+`GH_RUNNER_PAT` is **not required** when GitHub App auth is configured.
+Bootstrap selects auth in this order:
+
+1. GitHub App mode when `GH_RUNNER_APP_ID`, `GH_RUNNER_INSTALLATION_ID`, and `GH_RUNNER_APP_PRIVATE_KEY` are set.
+2. PAT mode only when GitHub App credentials are not set and `GH_RUNNER_PAT` is available.
+3. Bootstrap fails fast if neither mode is fully configured.
 
 Repository variables:
 
@@ -69,19 +129,29 @@ Repository variables:
 - `AZURE_CONTAINER_APP_ENVIRONMENT`
 - `AZURE_STORAGE_ACCOUNT`
 - `AZURE_SQL_SERVER_NAME` (server name without `.database.windows.net`)
+- Optional: `AZURE_API_IDENTITY_NAME` (API user-assigned identity name; auto-discovery fallback is used when omitted)
 - `AZURE_SEARCH_SERVICE_NAME`
 - `AZURE_AI_FOUNDRY_ACCOUNT_NAME`
+- Optional: `TF_STATE_STORAGE_ACCOUNT` (used only when `run_terraform_init=true`)
 - Optional: `AZURE_SQL_DATABASE_NAME`
 - Optional: `AZURE_GH_RUNNER_IDENTITY_NAME`
 - Optional: `GH_RUNNER_REPO_OWNER`
 - Optional: `GH_RUNNER_REPO_NAME`
-- Preferred for GitHub App auth: `GH_RUNNER_APP_ID`
-- Preferred for GitHub App auth: `GH_RUNNER_INSTALLATION_ID`
+- Required for GitHub App auth: `GH_RUNNER_APP_ID`
+- Required for GitHub App auth: `GH_RUNNER_INSTALLATION_ID`
 
 Repository secrets:
 
-- Preferred: `GH_RUNNER_APP_PRIVATE_KEY` (GitHub App PEM private key)
-- Fallback only: `GH_RUNNER_PAT` (fine-grained PAT for runner registration and scaler polling)
+- Required for GitHub App auth: `GH_RUNNER_APP_PRIVATE_KEY` (GitHub App PEM private key)
+- Required only for PAT fallback: `GH_RUNNER_PAT` (fine-grained PAT for runner registration and scaler polling)
+
+Mode-specific minimum inputs for bootstrap:
+
+- GitHub App mode (recommended):
+  - Variables: `GH_RUNNER_APP_ID`, `GH_RUNNER_INSTALLATION_ID`
+  - Secrets: `GH_RUNNER_APP_PRIVATE_KEY`
+- PAT fallback mode:
+  - Secrets: `GH_RUNNER_PAT`
 
 `bootstrap-private-runner.yml` automatically prefers GitHub App auth when
 `GH_RUNNER_APP_ID`, `GH_RUNNER_INSTALLATION_ID`, and `GH_RUNNER_APP_PRIVATE_KEY`
@@ -108,6 +178,9 @@ Use this setup when possible. It provides tighter security and better API rate l
 1. Save the App ID as repo variable `GH_RUNNER_APP_ID`.
 
 1. Save the Installation ID as repo variable `GH_RUNNER_INSTALLATION_ID`.
+
+- UI method: open your app installation page and copy the numeric ID from the URL, for example `https://github.com/settings/installations/12345678`.
+- API method: `GET https://api.github.com/repos/<owner>/<repo>/installation` and use the `id` field from the response.
 
 1. Generate a private key in the GitHub App and store the PEM content as repo secret `GH_RUNNER_APP_PRIVATE_KEY`.
 
@@ -148,6 +221,89 @@ terraform validate
 terraform plan -out tfplan
 terraform apply tfplan
 ```
+
+### Populate Repository Variables From Terraform Outputs
+
+After provisioning, you can use Terraform outputs from this stack to populate GitHub repository variables.
+
+Suggested mapping:
+
+- `AZURE_RESOURCE_GROUP` <- output `resource_group_name`
+- `AZURE_LOCATION` <- output `azure_location`
+- `AZURE_CONTAINER_REGISTRY` <- output `container_registry_name`
+- `AZURE_CONTAINER_APP_ENVIRONMENT` <- output `container_app_environment_name`
+- `AZURE_CONTAINER_APP_NAME` <- output `container_app_name`
+- `NEXT_PUBLIC_API_URL` <- output `container_app_url`
+- `AZURE_STORAGE_ACCOUNT` <- output `storage_account_name`
+- `AZURE_SQL_SERVER_NAME` <- output `sql_server_name`
+- `AZURE_SQL_DATABASE_NAME` <- output `sql_database_name`
+- `AZURE_API_IDENTITY_NAME` <- output `container_app_identity_name`
+- `AZURE_SEARCH_SERVICE_NAME` <- output `search_service_name`
+- `AZURE_AI_FOUNDRY_ACCOUNT_NAME` <- output `ai_foundry_account_name`
+- `AZURE_SUBSCRIPTION_ID` <- output `azure_subscription_id`
+- `AZURE_TENANT_ID` <- output `azure_tenant_id`
+
+Note: `AZURE_CLIENT_ID`, `GH_RUNNER_APP_ID`, and `GH_RUNNER_INSTALLATION_ID` are identity/app registration values and are not Terraform resource outputs.
+
+Print helper command:
+
+```bash
+bash ./infra/scripts/print-github-vars-from-terraform.sh
+```
+
+This prints `KEY=value` lines for repository variables sourced from Terraform outputs, plus placeholders for values that must be set manually.
+
+To update repository variables directly via `gh` CLI (safe dry-run by default):
+
+```bash
+bash ./infra/scripts/update-github-vars-from-terraform.sh
+```
+
+Apply changes to the current repository:
+
+```bash
+bash ./infra/scripts/update-github-vars-from-terraform.sh --apply
+```
+
+Apply changes to a specific repository:
+
+```bash
+bash ./infra/scripts/update-github-vars-from-terraform.sh --repo <owner>/<repo> --apply
+```
+
+Prerequisites:
+
+- `gh auth login` has been completed.
+- Terraform is initialized in `infra/private-networking` (`terraform init`).
+- Manual variables remain required: `AZURE_CLIENT_ID`, `GH_RUNNER_APP_ID`, and `GH_RUNNER_INSTALLATION_ID`.
+
+### Non-Interactive Init for GitHub Runner / CI
+
+Use the helper script to avoid interactive prompts when running on a private runner:
+
+```bash
+cd infra/private-networking
+TF_STATE_STORAGE_ACCOUNT=<your_tf_state_storage_account> ./init-remote-state.sh
+```
+
+You can also pass the state account as an argument and include extra init flags:
+
+```bash
+./init-remote-state.sh <your_tf_state_storage_account> -migrate-state
+```
+
+For GitHub Actions, add a repo variable like `TF_STATE_STORAGE_ACCOUNT` and run:
+
+```bash
+terraform -chdir=infra/private-networking init -reconfigure \
+  -backend-config="resource_group_name=rg-terraform-state" \
+  -backend-config="storage_account_name=${TF_STATE_STORAGE_ACCOUNT}" \
+  -backend-config="container_name=tfstate" \
+  -backend-config="key=cadence-private-networking.terraform.tfstate" \
+  -backend-config="use_azuread_auth=true"
+```
+
+In `.github/workflows/provision-private-data.yml`, Terraform backend init is optional and controlled by workflow input `run_terraform_init`.
 
 ## Notes
 

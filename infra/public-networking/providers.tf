@@ -1,4 +1,11 @@
 terraform {
+  backend "azurerm" {
+    resource_group_name = "rg-terraform-state"
+    container_name      = "tfstate"
+    key                 = "cadence-public-networking.terraform.tfstate"
+    use_azuread_auth    = true
+  }
+
   required_version = ">= 1.0"
   required_providers {
     azurerm = {
@@ -30,7 +37,7 @@ provider "azurerm" {
       recover_soft_deleted_key_vaults = true
     }
   }
-  subscription_id = var.subscription_id
+  subscription_id     = var.subscription_id
   storage_use_azuread = true
 }
 

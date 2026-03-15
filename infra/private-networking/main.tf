@@ -85,6 +85,15 @@ resource "azurerm_subnet" "ai_agent_services" {
   resource_group_name  = azurerm_resource_group.private_rg.name
   virtual_network_name = azurerm_virtual_network.private_vnet.name
   address_prefixes     = [var.ai_agent_services_subnet_cidr]
+
+  delegation {
+    name = "Microsoft.App.environments"
+
+    service_delegation {
+      name    = "Microsoft.App/environments"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
+    }
+  }
 }
 
 resource "azurerm_subnet" "data" {
@@ -92,6 +101,18 @@ resource "azurerm_subnet" "data" {
   resource_group_name  = azurerm_resource_group.private_rg.name
   virtual_network_name = azurerm_virtual_network.private_vnet.name
   address_prefixes     = [var.data_subnet_cidr]
+}
+
+resource "time_sleep" "wait_for_network_ready" {
+  depends_on = [
+    azurerm_virtual_network.private_vnet,
+    azurerm_subnet.private_endpoints,
+    azurerm_subnet.application,
+    azurerm_subnet.container_apps,
+    azurerm_subnet.ai_agent_services,
+    azurerm_subnet.data,
+  ]
+  create_duration = "30s"
 }
 
 resource "azurerm_network_security_group" "application" {

@@ -28,33 +28,6 @@ STORAGE_RESOURCE_ID=$(az storage account show \
   --resource-group "$RESOURCE_GROUP" \
   --query id -o tsv)
 
-AI_FOUNDRY_ID=$(az cognitiveservices account show \
-  --name "$AI_FOUNDRY_ACCOUNT_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --query id -o tsv)
-
-SEARCH_PRINCIPAL_ID=$(az search service show \
-  --name "$SEARCH_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --query identity.principalId -o tsv)
-
-az role assignment create \
-  --role "Storage Blob Data Reader" \
-  --assignee-object-id "$SEARCH_PRINCIPAL_ID" \
-  --assignee-principal-type ServicePrincipal \
-  --scope "$STORAGE_RESOURCE_ID" \
-  --only-show-errors || true
-
-az role assignment create \
-  --role "Cognitive Services OpenAI User" \
-  --assignee-object-id "$SEARCH_PRINCIPAL_ID" \
-  --assignee-principal-type ServicePrincipal \
-  --scope "$AI_FOUNDRY_ID" \
-  --only-show-errors || true
-
-# Give RBAC assignments time to propagate before configuring data-plane resources.
-sleep 60
-
 TOKEN=$(az account get-access-token --resource https://search.azure.com --query accessToken -o tsv)
 
 put_json() {

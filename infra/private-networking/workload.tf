@@ -2,6 +2,27 @@
 # Observability Services
 #################################################################################
 
+locals {
+  github_federated_principal_object_id = var.github_federated_principal_object_id == null ? "" : trimspace(var.github_federated_principal_object_id)
+  github_federated_principal_client_id = var.github_federated_principal_client_id == null ? "" : trimspace(var.github_federated_principal_client_id)
+
+  sql_admin_object_id = trimspace(
+    coalesce(
+      var.sql_azuread_admin_object_id,
+      var.github_federated_principal_object_id,
+      data.azurerm_client_config.current.object_id
+    )
+  )
+
+  sql_admin_login_username = trimspace(
+    coalesce(
+      var.sql_azuread_admin_login_username,
+      var.github_federated_principal_client_id,
+      data.azurerm_client_config.current.client_id
+    )
+  )
+}
+
 module "log_analytics" {
   source                                             = "Azure/avm-res-operationalinsights-workspace/azurerm"
   name                                               = "${local.identifier}-law"
@@ -32,7 +53,7 @@ module "container_registry" {
   name                          = replace("${local.identifier}acr", "-", "")
   resource_group_name           = azurerm_resource_group.private_rg.name
   location                      = azurerm_resource_group.private_rg.location
-  sku                           = "Standard"
+  sku                           = "Premium"
   zone_redundancy_enabled       = false
   public_network_access_enabled = true
   admin_enabled                 = false
@@ -51,6 +72,8 @@ module "container_registry" {
       private_dns_zone_resource_ids = [azurerm_private_dns_zone.this["privatelink.azurecr.io"].id]
     }
   }
+
+  depends_on = [time_sleep.wait_for_network_ready]
 }
 
 
@@ -90,6 +113,8 @@ module "ai_storage" {
       principal_id               = data.azurerm_client_config.current.object_id
     }
   }
+
+  depends_on = [time_sleep.wait_for_network_ready]
 }
 
 resource "time_sleep" "wait_for_storage_rbac" {
@@ -98,7 +123,7 @@ resource "time_sleep" "wait_for_storage_rbac" {
 }
 
 resource "azurerm_storage_blob" "nl2sql_tables" {
-  for_each               = fileset("${path.module}/../data/tables", "**/*.json")
+  for_each               = var.enable_local_exec_provisioning ? fileset("${path.module}/../data/tables", "**/*.json") : toset([])
   name                   = "tables/${each.value}"
   storage_account_name   = module.ai_storage.name
   storage_container_name = "nl2sql"
@@ -110,7 +135,7 @@ resource "azurerm_storage_blob" "nl2sql_tables" {
 }
 
 resource "azurerm_storage_blob" "nl2sql_query_templates" {
-  for_each               = fileset("${path.module}/../data/query_templates", "*.json")
+  for_each               = var.enable_local_exec_provisioning ? fileset("${path.module}/../data/query_templates", "*.json") : toset([])
   name                   = "query_templates/${each.value}"
   storage_account_name   = module.ai_storage.name
   storage_container_name = "nl2sql"
@@ -192,8 +217,11 @@ module "ai_search" {
 
   private_endpoints = {
     search = {
-      subnet_resource_id            = azurerm_subnet.private_endpoints.id
-      private_dns_zone_resource_ids = [azurerm_private_dns_zone.this["privatelink.search.windows.net"].id]
+      name                            = "pe-${local.identifier}-search"
+      private_service_connection_name = "psc-${local.identifier}-search"
+      location                        = azurerm_resource_group.private_rg.location
+      subnet_resource_id              = azurerm_subnet.private_endpoints.id
+      private_dns_zone_resource_ids   = [azurerm_private_dns_zone.this["privatelink.search.windows.net"].id]
     }
   }
 
@@ -214,6 +242,20 @@ module "ai_search" {
       workspace_resource_id = module.log_analytics.resource_id
     }
   }
+
+  depends_on = [time_sleep.wait_for_network_ready]
+}
+
+resource "azurerm_role_assignment" "ai_search_storage_reader" {
+  scope                = module.ai_storage.resource_id
+  role_definition_name = "Storage Blob Data Reader"
+  principal_id         = module.ai_search.resource.identity[0].principal_id
+}
+
+resource "azurerm_role_assignment" "ai_search_openai_user" {
+  scope                = module.ai_foundry.ai_foundry_id
+  role_definition_name = "Cognitive Services OpenAI User"
+  principal_id         = module.ai_search.resource.identity[0].principal_id
 }
 
 
@@ -251,9 +293,9 @@ module "ai_foundry" {
 
   ai_projects = {
     cadence = {
-      name                       = "dataexplorer"
-      display_name               = "Data Exploration"
-      description                = "Data exploration agents and related resources"
+      name                       = "cadence"
+      display_name               = "Cadence"
+      description                = "Cadence agents and related resources"
       create_project_connections = true
       cosmos_db_connection = {
         existing_resource_id = module.ai_cosmosdb.resource_id
@@ -281,7 +323,8 @@ module "ai_foundry" {
 
   ai_search_definition = {
     byor = {
-      existing_resource_id = module.ai_search.resource_id
+      existing_resource_id       = module.ai_search.resource_id
+      enable_diagnostic_settings = false
     }
   }
 
@@ -458,8 +501,8 @@ module "sql_server" {
 
   azuread_administrator = {
     azuread_authentication_only = true
-    login_username              = data.azurerm_client_config.current.client_id
-    object_id                   = data.azurerm_client_config.current.object_id
+    login_username              = local.sql_admin_login_username
+    object_id                   = local.sql_admin_object_id
     tenant_id                   = data.azurerm_client_config.current.tenant_id
   }
 
@@ -480,6 +523,40 @@ module "sql_server" {
       private_dns_zone_resource_ids = [azurerm_private_dns_zone.this["privatelink.database.windows.net"].id]
     }
   }
+
+  depends_on = [time_sleep.wait_for_network_ready]
+}
+
+resource "azurerm_role_assignment" "github_federated_storage_blob_contributor" {
+  count = local.github_federated_principal_object_id != "" ? 1 : 0
+
+  scope                = module.ai_storage.resource_id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = local.github_federated_principal_object_id
+}
+
+resource "azurerm_role_assignment" "github_federated_search_contributor" {
+  count = local.github_federated_principal_object_id != "" ? 1 : 0
+
+  scope                = module.ai_search.resource_id
+  role_definition_name = "Search Service Contributor"
+  principal_id         = local.github_federated_principal_object_id
+}
+
+resource "azurerm_role_assignment" "github_federated_sql_db_contributor" {
+  count = local.github_federated_principal_object_id != "" ? 1 : 0
+
+  scope                = module.sql_server.resource_id
+  role_definition_name = "SQL DB Contributor"
+  principal_id         = local.github_federated_principal_object_id
+}
+
+resource "azurerm_role_assignment" "github_federated_acr_push" {
+  count = local.github_federated_principal_object_id != "" ? 1 : 0
+
+  scope                = module.container_registry.resource_id
+  role_definition_name = "AcrPush"
+  principal_id         = local.github_federated_principal_object_id
 }
 
 resource "null_resource" "import_wideworldimporters" {

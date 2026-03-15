@@ -127,11 +127,26 @@ Write-Host "  sqlpackage found: $sqlpackagePath" -ForegroundColor Green
 # Verify .NET 8 runtime is available (required by sqlpackage)
 if ($IsLinux -or $IsMacOS) {
     $dotnetRuntimes = dotnet --list-runtimes 2>$null
-    if ($dotnetRuntimes -and ($dotnetRuntimes -notmatch "Microsoft\.NETCore\.App 8\.")) {
+    $hasDotnet8Runtime = $dotnetRuntimes -and ($dotnetRuntimes -match "Microsoft\.NETCore\.App 8\.")
+    if (-not $hasDotnet8Runtime) {
         Write-Host "  .NET 8 runtime not found. sqlpackage requires it." -ForegroundColor Yellow
         if ($IsLinux) {
             Write-Host "  Installing dotnet-runtime-8.0..." -ForegroundColor Yellow
-            sudo apt-get update -qq && sudo apt-get install -y -qq dotnet-runtime-8.0
+            $hasSudo = $null -ne (Get-Command sudo -ErrorAction SilentlyContinue)
+            $isRoot = $env:USER -eq "root"
+
+            if ($hasSudo) {
+                sudo apt-get update -qq && sudo apt-get install -y -qq dotnet-runtime-8.0
+            }
+            elseif ($isRoot) {
+                apt-get update -qq && apt-get install -y -qq dotnet-runtime-8.0
+            }
+            else {
+                Write-Host "ERROR: dotnet-runtime-8.0 is missing and this environment cannot elevate privileges (no sudo, not running as root)." -ForegroundColor Red
+                Write-Host "Install it in the runner image or run this script in an environment with elevated package install permissions." -ForegroundColor Yellow
+                exit 1
+            }
+
             if ($LASTEXITCODE -ne 0) {
                 Write-Host "ERROR: Failed to install .NET 8 runtime." -ForegroundColor Red
                 Write-Host "Install manually: sudo apt-get install -y dotnet-runtime-8.0" -ForegroundColor Yellow

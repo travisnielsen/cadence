@@ -109,7 +109,9 @@ if (-not $accessToken) {
     exit 1
 }
 
-# Ensure SQL contained user for group and grant db_datareader
+# Ensure SQL contained user for group and grant db_datareader.
+# Also grant direct db_datareader to the API managed identity as a fallback,
+# since group claim resolution can intermittently fail for service principals.
 $sql = @"
 IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'$ReaderGroupName')
 BEGIN
@@ -127,7 +129,26 @@ BEGIN
     ALTER ROLE db_datareader ADD MEMBER [$ReaderGroupName];
 END;
 
-SELECT name, type_desc FROM sys.database_principals WHERE name = N'$ReaderGroupName';
+IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'$IdentityName')
+BEGIN
+    CREATE USER [$IdentityName] FROM EXTERNAL PROVIDER;
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.database_role_members drm
+    JOIN sys.database_principals r ON drm.role_principal_id = r.principal_id
+    JOIN sys.database_principals m ON drm.member_principal_id = m.principal_id
+    WHERE r.name = N'db_datareader' AND m.name = N'$IdentityName'
+)
+BEGIN
+    ALTER ROLE db_datareader ADD MEMBER [$IdentityName];
+END;
+
+SELECT name, type_desc
+FROM sys.database_principals
+WHERE name IN (N'$ReaderGroupName', N'$IdentityName')
+ORDER BY name;
 "@
 
 $result = $null
@@ -164,10 +185,10 @@ if (-not $result) {
 }
 
 if ($result) {
-    Write-Host "SQL user/group verified:" -ForegroundColor Yellow
+    Write-Host "SQL principals verified:" -ForegroundColor Yellow
     $result | ForEach-Object { Write-Host "  $($_.name) ($($_.type_desc))" }
 }
 
 Write-Host ""
 Write-Host "=== SQL Reader Group Setup Complete ===" -ForegroundColor Cyan
-Write-Host "Managed identity '$IdentityName' has read access via Entra group '$ReaderGroupName'." -ForegroundColor Green
+Write-Host "Managed identity '$IdentityName' has read access via Entra group '$ReaderGroupName' and direct DB user fallback." -ForegroundColor Green

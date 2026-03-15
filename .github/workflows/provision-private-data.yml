@@ -1,0 +1,229 @@
+name: Provision Private Data Plane (One-Time)
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_reimport_sql:
+        description: Recreate SQL database from BACPAC
+        required: false
+        type: boolean
+        default: false
+      run_terraform_init:
+        description: Run non-interactive Terraform init for private networking state backend
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  provision:
+    name: Seed Storage and SQL from Private Runner
+    runs-on: [self-hosted, linux, x64, cadence-private]
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_STORAGE_ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT }}
+      AZURE_CONTAINER_REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+      TF_STATE_STORAGE_ACCOUNT: ${{ vars.TF_STATE_STORAGE_ACCOUNT }}
+      AZURE_API_IDENTITY_NAME: ${{ vars.AZURE_API_IDENTITY_NAME }}
+      AZURE_SQL_SERVER_NAME: ${{ vars.AZURE_SQL_SERVER_NAME }}
+      AZURE_SQL_DATABASE_NAME: ${{ vars.AZURE_SQL_DATABASE_NAME }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      AZURE_SEARCH_SERVICE_NAME: ${{ vars.AZURE_SEARCH_SERVICE_NAME }}
+      AZURE_AI_FOUNDRY_ACCOUNT_NAME: ${{ vars.AZURE_AI_FOUNDRY_ACCOUNT_NAME }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2.3.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate required variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          required_vars=(AZURE_CLIENT_ID AZURE_STORAGE_ACCOUNT AZURE_SQL_SERVER_NAME AZURE_RESOURCE_GROUP AZURE_SEARCH_SERVICE_NAME AZURE_AI_FOUNDRY_ACCOUNT_NAME)
+          for var_name in "${required_vars[@]}"; do
+            value="${!var_name:-}"
+            if [[ -z "$value" ]]; then
+              echo "Missing required repository variable: $var_name"
+              exit 1
+            fi
+          done
+
+      - name: Variable audit (presence only)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Repository variable presence audit (values not shown):"
+
+          check_present() {
+            local name="$1"
+            local value="$2"
+            local required="$3"
+
+            if [[ -n "$value" ]]; then
+              echo "PRESENT [$required] $name"
+            else
+              echo "MISSING [$required] $name"
+            fi
+          }
+
+          check_present "AZURE_CLIENT_ID" "${AZURE_CLIENT_ID:-}" "required"
+          check_present "AZURE_TENANT_ID" "${{ vars.AZURE_TENANT_ID }}" "required"
+          check_present "AZURE_SUBSCRIPTION_ID" "${{ vars.AZURE_SUBSCRIPTION_ID }}" "required"
+          check_present "AZURE_RESOURCE_GROUP" "${AZURE_RESOURCE_GROUP:-}" "required"
+          check_present "AZURE_STORAGE_ACCOUNT" "${AZURE_STORAGE_ACCOUNT:-}" "required"
+          check_present "AZURE_SQL_SERVER_NAME" "${AZURE_SQL_SERVER_NAME:-}" "required"
+          check_present "AZURE_SEARCH_SERVICE_NAME" "${AZURE_SEARCH_SERVICE_NAME:-}" "required"
+          check_present "AZURE_AI_FOUNDRY_ACCOUNT_NAME" "${AZURE_AI_FOUNDRY_ACCOUNT_NAME:-}" "required"
+          check_present "AZURE_CONTAINER_REGISTRY" "${AZURE_CONTAINER_REGISTRY:-}" "optional"
+          check_present "AZURE_SQL_DATABASE_NAME" "${AZURE_SQL_DATABASE_NAME:-}" "optional"
+          check_present "AZURE_API_IDENTITY_NAME" "${AZURE_API_IDENTITY_NAME:-}" "optional"
+          check_present "TF_STATE_STORAGE_ACCOUNT" "${TF_STATE_STORAGE_ACCOUNT:-}" "optional"
+
+      - name: Preflight federated principal access
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ./infra/scripts/preflight-private-data-access.sh \
+            "$AZURE_CLIENT_ID" \
+            "$AZURE_RESOURCE_GROUP" \
+            "$AZURE_STORAGE_ACCOUNT" \
+            "$AZURE_SEARCH_SERVICE_NAME" \
+            "$AZURE_SQL_SERVER_NAME" \
+            "${AZURE_CONTAINER_REGISTRY:-}"
+
+      - name: Validate storage data-plane access
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Checking data-plane access to nl2sql container in $AZURE_STORAGE_ACCOUNT"
+          az storage container show \
+            --account-name "$AZURE_STORAGE_ACCOUNT" \
+            --name nl2sql \
+            --auth-mode login >/dev/null
+
+      - name: Validate tfstate access for optional Terraform init
+        if: ${{ github.event.inputs.run_terraform_init == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          STATE_ACCOUNT="$TF_STATE_STORAGE_ACCOUNT"
+          if [[ -z "$STATE_ACCOUNT" ]]; then
+            STATE_ACCOUNT="$AZURE_STORAGE_ACCOUNT"
+          fi
+
+          echo "Checking data-plane access to tfstate container in $STATE_ACCOUNT"
+          az storage container show \
+            --account-name "$STATE_ACCOUNT" \
+            --name tfstate \
+            --auth-mode login >/dev/null
+
+      - name: Optional Terraform init for private networking backend
+        if: ${{ github.event.inputs.run_terraform_init == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          STATE_ACCOUNT="$TF_STATE_STORAGE_ACCOUNT"
+          if [[ -z "$STATE_ACCOUNT" ]]; then
+            STATE_ACCOUNT="$AZURE_STORAGE_ACCOUNT"
+          fi
+
+          ./infra/private-networking/init-remote-state.sh "$STATE_ACCOUNT"
+
+      - name: Upload NL2SQL table metadata to private storage
+        shell: bash
+        run: |
+          az storage blob upload-batch \
+            --account-name $AZURE_STORAGE_ACCOUNT \
+            --destination nl2sql \
+            --destination-path tables \
+            --source infra/data/tables \
+            --overwrite \
+            --auth-mode login
+
+      - name: Upload NL2SQL query templates to private storage
+        shell: bash
+        run: |
+          az storage blob upload-batch \
+            --account-name $AZURE_STORAGE_ACCOUNT \
+            --destination nl2sql \
+            --destination-path query_templates \
+            --source infra/data/query_templates \
+            --overwrite \
+            --auth-mode login
+
+      - name: Configure AI Search data-plane resources
+        shell: bash
+        run: |
+          bash ./infra/scripts/configure-ai-search.sh \
+            "$AZURE_SEARCH_SERVICE_NAME" \
+            "$AZURE_RESOURCE_GROUP" \
+            "$AZURE_STORAGE_ACCOUNT" \
+            "$AZURE_AI_FOUNDRY_ACCOUNT_NAME"
+
+      - name: Import WideWorldImporters to private SQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB_NAME="$AZURE_SQL_DATABASE_NAME"
+          if [[ -z "$DB_NAME" ]]; then
+            DB_NAME="WideWorldImportersStd"
+          fi
+
+          FORCE_FLAG=""
+          if [[ "${{ github.event.inputs.force_reimport_sql }}" == "true" ]]; then
+            FORCE_FLAG="-Force"
+          fi
+
+          pwsh ./infra/scripts/import-wideworldimporters.ps1 \
+            -SqlServerName "$AZURE_SQL_SERVER_NAME" \
+            -ResourceGroup "$AZURE_RESOURCE_GROUP" \
+            -DatabaseName "$DB_NAME" \
+            $FORCE_FLAG
+
+      - name: Grant API identity SQL data access
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          DB_NAME="$AZURE_SQL_DATABASE_NAME"
+          if [[ -z "$DB_NAME" ]]; then
+            DB_NAME="WideWorldImportersStd"
+          fi
+
+          API_IDENTITY_NAME="$AZURE_API_IDENTITY_NAME"
+
+          if [[ -z "$API_IDENTITY_NAME" ]]; then
+            mapfile -t CANDIDATES < <(az identity list \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --query "[?ends_with(name, '-api-identity')].name" \
+              -o tsv)
+
+            if [[ "${#CANDIDATES[@]}" -eq 1 ]]; then
+              API_IDENTITY_NAME="${CANDIDATES[0]}"
+              echo "Discovered API identity: $API_IDENTITY_NAME"
+            else
+              echo "Unable to uniquely determine API identity name in resource group $AZURE_RESOURCE_GROUP."
+              echo "Set repository variable AZURE_API_IDENTITY_NAME to the user-assigned identity name."
+              echo "Discovered candidates: ${CANDIDATES[*]:-<none>}"
+              exit 1
+            fi
+          fi
+
+          pwsh ./infra/scripts/setup-sql-user.ps1 \
+            -SqlServerName "$AZURE_SQL_SERVER_NAME" \
+            -DatabaseName "$DB_NAME" \
+            -IdentityName "$API_IDENTITY_NAME"

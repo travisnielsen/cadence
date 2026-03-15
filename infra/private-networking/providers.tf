@@ -2,7 +2,7 @@ terraform {
   backend "azurerm" {
     resource_group_name = "rg-terraform-state"
     container_name      = "tfstate"
-    key                 = "cadence-public-networking.terraform.tfstate"
+    key                 = "cadence-private-networking.terraform.tfstate"
     use_azuread_auth    = true
   }
 
@@ -20,9 +20,17 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.0"
     }
-    external = {
-      source  = "hashicorp/external"
-      version = "~> 2.0"
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.12"
+    }
+    http = {
+      source  = "hashicorp/http"
+      version = "~> 3.0"
+    }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.0"
     }
   }
 }
@@ -37,6 +45,7 @@ provider "azurerm" {
       recover_soft_deleted_key_vaults = true
     }
   }
+
   subscription_id     = var.subscription_id
   storage_use_azuread = true
 }

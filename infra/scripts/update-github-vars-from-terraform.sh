@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PRIVATE_NET_DIR="$(cd -- "$SCRIPT_DIR/../private-networking" && pwd)"
+
+APPLY_MODE=false
+REPO=""
+
+usage() {
+  cat <<'EOF'
+Usage: update-github-vars-from-terraform.sh [--apply] [--repo owner/name]
+
+Options:
+  --apply            Actually write repository variables via gh CLI.
+                     Default is dry-run (print what would change).
+  --repo owner/name  Target repository. Defaults to the current gh repo.
+  -h, --help         Show this help.
+
+Reads Terraform outputs from infra/private-networking and maps them to GitHub
+repository variables.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --apply)
+      APPLY_MODE=true
+      shift
+      ;;
+    --repo)
+      REPO="${2:-}"
+      if [[ -z "$REPO" ]]; then
+        echo "--repo requires a value like owner/name"
+        exit 1
+      fi
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [[ ! -f "$PRIVATE_NET_DIR/outputs.tf" ]]; then
+  echo "Could not find private-networking Terraform directory: $PRIVATE_NET_DIR"
+  exit 1
+fi
+
+if ! command -v terraform >/dev/null 2>&1; then
+  echo "terraform is required but was not found in PATH"
+  exit 1
+fi
+
+if ! command -v gh >/dev/null 2>&1; then
+  echo "gh CLI is required but was not found in PATH"
+  exit 1
+fi
+
+if [[ ! -d "$PRIVATE_NET_DIR/.terraform" ]]; then
+  echo "Terraform is not initialized in $PRIVATE_NET_DIR"
+  echo "Run: cd infra/private-networking && terraform init"
+  exit 1
+fi
+
+if [[ -z "$REPO" ]]; then
+  REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)"
+  if [[ -z "$REPO" ]]; then
+    echo "Could not determine repository from gh CLI. Use --repo owner/name."
+    exit 1
+  fi
+fi
+
+if ! gh auth status >/dev/null 2>&1; then
+  echo "gh CLI is not authenticated. Run: gh auth login"
+  exit 1
+fi
+
+OUTPUTS_JSON="$(terraform -chdir="$PRIVATE_NET_DIR" output -json 2>/dev/null || true)"
+if [[ -z "$OUTPUTS_JSON" ]]; then
+  OUTPUTS_JSON="{}"
+fi
+export OUTPUTS_JSON
+
+read_output() {
+  local output_name="$1"
+  python - "$output_name" <<'PY'
+import json
+import os
+import sys
+
+name = sys.argv[1]
+raw = os.environ.get("OUTPUTS_JSON", "{}")
+
+try:
+    data = json.loads(raw)
+except Exception:
+    data = {}
+
+entry = data.get(name)
+if not entry:
+    print("")
+    raise SystemExit(0)
+
+value = entry.get("value")
+if value is None:
+    print("")
+elif isinstance(value, str):
+    print(value)
+else:
+    print(json.dumps(value, separators=(",", ":"), ensure_ascii=True))
+PY
+}
+
+set_repo_var() {
+  local name="$1"
+  local value="$2"
+
+  if [[ "$APPLY_MODE" == true ]]; then
+    gh variable set "$name" --repo "$REPO" --body "$value"
+    echo "UPDATED $name"
+  else
+    echo "DRY-RUN $name=$value"
+  fi
+}
+
+map_and_set() {
+  local var_name="$1"
+  local output_name="$2"
+  local value
+
+  value="$(read_output "$output_name")"
+  if [[ -z "$value" ]]; then
+    echo "SKIP $var_name (missing terraform output: $output_name)"
+    return 0
+  fi
+
+  set_repo_var "$var_name" "$value"
+}
+
+echo "Target repository: $REPO"
+if [[ "$APPLY_MODE" == true ]]; then
+  echo "Mode: APPLY"
+else
+  echo "Mode: DRY-RUN (use --apply to write variables)"
+fi
+
+echo
+map_and_set "AZURE_RESOURCE_GROUP" "resource_group_name"
+map_and_set "AZURE_LOCATION" "azure_location"
+map_and_set "AZURE_CONTAINER_REGISTRY" "container_registry_name"
+map_and_set "AZURE_CONTAINER_APP_ENVIRONMENT" "container_app_environment_name"
+map_and_set "AZURE_CONTAINER_APP_NAME" "container_app_name"
+map_and_set "NEXT_PUBLIC_API_URL" "container_app_url"
+map_and_set "AZURE_STORAGE_ACCOUNT" "storage_account_name"
+map_and_set "AZURE_SQL_SERVER_NAME" "sql_server_name"
+map_and_set "AZURE_SQL_DATABASE_NAME" "sql_database_name"
+map_and_set "AZURE_API_IDENTITY_NAME" "container_app_identity_name"
+map_and_set "AZURE_SEARCH_SERVICE_NAME" "search_service_name"
+map_and_set "AZURE_AI_FOUNDRY_ACCOUNT_NAME" "ai_foundry_account_name"
+map_and_set "AZURE_SUBSCRIPTION_ID" "azure_subscription_id"
+map_and_set "AZURE_TENANT_ID" "azure_tenant_id"
+
+echo
+echo "Manual variables not managed by this script:"
+echo "- AZURE_CLIENT_ID"
+echo "- GH_RUNNER_APP_ID"
+echo "- GH_RUNNER_INSTALLATION_ID"
+echo "- TF_STATE_STORAGE_ACCOUNT (optional)"
+echo "- AZURE_GH_RUNNER_IDENTITY_NAME (optional)"
+echo "- GH_RUNNER_REPO_OWNER (optional)"
+echo "- GH_RUNNER_REPO_NAME (optional)"

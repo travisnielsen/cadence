@@ -42,6 +42,16 @@ jobs:
             --resource-group "${{ env.RESOURCE_GROUP }}" \
             --public-network-enabled true
 
+          for i in {1..12}; do
+            state=$(az acr show --name "${{ env.REGISTRY }}" --query publicNetworkAccess -o tsv)
+            if [ "$state" = "Enabled" ]; then
+              echo "ACR public network access is enabled"
+              break
+            fi
+            echo "Waiting for ACR public access propagation (attempt $i)..."
+            sleep 5
+          done
+
       - name: Build and push image using ACR Tasks
         shell: bash
         run: |

@@ -90,10 +90,7 @@ jobs:
             echo "deployment_token=$SWA_TOKEN" >> "$GITHUB_OUTPUT"
 
       - name: Deploy to Azure Static Web Apps
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ steps.swa-token.outputs.deployment_token }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: upload
-          app_location: src/frontend/out
-          skip_app_build: true
+        run: |
+          pnpm dlx @azure/static-web-apps-cli@2.0.2 deploy src/frontend/out \
+            --deployment-token "${{ steps.swa-token.outputs.deployment_token }}" \
+            --env production

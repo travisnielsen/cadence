@@ -63,7 +63,7 @@ cat >"$tmpdir/indexer_tables.json" <<JSON
 JSON
 
 cat >"$tmpdir/indexer_templates.json" <<JSON
-{"name":"indexer-query-templates","dataSourceName":"agentic-query-templates","skillsetName":"query-template-embed-skill","targetIndexName":"query_templates","parameters":{"configuration":{"dataToExtract":"contentAndMetadata","parsingMode":"json"}},"fieldMappings":[],"outputFieldMappings":[{"sourceFieldName":"/document/content_embeddings","targetFieldName":"content_vector"}]}
+{"name":"indexer-query-templates","dataSourceName":"agentic-query-templates","skillsetName":"query-template-embed-skill","targetIndexName":"query_templates","parameters":{"configuration":{"dataToExtract":"contentAndMetadata","parsingMode":"json","excludedFileNameExtensions":".sql"}},"fieldMappings":[],"outputFieldMappings":[{"sourceFieldName":"/document/content_embeddings","targetFieldName":"content_vector"}]}
 JSON
 
 put_json "datasources/agentic-tables" "$tmpdir/ds_tables.json"

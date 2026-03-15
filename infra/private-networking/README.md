@@ -19,7 +19,7 @@ This stack creates a private networking foundation plus private service deployme
   - Storage Account (NL2SQL blobs)
   - Cosmos DB
   - AI Search
-  - AI Foundry (private/standard mode with agent subnet injection)
+  - AI Foundry (private endpoints enabled with public access also enabled)
   - SQL Server + database
   - Container Apps environment and API app (VNet injected)
 
@@ -46,6 +46,35 @@ For GitHub Actions OIDC/federated access (recommended for private runner and sta
 
 If you use an Entra group for SQL admin (recommended), ensure the federated principal is a member of that group.
 
+### SQL Entra Admin Group Prerequisite
+
+Before running `terraform apply`, create (or verify) an Entra group to act as the SQL
+Entra administrator and include both:
+
+- Your human admin user account
+- The GitHub federated service principal used by workflows
+
+Use the helper script:
+
+```bash
+bash ./infra/scripts/ensure-sql-admin-group.sh
+```
+
+The script is idempotent and prints the exact values to set in
+`infra/private-networking/terraform.tfvars`:
+
+- `sql_azuread_admin_object_id`
+- `sql_azuread_admin_login_username`
+
+You can also pass explicit values:
+
+```bash
+bash ./infra/scripts/ensure-sql-admin-group.sh \
+  cadence-sql-admins \
+  <your-user-object-id> \
+  <github-federated-principal-object-id-or-app-id>
+```
+
 Terraform grants this federated principal the required roles for this stack:
 
 - `Storage Blob Data Contributor` on the NL2SQL storage account
@@ -57,6 +86,31 @@ Terraform also grants the AI Search managed identity the required roles for inde
 
 - `Storage Blob Data Reader` on storage
 - `Cognitive Services OpenAI User` on AI Foundry account
+
+AI Search is configured with controlled public access for operations/troubleshooting:
+
+- `network_rule_bypass_option = "AzureServices"` (trusted Azure services)
+- Public allowlist includes the deployer's current public IP address at apply time (`/32`)
+
+This stack creates an AI Search Shared Private Link to Storage Blob for indexer
+document ingestion when the storage account is private-only
+(`public_network_access_enabled = false`).
+
+Important limitation: in this current Search service environment, shared private
+links support only storage/sql/key vault target group IDs (`blob`, `table`, `dfs`,
+`file`, `Sql`, `sqlServer`, `vault`). A shared private link from Search to
+AI Foundry/OpenAI is not currently supported here.
+
+If embedding skills call an OpenAI endpoint with public access disabled, indexer
+skill execution can fail with 403. In that case, use one of these options:
+
+- Allow trusted/public network path for the OpenAI endpoint used by Search skills.
+- Precompute embeddings outside Search indexers and push vectors directly.
+
+Note: shared private link creation can still require target-side approval depending on the
+resource provider and policy in your tenant/subscription. After `terraform apply`, verify
+the link status from Terraform outputs and approve any pending connection on the Storage
+account private endpoint connections blade if required.
 
 For remote Terraform state in Azure Storage (recommended for multi-machine workflows):
 
@@ -94,7 +148,7 @@ This repo uses a two-phase deployment model for private data-plane work:
   - Uploads NL2SQL data files to private blob storage.
   - Configures AI Search datasources, indexes, skillsets, and indexers via private data-plane calls.
   - Imports WideWorldImporters into private SQL.
-  - Grants SQL data access to the API user-assigned identity via `setup-sql-user.ps1`.
+  - Ensures SQL read access via Entra group for the API user-assigned identity via `setup-sql-reader-group.ps1`.
 
 ### Workflow Variable Audit Output
 
@@ -135,6 +189,7 @@ Repository variables:
 - `AZURE_STORAGE_ACCOUNT`
 - `AZURE_SQL_SERVER_NAME` (server name without `.database.windows.net`)
 - Optional: `AZURE_API_IDENTITY_NAME` (API user-assigned identity name; auto-discovery fallback is used when omitted)
+- Optional: `AZURE_SQL_READER_GROUP_NAME` (defaults to `cadence-sql-readers`)
 - `AZURE_SEARCH_SERVICE_NAME`
 - `AZURE_AI_FOUNDRY_ACCOUNT_NAME`
 - Optional: `TF_STATE_STORAGE_ACCOUNT` (used only when `run_terraform_init=true`)

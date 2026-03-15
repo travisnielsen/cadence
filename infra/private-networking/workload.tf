@@ -24,6 +24,12 @@ locals {
       data.azurerm_client_config.current.client_id
     )
   )
+
+  deployer_public_ip_cidr = "${trimspace(data.http.deployer_public_ip.response_body)}/32"
+}
+
+data "http" "deployer_public_ip" {
+  url = "https://api.ipify.org"
 }
 
 data "azuread_service_principal" "github_federated" {
@@ -232,7 +238,9 @@ module "ai_search" {
   resource_group_name           = azurerm_resource_group.private_rg.name
   location                      = var.region_search
   sku                           = "basic"
-  public_network_access_enabled = false
+  public_network_access_enabled = true
+  network_rule_bypass_option    = "AzureServices"
+  allowed_ips                   = [local.deployer_public_ip_cidr]
   local_authentication_enabled  = true
   authentication_failure_mode   = "http401WithBearerChallenge"
   tags                          = local.tags
@@ -276,6 +284,20 @@ resource "azurerm_role_assignment" "ai_search_storage_reader" {
   scope                = module.ai_storage.resource_id
   role_definition_name = "Storage Blob Data Reader"
   principal_id         = module.ai_search.resource.identity[0].principal_id
+}
+
+resource "azurerm_search_shared_private_link_service" "ai_search_storage_blob" {
+  name               = "storage-blob"
+  search_service_id  = module.ai_search.resource_id
+  target_resource_id = module.ai_storage.resource_id
+  subresource_name   = "blob"
+  request_message    = "Allow AI Search indexers to read NL2SQL blobs over private link."
+
+  depends_on = [
+    module.ai_search,
+    module.ai_storage,
+    azurerm_role_assignment.ai_search_storage_reader,
+  ]
 }
 
 resource "azurerm_role_assignment" "ai_search_openai_user" {
@@ -359,6 +381,19 @@ module "ai_foundry" {
     module.ai_cosmosdb,
     module.ai_search
   ]
+}
+
+# Keep Foundry private endpoints while allowing public access for portal/tooling.
+resource "azapi_update_resource" "ai_foundry_public_network_access" {
+  type        = "Microsoft.CognitiveServices/accounts@2025-10-01-preview"
+  resource_id = module.ai_foundry.ai_foundry_id
+  body = {
+    properties = {
+      publicNetworkAccess = "Enabled"
+    }
+  }
+
+  depends_on = [module.ai_foundry]
 }
 
 resource "azurerm_cosmosdb_sql_role_assignment" "foundry_project" {

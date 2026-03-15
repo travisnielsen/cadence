@@ -100,6 +100,16 @@ output "search_service_name" {
   value       = module.ai_search.resource.name
 }
 
+output "search_storage_shared_private_link_name" {
+  description = "AI Search shared private link name targeting Storage Blob"
+  value       = azurerm_search_shared_private_link_service.ai_search_storage_blob.name
+}
+
+output "search_storage_shared_private_link_status" {
+  description = "Provisioning status of AI Search shared private link targeting Storage Blob"
+  value       = azurerm_search_shared_private_link_service.ai_search_storage_blob.status
+}
+
 output "ai_foundry_account_name" {
   description = "AI Foundry account name"
   value       = element(reverse(split("/", module.ai_foundry.ai_foundry_id)), 0)

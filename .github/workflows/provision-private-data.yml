@@ -33,6 +33,7 @@ jobs:
       AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
       AZURE_SEARCH_SERVICE_NAME: ${{ vars.AZURE_SEARCH_SERVICE_NAME }}
       AZURE_AI_FOUNDRY_ACCOUNT_NAME: ${{ vars.AZURE_AI_FOUNDRY_ACCOUNT_NAME }}
+      AZURE_SQL_READER_GROUP_NAME: ${{ vars.AZURE_SQL_READER_GROUP_NAME }}
 
     steps:
       - name: Checkout code
@@ -88,6 +89,7 @@ jobs:
           check_present "AZURE_CONTAINER_REGISTRY" "${AZURE_CONTAINER_REGISTRY:-}" "optional"
           check_present "AZURE_SQL_DATABASE_NAME" "${AZURE_SQL_DATABASE_NAME:-}" "optional"
           check_present "AZURE_API_IDENTITY_NAME" "${AZURE_API_IDENTITY_NAME:-}" "optional"
+          check_present "AZURE_SQL_READER_GROUP_NAME" "${AZURE_SQL_READER_GROUP_NAME:-}" "optional"
           check_present "TF_STATE_STORAGE_ACCOUNT" "${TF_STATE_STORAGE_ACCOUNT:-}" "optional"
 
       - name: Preflight federated principal access
@@ -174,6 +176,29 @@ jobs:
             "$AZURE_STORAGE_ACCOUNT" \
             "$AZURE_AI_FOUNDRY_ACCOUNT_NAME"
 
+      - name: Preflight SQL connectivity for import
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          if (-not (Get-Module -ListAvailable -Name SqlServer)) {
+            Install-Module -Name SqlServer -Scope CurrentUser -Force -AllowClobber
+          }
+          Import-Module SqlServer
+
+          $token = az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv
+          if (-not $token) {
+            throw "Failed to acquire access token for Azure SQL"
+          }
+
+          Invoke-Sqlcmd `
+            -ServerInstance "$env:AZURE_SQL_SERVER_NAME.database.windows.net" `
+            -Database "master" `
+            -AccessToken $token `
+            -Query "SELECT 1 AS connectivity_ok" `
+            -Encrypt Mandatory `
+            -TrustServerCertificate:$false | Out-Null
+
       - name: Import WideWorldImporters to private SQL
         shell: bash
         run: |
@@ -194,7 +219,43 @@ jobs:
             -DatabaseName "$DB_NAME" \
             $FORCE_FLAG
 
-      - name: Grant API identity SQL data access
+      - name: Validate SQL seed completed
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          if (-not (Get-Module -ListAvailable -Name SqlServer)) {
+            Install-Module -Name SqlServer -Scope CurrentUser -Force -AllowClobber
+          }
+          Import-Module SqlServer
+
+          $dbName = if ([string]::IsNullOrWhiteSpace("$env:AZURE_SQL_DATABASE_NAME")) {
+            "WideWorldImportersStd"
+          } else {
+            "$env:AZURE_SQL_DATABASE_NAME"
+          }
+
+          $token = az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv
+          if (-not $token) {
+            throw "Failed to acquire access token for Azure SQL"
+          }
+
+          $result = Invoke-Sqlcmd `
+            -ServerInstance "$env:AZURE_SQL_SERVER_NAME.database.windows.net" `
+            -Database $dbName `
+            -AccessToken $token `
+            -Query "SELECT COUNT(*) AS table_count FROM sys.tables WHERE is_ms_shipped = 0" `
+            -Encrypt Mandatory `
+            -TrustServerCertificate:$false
+
+          $tableCount = [int]$result.table_count
+          Write-Host "Detected user table count: $tableCount"
+
+          if ($tableCount -lt 40) {
+            throw "WWI seed validation failed (table_count=$tableCount). Re-run with force_reimport_sql=true and verify SQL network access from the runner."
+          }
+
+      - name: Grant API identity SQL read access via Entra group
         shell: bash
         run: |
           set -euo pipefail
@@ -205,6 +266,10 @@ jobs:
           fi
 
           API_IDENTITY_NAME="$AZURE_API_IDENTITY_NAME"
+          READER_GROUP_NAME="$AZURE_SQL_READER_GROUP_NAME"
+          if [[ -z "$READER_GROUP_NAME" ]]; then
+            READER_GROUP_NAME="cadence-sql-readers"
+          fi
 
           if [[ -z "$API_IDENTITY_NAME" ]]; then
             mapfile -t CANDIDATES < <(az identity list \
@@ -223,7 +288,9 @@ jobs:
             fi
           fi
 
-          pwsh ./infra/scripts/setup-sql-user.ps1 \
+          pwsh ./infra/scripts/setup-sql-reader-group.ps1 \
             -SqlServerName "$AZURE_SQL_SERVER_NAME" \
             -DatabaseName "$DB_NAME" \
-            -IdentityName "$API_IDENTITY_NAME"
+            -ResourceGroup "$AZURE_RESOURCE_GROUP" \
+            -IdentityName "$API_IDENTITY_NAME" \
+            -ReaderGroupName "$READER_GROUP_NAME"

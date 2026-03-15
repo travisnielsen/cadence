@@ -1,6 +1,6 @@
 FROM ubuntu:22.04
 
-ARG RUNNER_VERSION=2.327.1
+ARG RUNNER_VERSION=2.332.0
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \

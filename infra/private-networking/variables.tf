@@ -29,7 +29,7 @@ variable "frontend_app_client_id" {
 variable "github_federated_principal_object_id" {
   type        = string
   default     = null
-  description = "Optional object ID of the GitHub OIDC federated service principal used by CI/CD and private runner workflows. When set, Terraform grants required data-plane and CI roles to this principal."
+  description = "Optional object ID of the GitHub OIDC federated service principal used by CI/CD and private runner workflows. This must be the Enterprise Application (service principal) object ID, not the App Registration object ID."
 }
 
 variable "github_federated_principal_client_id" {

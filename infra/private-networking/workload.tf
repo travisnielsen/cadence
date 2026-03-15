@@ -6,6 +6,9 @@ locals {
   github_federated_principal_object_id = var.github_federated_principal_object_id == null ? "" : trimspace(var.github_federated_principal_object_id)
   github_federated_principal_client_id = var.github_federated_principal_client_id == null ? "" : trimspace(var.github_federated_principal_client_id)
 
+  # RBAC requires a service principal object ID. Prefer resolving from client ID when provided.
+  github_federated_rbac_principal_object_id = local.github_federated_principal_client_id != "" ? data.azuread_service_principal.github_federated[0].object_id : local.github_federated_principal_object_id
+
   sql_admin_object_id = trimspace(
     coalesce(
       var.sql_azuread_admin_object_id,
@@ -21,6 +24,12 @@ locals {
       data.azurerm_client_config.current.client_id
     )
   )
+}
+
+data "azuread_service_principal" "github_federated" {
+  count = local.github_federated_principal_client_id != "" ? 1 : 0
+
+  client_id = local.github_federated_principal_client_id
 }
 
 module "log_analytics" {
@@ -528,35 +537,51 @@ module "sql_server" {
 }
 
 resource "azurerm_role_assignment" "github_federated_storage_blob_contributor" {
-  count = local.github_federated_principal_object_id != "" ? 1 : 0
+  count = local.github_federated_rbac_principal_object_id != "" ? 1 : 0
 
   scope                = module.ai_storage.resource_id
   role_definition_name = "Storage Blob Data Contributor"
-  principal_id         = local.github_federated_principal_object_id
+  principal_id         = local.github_federated_rbac_principal_object_id
 }
 
 resource "azurerm_role_assignment" "github_federated_search_contributor" {
-  count = local.github_federated_principal_object_id != "" ? 1 : 0
+  count = local.github_federated_rbac_principal_object_id != "" ? 1 : 0
 
   scope                = module.ai_search.resource_id
   role_definition_name = "Search Service Contributor"
-  principal_id         = local.github_federated_principal_object_id
+  principal_id         = local.github_federated_rbac_principal_object_id
 }
 
 resource "azurerm_role_assignment" "github_federated_sql_db_contributor" {
-  count = local.github_federated_principal_object_id != "" ? 1 : 0
+  count = local.github_federated_rbac_principal_object_id != "" ? 1 : 0
 
   scope                = module.sql_server.resource_id
   role_definition_name = "SQL DB Contributor"
-  principal_id         = local.github_federated_principal_object_id
+  principal_id         = local.github_federated_rbac_principal_object_id
 }
 
 resource "azurerm_role_assignment" "github_federated_acr_push" {
-  count = local.github_federated_principal_object_id != "" ? 1 : 0
+  count = local.github_federated_rbac_principal_object_id != "" ? 1 : 0
 
   scope                = module.container_registry.resource_id
   role_definition_name = "AcrPush"
-  principal_id         = local.github_federated_principal_object_id
+  principal_id         = local.github_federated_rbac_principal_object_id
+}
+
+resource "azurerm_role_assignment" "github_federated_rg_contributor" {
+  count = local.github_federated_rbac_principal_object_id != "" ? 1 : 0
+
+  scope                = azurerm_resource_group.private_rg.id
+  role_definition_name = "Contributor"
+  principal_id         = local.github_federated_rbac_principal_object_id
+}
+
+resource "azurerm_role_assignment" "github_federated_rg_user_access_admin" {
+  count = local.github_federated_rbac_principal_object_id != "" ? 1 : 0
+
+  scope                = azurerm_resource_group.private_rg.id
+  role_definition_name = "User Access Administrator"
+  principal_id         = local.github_federated_rbac_principal_object_id
 }
 
 resource "null_resource" "import_wideworldimporters" {

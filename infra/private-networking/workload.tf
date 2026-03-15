@@ -756,6 +756,17 @@ resource "azurerm_container_app" "api" {
     target_port      = 8000
     transport        = "http"
 
+    cors {
+      allowed_origins = [
+        "https://${azurerm_static_web_app.frontend.default_host_name}",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000"
+      ]
+      allowed_methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
+      allowed_headers = ["*"]
+      exposed_headers = ["*"]
+    }
+
     traffic_weight {
       percentage      = 100
       latest_revision = true

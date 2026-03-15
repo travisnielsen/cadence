@@ -65,6 +65,7 @@ module "container_registry" {
   sku                           = "Premium"
   zone_redundancy_enabled       = false
   public_network_access_enabled = true
+  network_rule_bypass_option    = "AzureServices"
   admin_enabled                 = false
   tags                          = local.tags
 

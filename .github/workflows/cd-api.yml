@@ -33,25 +33,6 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Temporarily enable ACR public access
-        shell: bash
-        run: |
-          set -euo pipefail
-          az acr update \
-            --name "${{ env.REGISTRY }}" \
-            --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --public-network-enabled true
-
-          for i in {1..12}; do
-            state=$(az acr show --name "${{ env.REGISTRY }}" --query publicNetworkAccess -o tsv)
-            if [ "$state" = "Enabled" ]; then
-              echo "ACR public network access is enabled"
-              break
-            fi
-            echo "Waiting for ACR public access propagation (attempt $i)..."
-            sleep 5
-          done
-
       - name: Build and push image using ACR Tasks
         shell: bash
         run: |
@@ -98,13 +79,3 @@ jobs:
           else
             echo "⚠️ Health check returned HTTP $HTTP_STATUS (may still be starting)"
           fi
-
-      - name: Disable ACR public access
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          az acr update \
-            --name "${{ env.REGISTRY }}" \
-            --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --public-network-enabled false

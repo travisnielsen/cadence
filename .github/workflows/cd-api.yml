@@ -10,6 +10,7 @@ on:
 
 env:
   REGISTRY: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+  ACR_AGENT_POOL: ${{ vars.AZURE_ACR_AGENT_POOL }}
   IMAGE_NAME: cadence-api
   CONTAINER_APP_NAME: ${{ vars.AZURE_CONTAINER_APP_NAME }}
   RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
@@ -37,8 +38,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          if [ -z "${{ env.ACR_AGENT_POOL }}" ]; then
+            echo "AZURE_ACR_AGENT_POOL is required"
+            exit 1
+          fi
+
           az acr build \
             --registry "${{ env.REGISTRY }}" \
+            --agent-pool "${{ env.ACR_AGENT_POOL }}" \
             --image "${{ env.IMAGE_NAME }}:${{ github.sha }}" \
             --image "${{ env.IMAGE_NAME }}:latest" \
             --file ./src/backend/Dockerfile \

@@ -80,6 +80,11 @@ output "container_registry_name" {
   value       = element(reverse(split("/", module.container_registry.resource_id)), 0)
 }
 
+output "acr_agent_pool_name" {
+  description = "Container Registry agent pool name for private ACR Tasks builds"
+  value       = azurerm_container_registry_agent_pool.acr_tasks.name
+}
+
 output "container_app_environment_name" {
   description = "Container Apps environment name"
   value       = element(reverse(split("/", module.container_app_environment.resource_id)), 0)

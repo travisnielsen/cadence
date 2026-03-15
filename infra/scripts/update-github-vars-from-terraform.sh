@@ -155,6 +155,7 @@ echo
 map_and_set "AZURE_RESOURCE_GROUP" "resource_group_name"
 map_and_set "AZURE_LOCATION" "azure_location"
 map_and_set "AZURE_CONTAINER_REGISTRY" "container_registry_name"
+map_and_set "AZURE_ACR_AGENT_POOL" "acr_agent_pool_name"
 map_and_set "AZURE_CONTAINER_APP_ENVIRONMENT" "container_app_environment_name"
 map_and_set "AZURE_CONTAINER_APP_NAME" "container_app_name"
 map_and_set "NEXT_PUBLIC_API_URL" "container_app_url"

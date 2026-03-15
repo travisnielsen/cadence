@@ -86,6 +86,22 @@ module "container_registry" {
   depends_on = [time_sleep.wait_for_network_ready]
 }
 
+resource "azurerm_container_registry_agent_pool" "acr_tasks" {
+  name                      = "${local.identifier}pool"
+  container_registry_name   = element(reverse(split("/", module.container_registry.resource_id)), 0)
+  resource_group_name       = azurerm_resource_group.private_rg.name
+  location                  = azurerm_resource_group.private_rg.location
+  tier                      = "S2"
+  instance_count            = 1
+  virtual_network_subnet_id = azurerm_subnet.application.id
+  tags                      = local.tags
+
+  depends_on = [
+    module.container_registry,
+    time_sleep.wait_for_network_ready
+  ]
+}
+
 
 #################################################################################
 # Storage Account for Microsoft Foundry blob uploads and NL2SQL data (private)

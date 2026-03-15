@@ -78,6 +78,7 @@ echo
 print_assignment "AZURE_RESOURCE_GROUP" "resource_group_name"
 print_assignment "AZURE_LOCATION" "azure_location"
 print_assignment "AZURE_CONTAINER_REGISTRY" "container_registry_name"
+print_assignment "AZURE_ACR_AGENT_POOL" "acr_agent_pool_name"
 print_assignment "AZURE_CONTAINER_APP_ENVIRONMENT" "container_app_environment_name"
 print_assignment "AZURE_CONTAINER_APP_NAME" "container_app_name"
 print_assignment "NEXT_PUBLIC_API_URL" "container_app_url"

@@ -161,6 +161,16 @@ jobs:
           echo "Using Azure Container Registry: $resolved_acr"
           echo "AZURE_CONTAINER_REGISTRY=$resolved_acr" >> "$GITHUB_ENV"
 
+      - name: Temporarily enable ACR public access
+        uses: azure/cli@v2.2.0
+        with:
+          inlineScript: |
+            set -euo pipefail
+            az acr update \
+              --name "$AZURE_CONTAINER_REGISTRY" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --public-network-enabled true
+
       - name: Build and push private runner image
         uses: azure/cli@v2.2.0
         with:
@@ -321,3 +331,14 @@ jobs:
           echo "Runner job name: ${{ github.event.inputs.runner_job_name }}"
           echo "Runner labels: ${{ github.event.inputs.runner_labels }}"
           echo "Use runs-on: [self-hosted, linux, x64, cadence-private] for private jobs."
+
+      - name: Disable ACR public access
+        if: always()
+        uses: azure/cli@v2.2.0
+        with:
+          inlineScript: |
+            set -euo pipefail
+            az acr update \
+              --name "$AZURE_CONTAINER_REGISTRY" \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --public-network-enabled false

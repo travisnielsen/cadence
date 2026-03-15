@@ -1,4 +1,4 @@
-name: Deploy Frontend to Azure Static Website
+name: Deploy Frontend to Azure Static Web Apps
 
 on:
   push:
@@ -10,7 +10,8 @@ on:
 
 env:
   NODE_VERSION: "20"
-  AZURE_STORAGE_ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT }}
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  AZURE_STATIC_WEB_APP_NAME: ${{ vars.AZURE_STATIC_WEB_APP_NAME }}
 
 permissions:
   id-token: write
@@ -18,7 +19,7 @@ permissions:
 
 jobs:
   build-and-deploy:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, cadence-private]
 
     steps:
       - name: Checkout code
@@ -57,38 +58,42 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Add runner IP to storage firewall
+      - name: Resolve Static Web App deployment token
+        id: swa-token
         uses: azure/cli@v2.2.0
         with:
           inlineScript: |
-            RUNNER_IP=$(curl -s https://api.ipify.org)
-            echo "Adding runner IP $RUNNER_IP to storage firewall"
-            az storage account network-rule add \
-              --account-name ${{ env.AZURE_STORAGE_ACCOUNT }} \
-              --ip-address $RUNNER_IP \
-              --only-show-errors || true
-            # Wait for firewall rule to propagate
-            sleep 30
+            set -euo pipefail
 
-      - name: Deploy to Azure Static Website
-        uses: azure/cli@v2.2.0
-        with:
-          inlineScript: |
-            az storage blob upload-batch \
-              --account-name ${{ env.AZURE_STORAGE_ACCOUNT }} \
-              --destination '$web' \
-              --source src/frontend/out \
-              --overwrite \
-              --auth-mode login
+            if [ -z "${{ env.AZURE_STATIC_WEB_APP_NAME }}" ]; then
+              echo "AZURE_STATIC_WEB_APP_NAME is required"
+              exit 1
+            fi
 
-      - name: Remove runner IP from storage firewall
-        if: always()
-        uses: azure/cli@v2.2.0
+            if [ -z "${{ env.AZURE_RESOURCE_GROUP }}" ]; then
+              echo "AZURE_RESOURCE_GROUP is required"
+              exit 1
+            fi
+
+            SWA_TOKEN=$(az staticwebapp secrets list \
+              --name "${{ env.AZURE_STATIC_WEB_APP_NAME }}" \
+              --resource-group "${{ env.AZURE_RESOURCE_GROUP }}" \
+              --query properties.apiKey \
+              -o tsv)
+
+            if [ -z "$SWA_TOKEN" ]; then
+              echo "Failed to retrieve Static Web App deployment token"
+              exit 1
+            fi
+
+            echo "::add-mask::$SWA_TOKEN"
+            echo "deployment_token=$SWA_TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Azure Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
         with:
-          inlineScript: |
-            RUNNER_IP=$(curl -s https://api.ipify.org)
-            echo "Removing runner IP $RUNNER_IP from storage firewall"
-            az storage account network-rule remove \
-              --account-name ${{ env.AZURE_STORAGE_ACCOUNT }} \
-              --ip-address $RUNNER_IP \
-              --only-show-errors || true
+          azure_static_web_apps_api_token: ${{ steps.swa-token.outputs.deployment_token }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: src/frontend/out
+          skip_app_build: true

@@ -115,6 +115,16 @@ output "container_app_url" {
   value       = "https://${azurerm_container_app.api.ingress[0].fqdn}"
 }
 
+output "static_web_app_name" {
+  description = "Azure Static Web App name for frontend hosting"
+  value       = azurerm_static_web_app.frontend.name
+}
+
+output "static_web_app_url" {
+  description = "Azure Static Web App URL"
+  value       = "https://${azurerm_static_web_app.frontend.default_host_name}"
+}
+
 output "sql_server_name" {
   description = "Azure SQL server name"
   value       = module.sql_server.resource.name

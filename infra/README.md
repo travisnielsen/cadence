@@ -228,7 +228,7 @@ This starts both the UI and the FastAPI backend concurrently.
 ### Available Scripts
 
 | Script | Description |
-|--------|-------------|
+| ------ | ----------- |
 | `dev` | Starts both UI and agent servers in development mode |
 | `dev:debug` | Starts development servers with debug logging enabled |
 | `dev:ui` | Starts only the Next.js UI server |
@@ -282,10 +282,10 @@ uv pip install -e ".[observability]"
 
 The frontend and API are automatically deployed via GitHub Actions when changes are pushed to the `main` branch:
 
-- **Frontend**: Changes to `src/frontend/` trigger deployment to Azure Static Website (blob storage)
+- **Frontend**: Changes to `src/frontend/` trigger deployment to Azure Static Web Apps (SWA)
 - **API**: Changes to `src/backend/` trigger a Docker image build, push to Azure Container Registry, and deployment to Azure Container Apps
 
-### Prerequisites
+### CD Prerequisites
 
 To enable continueous deployment, run [setup-github-actions.ps1](/scripts/setup-github-actions.ps1) to configure an Entra ID App Registration with federated credentials with GitHub and grant deployment permissions to the resource group.
 
@@ -302,7 +302,8 @@ Next, navigate to your repository's **Settings → Secrets and variables → Act
 | `AZURE_CLIENT_ID` | App registration client ID from step 1 |
 | `AZURE_TENANT_ID` | Your Azure tenant ID |
 | `AZURE_SUBSCRIPTION_ID` | Your Azure subscription ID |
-| `AZURE_STORAGE_ACCOUNT` | Storage account name for frontend (run `terraform output static_website_url` to get the account name) |
+| `AZURE_STATIC_WEB_APP_NAME` | Static Web App resource name (run `terraform output static_web_app_name`) |
+| `AZURE_STORAGE_ACCOUNT` | Storage account name for private data-plane assets (run `terraform output storage_account_name`) |
 | `AZURE_CONTAINER_REGISTRY` | Container Registry name without `.azurecr.io` (run `terraform output container_registry_login_server`) |
 | `AZURE_CONTAINER_APP_NAME` | Container App name (run `terraform output container_app_url` to identify) |
 | `AZURE_RESOURCE_GROUP` | Resource group name containing the Container App |
@@ -312,7 +313,7 @@ Next, navigate to your repository's **Settings → Secrets and variables → Act
 
 ### Workflow Trigger
 
-The GitHub Actions workflow (`.github/workflows/deploy-frontend.yml`) triggers on:
+The GitHub Actions workflow (`.github/workflows/cd-frontend.yml`) triggers on:
 
 - Push to `main` branch with changes in `frontend/**`
 - Manual dispatch via GitHub Actions UI
@@ -320,7 +321,7 @@ The GitHub Actions workflow (`.github/workflows/deploy-frontend.yml`) triggers o
 ### Redirect URI Configuration
 
 >[!IMPORTANT]
->Regardless of how the frontend is deployed, once you have the URL of the static website, you will need to update the app registration to include the URL as a Redirect URI. In Entra ID, this is done in the **Authentication** section of the App Registration.
+>Regardless of how the frontend is deployed, once you have the frontend URL, you will need to update the app registration to include the URL as a Redirect URI. In Entra ID, this is done in the **Authentication** section of the App Registration.
 
 ## Manual Deployment
 
@@ -335,13 +336,12 @@ cd src/frontend
 pnpm install
 pnpm build
 
-# Deploy to Azure Static Website
-az storage blob upload-batch \
-  --account-name <STORAGE_ACCOUNT> \
-  --destination '$web' \
-  --source out/ \
-  --overwrite \
-  --auth-mode login
+# Deploy to Azure Static Web Apps
+az staticwebapp secrets list \
+  --name <STATIC_WEB_APP_NAME> \
+  --resource-group <RESOURCE_GROUP>
+
+# Then deploy using the GitHub workflow or Azure Static Web Apps deploy action.
 ```
 
 ### FastAPI Deployment to Azure Container Apps

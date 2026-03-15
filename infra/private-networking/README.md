@@ -107,8 +107,12 @@ Both bootstrap and private data workflows print a presence-only variable audit s
 
 ### Regular CI/CD
 
-Regular CI/CD workflows continue to use GitHub-hosted runners unless private network access is required.
-Use the private self-hosted runner only for jobs that must reach private endpoints.
+The API and frontend CD workflows run on the private self-hosted runner label set:
+
+- `runs-on: [self-hosted, linux, x64, cadence-private]`
+
+Frontend hosting is deployed to Azure Static Web Apps (SWA). This avoids relying on
+Azure Storage static website public endpoint exposure.
 
 ### Required GitHub Configuration
 
@@ -127,6 +131,7 @@ Repository variables:
 - `AZURE_RESOURCE_GROUP`
 - `AZURE_CONTAINER_REGISTRY`
 - `AZURE_CONTAINER_APP_ENVIRONMENT`
+- `AZURE_STATIC_WEB_APP_NAME`
 - `AZURE_STORAGE_ACCOUNT`
 - `AZURE_SQL_SERVER_NAME` (server name without `.database.windows.net`)
 - Optional: `AZURE_API_IDENTITY_NAME` (API user-assigned identity name; auto-discovery fallback is used when omitted)
@@ -234,6 +239,7 @@ Suggested mapping:
 - `AZURE_CONTAINER_APP_ENVIRONMENT` <- output `container_app_environment_name`
 - `AZURE_CONTAINER_APP_NAME` <- output `container_app_name`
 - `NEXT_PUBLIC_API_URL` <- output `container_app_url`
+- `AZURE_STATIC_WEB_APP_NAME` <- output `static_web_app_name`
 - `AZURE_STORAGE_ACCOUNT` <- output `storage_account_name`
 - `AZURE_SQL_SERVER_NAME` <- output `sql_server_name`
 - `AZURE_SQL_DATABASE_NAME` <- output `sql_database_name`

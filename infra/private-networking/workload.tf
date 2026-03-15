@@ -515,6 +515,10 @@ module "sql_server" {
     tenant_id                   = data.azurerm_client_config.current.tenant_id
   }
 
+  managed_identities = {
+    system_assigned = true
+  }
+
   databases = {
     wideworldimporters = {
       name        = var.sql_database_name
@@ -534,6 +538,22 @@ module "sql_server" {
   }
 
   depends_on = [time_sleep.wait_for_network_ready]
+}
+
+resource "null_resource" "sql_server_directory_readers" {
+  count = var.enable_sql_server_directory_readers_grant ? 1 : 0
+
+  triggers = {
+    sql_server_name = module.sql_server.resource.name
+    sql_principal   = coalesce(try(module.sql_server.resource.identity[0].principal_id, ""), "")
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["bash", "-lc"]
+    command     = "${path.module}/../scripts/ensure-sql-directory-readers.sh '${self.triggers.sql_principal}'"
+  }
+
+  depends_on = [module.sql_server]
 }
 
 resource "azurerm_role_assignment" "github_federated_storage_blob_contributor" {
@@ -843,4 +863,17 @@ resource "azurerm_container_app" "api" {
     azurerm_role_assignment.api_search,
     azurerm_role_assignment.api_storage
   ]
+}
+
+#################################################################################
+# Frontend Hosting - Azure Static Web Apps
+#################################################################################
+
+resource "azurerm_static_web_app" "frontend" {
+  name                = "${var.name_prefix}-${local.identifier}-web"
+  resource_group_name = azurerm_resource_group.private_rg.name
+  location            = azurerm_resource_group.private_rg.location
+  sku_tier            = "Free"
+  sku_size            = "Free"
+  tags                = local.tags
 }

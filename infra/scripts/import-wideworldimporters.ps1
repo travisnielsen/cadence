@@ -81,7 +81,7 @@ catch {
         "C:\Program Files\Microsoft SQL Server\150\DAC\bin\sqlpackage.exe",
         "C:\Program Files (x86)\Microsoft SQL Server\160\DAC\bin\sqlpackage.exe"
     )
-    
+
     foreach ($path in $possiblePaths) {
         if ($path -and (Test-Path $path)) {
             $sqlpackagePath = $path
@@ -92,7 +92,7 @@ catch {
 
 if (-not $sqlpackagePath) {
     Write-Host "  sqlpackage not found. Installing via dotnet tool..." -ForegroundColor Yellow
-    
+
     # Check if dotnet CLI is available
     try {
         $null = Get-Command dotnet -ErrorAction Stop
@@ -101,24 +101,25 @@ if (-not $sqlpackagePath) {
         Write-Host "ERROR: .NET SDK/CLI is not installed." -ForegroundColor Red
         if ($IsLinux) {
             Write-Host "Install with: sudo apt-get install -y dotnet-sdk-8.0" -ForegroundColor Yellow
-        } else {
+        }
+        else {
             Write-Host "Install from: https://dotnet.microsoft.com/download" -ForegroundColor Yellow
         }
         exit 1
     }
-    
+
     dotnet tool install -g microsoft.sqlpackage
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERROR: Failed to install sqlpackage." -ForegroundColor Red
         exit 1
     }
-    
+
     # Add dotnet tools to PATH for this session
     $toolsDir = if ($IsLinux -or $IsMacOS) { "$env:HOME/.dotnet/tools" } else { "$env:USERPROFILE\.dotnet\tools" }
     if ($toolsDir -and ($env:PATH -notlike "*$toolsDir*")) {
         $env:PATH = "$toolsDir$([System.IO.Path]::PathSeparator)$env:PATH"
     }
-    
+
     $sqlpackagePath = (Get-Command sqlpackage -ErrorAction Stop).Source
 }
 
@@ -153,7 +154,8 @@ if ($IsLinux -or $IsMacOS) {
                 exit 1
             }
             Write-Host "  .NET 8 runtime installed." -ForegroundColor Green
-        } else {
+        }
+        else {
             Write-Host "ERROR: Install .NET 8 runtime from https://dotnet.microsoft.com/download/dotnet/8.0" -ForegroundColor Red
             exit 1
         }
@@ -208,7 +210,7 @@ if (Test-Path $BacpacFile) {
 if (-not (Test-Path $BacpacFile)) {
     Write-Host "Downloading WideWorldImporters-Standard.bacpac..." -ForegroundColor Yellow
     Write-Host "  Source: $BacpacUrl"
-    
+
     # Use .NET WebClient for faster download with progress
     $webClient = New-Object System.Net.WebClient
     try {
@@ -228,23 +230,23 @@ $existingDb = az sql db show --name $DatabaseName --server $SqlServerName --reso
 
 if ($existingDb) {
     Write-Host "Database '$DatabaseName' already exists." -ForegroundColor Yellow
-    
+
     if (-not $Force) {
         $recreate = Read-Host "Delete and recreate from BACPAC? (y/N)"
-        
+
         if ($recreate -ne "y" -and $recreate -ne "Y") {
             Write-Host "Aborted." -ForegroundColor Yellow
             exit 0
         }
     }
-    
+
     Write-Host "Deleting existing database..." -ForegroundColor Yellow
     az sql db delete `
         --name $DatabaseName `
         --server $SqlServerName `
         --resource-group $ResourceGroup `
         --yes
-    
+
     Write-Host "Waiting for deletion to complete..." -ForegroundColor Yellow
     Start-Sleep -Seconds 15
 }

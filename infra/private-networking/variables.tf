@@ -50,6 +50,12 @@ variable "sql_azuread_admin_login_username" {
   description = "Optional login username for Azure SQL Entra administrator. Defaults to github_federated_principal_client_id when set, otherwise current deployment principal client ID."
 }
 
+variable "enable_sql_server_directory_readers_grant" {
+  type        = bool
+  default     = true
+  description = "When true, Terraform ensures the Azure SQL server managed identity is in the Entra Directory Readers role so CREATE USER FROM EXTERNAL PROVIDER can resolve service principals."
+}
+
 variable "name_prefix" {
   type        = string
   default     = "cadence"
